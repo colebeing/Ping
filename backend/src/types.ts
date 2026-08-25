@@ -34,7 +34,7 @@ export interface QuestionTemplate {
 export interface FollowupPrompt {
   /** The follow-up question text itself, e.g. "What happened?" */
   prompt: string;
-  /** Category-flavored answer option labels — placeholder copy pending real content doc */
+  /** Tap-to-select answer option labels, one per category. */
   options: Record<Category, string>;
 }
 
@@ -68,8 +68,9 @@ export interface AnswerRecord {
   date: string; // YYYY-MM-DD, user-local
   block: BlockId;
   answer: Answer;
-  what?: Category;
-  why?: Category;
+  /** Which follow-up (WHAT or WHY) was asked — alternates across successive same-valence answers for this block. */
+  variant?: FollowupVariant;
+  category?: Category;
   timestamp: string; // ISO
 }
 

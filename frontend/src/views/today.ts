@@ -27,20 +27,17 @@ async function mountBlock(container: HTMLElement, block: BlockId, onRecommendati
   container.innerHTML = `<div class="card">Loading…</div>`;
   try {
     const q = await api.getQuestion(block);
-    let pendingFollowups: { what: FollowupPrompt; why: FollowupPrompt } | null = null;
     let step: Step;
 
     if (!q.existingAnswer) {
       step = { kind: "question" };
-    } else if (!q.existingAnswer.what || !q.existingAnswer.why) {
+    } else if (!q.existingAnswer.category) {
       // Answered yes/no already (e.g. from a notification action) but the
-      // WHAT/WHY follow-ups weren't finished — resume where it left off
+      // follow-up category wasn't picked yet — resume where it left off
       // instead of showing "done". Re-posting the same answer is a safe
       // no-op server-side and hands back the follow-up content we need.
       const res = await api.answer(block, q.existingAnswer.answer);
-      pendingFollowups = res.followups;
-      const variant: FollowupVariant = q.existingAnswer.what ? "why" : "what";
-      step = { kind: "followup", answer: q.existingAnswer.answer, variant, prompt: res.followups[variant] };
+      step = { kind: "followup", answer: q.existingAnswer.answer, variant: res.followup.variant, prompt: res.followup };
     } else {
       step = { kind: "done", answer: q.existingAnswer.answer };
     }
@@ -95,20 +92,14 @@ async function mountBlock(container: HTMLElement, block: BlockId, onRecommendati
 
     const submitAnswer = async (answer: Answer) => {
       const res = await api.answer(block, answer);
-      pendingFollowups = res.followups;
-      step = { kind: "followup", answer, variant: "what", prompt: res.followups.what };
+      step = { kind: "followup", answer, variant: res.followup.variant, prompt: res.followup };
       paint();
     };
 
     const submitFollowup = async (current: Extract<Step, { kind: "followup" }>, category: Category) => {
-      const res = await api.followup(block, current.variant, category);
+      const res = await api.followup(block, category);
       if (res.pendingRecommendations?.length) onRecommendations(res.pendingRecommendations);
-
-      if (current.variant === "what" && pendingFollowups) {
-        step = { kind: "followup", answer: current.answer, variant: "why", prompt: pendingFollowups.why };
-      } else {
-        step = { kind: "done", answer: current.answer };
-      }
+      step = { kind: "done", answer: current.answer };
       paint();
     };
 

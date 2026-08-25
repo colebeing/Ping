@@ -24,10 +24,10 @@ npx wrangler kv namespace create STATE_KV
 
 Paste the two namespace ids into `wrangler.toml`.
 
-Seed the default (placeholder) question content into `CONFIG_KV`:
+Seed question content into `CONFIG_KV` from the content sheet (see "Content" below):
 
 ```bash
-npm run seed
+npm run seed-from-sheet
 ```
 
 Generate VAPID keys for push (needs the `web-push` CLI, or any VAPID generator):
@@ -61,9 +61,23 @@ Each user gets one Durable Object (`PushScheduler`, keyed by their email), which
 
 A user's alarm is (re)computed whenever they update their cadence (`POST /api/cadence`) or add a push subscription (`POST /api/push/subscribe`) — see `scheduleUserPush` in `backend/src/scheduler.ts`.
 
+## Content
+
+Question/follow-up wording lives in the ["Ping — Question Library"](https://docs.google.com/spreadsheets/d/1i1l824brm4c23hj704_ItinbBXyDSauM_oQe0Tr-sVw/edit) Google Sheet, not in code. To publish an edit:
+
+```bash
+npm run seed-from-sheet
+```
+
+This pulls the sheet's public CSV export (`backend/scripts/pull-sheet-content.ts`), converts it to `config-seed.json`, and writes it to `CONFIG_KV` — no redeploy needed, live within seconds. The sheet must stay shared as "Anyone with the link — Viewer" for the pull to work unauthenticated; if you lock it down, `pull-sheet-content.ts` will fail with a clear error rather than silently using stale data.
+
+Only block 1 (morning) content is drafted; block 2 reuses it verbatim (only the base question's WHEN slot swaps start→end) — see `pull-sheet-content.ts` if that should change. WHAT and WHY follow-ups **alternate** across successive same-valence answers for a block (one follow-up per answer, not both) — this differs from the original spec text ("both firing on both yes and no"), changed deliberately to keep answering lightweight.
+
+`src/config.ts`'s `DEFAULT_CONFIG` is only a fallback for if `CONFIG_KV` is ever empty (e.g. a fresh environment before the first seed) — it's hardcoded to match the sheet's current content but won't stay in sync automatically; the sheet is the source of truth.
+
 ## What's deliberately not built yet
 
-Per the spec's "do not build until told go" and parked-idea sections: no admin UI for editing questions/content (edit `backend/scripts/config-seed.json` and re-run `npm run seed` instead), no calendar integration, no couples/B2B features, no custom category labels.
+Per the spec's "do not build until told go" and parked-idea sections: no admin UI for editing questions/content (the sheet + `npm run seed-from-sheet` fills that role informally), no calendar integration, no couples/B2B features, no custom category labels. Per-response need-quadrant tagging (the sheet's R1-4 Tag columns) also isn't wired in — the spec explicitly parks that disambiguation logic; the backend still uses the coarser static `DOMAIN_NEED_MAP` in `src/types.ts`.
 
 ## Known gaps worth knowing about before relying on this
 
@@ -71,4 +85,4 @@ Per the spec's "do not build until told go" and parked-idea sections: no admin U
 - No way to unsubscribe/remove a stale push subscription from a device you no longer use.
 - Streak length (3 days) and retirement window (7 days) are tunable constants in `backend/src/recommendations.ts` — the spec doesn't pin exact numbers, these are reasonable defaults.
 - The app icon (`frontend/public/icon.svg`) is a placeholder; add real branding + a PNG version for better iOS home-screen support before shipping.
-- Question/follow-up wording in `backend/scripts/config-seed.json` is placeholder copy pending the real content doc referenced in the spec.
+- Only block 1's content is drafted in the sheet; block 2 is a verbatim reuse, not independently written.

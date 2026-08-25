@@ -29,26 +29,26 @@ function isPrevCalendarDay(earlier: string, later: string): boolean {
 
 /**
  * Looks for a trailing run (most recent N consecutive days, same block, same
- * "what" category, same yes/no valence) and proposes a recommendation.
- * Amplify for yes-streaks (do more of what's working), resolve for
- * no-streaks — symmetric per spec.
+ * category, same yes/no valence) and proposes a recommendation. Amplify for
+ * yes-streaks (do more of what's working), resolve for no-streaks —
+ * symmetric per spec.
  */
 export function detectStreaks(state: UserState): Recommendation[] {
   const newRecs: Recommendation[] = [];
   const blocks: BlockId[] = ["1", "2"];
 
   for (const block of blocks) {
-    const entries = state.answers.filter((a) => a.block === block && a.what).sort((a, b) => a.date.localeCompare(b.date));
+    const entries = state.answers.filter((a) => a.block === block && a.category).sort((a, b) => a.date.localeCompare(b.date));
     if (entries.length === 0) continue;
 
     let runLen = 1;
     let prevDate = entries[entries.length - 1].date;
-    const runCategory = entries[entries.length - 1].what as Category;
+    const runCategory = entries[entries.length - 1].category as Category;
     const runValence = entries[entries.length - 1].answer;
 
     for (let i = entries.length - 2; i >= 0; i--) {
       const e = entries[i];
-      if (e.what === runCategory && e.answer === runValence && isPrevCalendarDay(e.date, prevDate)) {
+      if (e.category === runCategory && e.answer === runValence && isPrevCalendarDay(e.date, prevDate)) {
         runLen++;
         prevDate = e.date;
       } else {

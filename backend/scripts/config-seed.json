@@ -7,41 +7,41 @@
       },
       "yes": {
         "what": {
-          "prompt": "What made it go well?",
+          "prompt": "What did you want that you got?",
           "options": {
-            "friends": "Time with friends",
-            "work": "A good start on work",
-            "home": "Home felt settled",
-            "capacity": "I had the energy for it"
+            "friends": "Friends",
+            "work": "Work",
+            "home": "Home",
+            "capacity": "Capacity"
           }
         },
         "why": {
-          "prompt": "What set that up?",
+          "prompt": "What got you what you want?",
           "options": {
-            "friends": "Connected with someone first",
-            "work": "Walked in with a clear plan",
-            "home": "Home routine went smoothly",
-            "capacity": "I was rested / had margin"
+            "friends": "Friends",
+            "work": "Work",
+            "home": "Home",
+            "capacity": "Capacity"
           }
         }
       },
       "no": {
         "what": {
-          "prompt": "What got in the way?",
+          "prompt": "What had to move?",
           "options": {
-            "friends": "Felt disconnected from friends",
-            "work": "Work started rough",
-            "home": "Home stuff derailed things",
-            "capacity": "I was already running low"
+            "friends": "Friends",
+            "work": "Work",
+            "home": "Home",
+            "capacity": "Capacity"
           }
         },
         "why": {
-          "prompt": "What drove that?",
+          "prompt": "What got in the way?",
           "options": {
-            "friends": "No time carved out for friends",
-            "work": "Unclear priorities this morning",
-            "home": "Home responsibilities piled up",
-            "capacity": "Didn't sleep / recover enough"
+            "friends": "Friends",
+            "work": "Work",
+            "home": "Home",
+            "capacity": "Capacity"
           }
         }
       }
@@ -53,41 +53,41 @@
       },
       "yes": {
         "what": {
-          "prompt": "What made it land well?",
+          "prompt": "What did you want that you got?",
           "options": {
-            "friends": "Good time with friends",
-            "work": "Closed work out cleanly",
-            "home": "Home felt good tonight",
-            "capacity": "Still had energy left"
+            "friends": "Friends",
+            "work": "Work",
+            "home": "Home",
+            "capacity": "Capacity"
           }
         },
         "why": {
-          "prompt": "What set that up?",
+          "prompt": "What got you what you want?",
           "options": {
-            "friends": "Made space for people today",
-            "work": "Stayed on top of things",
-            "home": "Home stayed manageable",
-            "capacity": "Paced myself well today"
+            "friends": "Friends",
+            "work": "Work",
+            "home": "Home",
+            "capacity": "Capacity"
           }
         }
       },
       "no": {
         "what": {
-          "prompt": "What threw it off?",
+          "prompt": "What had to move?",
           "options": {
-            "friends": "Missed out on friend time",
-            "work": "Work bled into the evening",
-            "home": "Home stuff piled up",
-            "capacity": "Ran out of gas"
+            "friends": "Friends",
+            "work": "Work",
+            "home": "Home",
+            "capacity": "Capacity"
           }
         },
         "why": {
-          "prompt": "What drove that?",
+          "prompt": "What got in the way?",
           "options": {
-            "friends": "Didn't prioritize friends today",
-            "work": "Overcommitted today",
-            "home": "Home got neglected today",
-            "capacity": "Overextended today"
+            "friends": "Friends",
+            "work": "Work",
+            "home": "Home",
+            "capacity": "Capacity"
           }
         }
       }

@@ -16,13 +16,13 @@ export interface QuestionResponse {
   how: string;
   text: string;
   overridden: boolean;
-  existingAnswer: { answer: Answer; what?: Category; why?: Category } | null;
+  existingAnswer: { answer: Answer; variant?: FollowupVariant; category?: Category } | null;
 }
 
 export interface AnswerResponse {
   block: BlockId;
   answer: Answer;
-  followups: { what: FollowupPrompt; why: FollowupPrompt };
+  followup: { variant: FollowupVariant } & FollowupPrompt;
 }
 
 export interface Recommendation {
@@ -72,10 +72,10 @@ export const api = {
   getQuestion: (block: BlockId) => request<QuestionResponse>(`/api/question?block=${block}`),
   answer: (block: BlockId, answer: Answer) =>
     request<AnswerResponse>("/api/answer", { method: "POST", body: JSON.stringify({ block, answer }) }),
-  followup: (block: BlockId, variant: FollowupVariant, category: Category) =>
+  followup: (block: BlockId, category: Category) =>
     request<{ pendingRecommendations: Recommendation[] }>("/api/followup", {
       method: "POST",
-      body: JSON.stringify({ block, variant, category }),
+      body: JSON.stringify({ block, category }),
     }),
 
   listRecommendations: () =>

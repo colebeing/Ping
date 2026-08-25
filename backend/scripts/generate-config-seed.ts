@@ -1,8 +1,8 @@
-// Run with: npx tsx scripts/generate-config-seed.ts
-// Writes DEFAULT_CONFIG to scripts/config-seed.json, which `npm run seed`
-// then puts into CONFIG_KV via wrangler. Re-run after editing src/config.ts
-// defaults; edit config-seed.json directly for day-to-day content tweaks
-// (no code change / redeploy needed for that — just re-run `npm run seed`).
+// Run with: npm run generate-seed-fallback
+// Content lives in the "Ping — Question Library" Google Sheet now — use
+// `npm run seed-from-sheet` for normal content updates instead. This script
+// is only for regenerating scripts/config-seed.json from src/config.ts's
+// hardcoded DEFAULT_CONFIG, e.g. if you need to bootstrap without the sheet.
 import { writeFileSync } from "node:fs";
 import { DEFAULT_CONFIG } from "../src/config";
 

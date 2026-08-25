@@ -1,76 +1,32 @@
-import type { AppConfig, Env, FollowupPrompt } from "./types";
+import type { AppConfig, BlockContent, Env, FollowupPrompt } from "./types";
 
-// Placeholder copy — real wording lives in a separate content doc (not yet
-// available). Structure/keys are what matters here; swap text freely, this
-// is just KV-stored JSON, not code.
-function what(prompt: string, options: Record<string, string>): FollowupPrompt {
-  return { prompt, options: options as FollowupPrompt["options"] };
+// This is the fallback used only if CONFIG_KV is empty. The real source of
+// truth is the "Ping — Question Library" Google Sheet — see
+// scripts/pull-sheet-content.ts, which converts it into config-seed.json for
+// `npm run seed`. Edit content in the sheet, not here.
+function prompt(text: string, options: Record<string, string>): FollowupPrompt {
+  return { prompt: text, options: options as FollowupPrompt["options"] };
 }
+
+const CATEGORY_OPTIONS = { friends: "Friends", work: "Work", home: "Home", capacity: "Capacity" };
+
+// Same WHAT/WHY content serves both blocks — only the base question's WHEN
+// slot ("today start" vs "today end") differs between morning and evening.
+const SHARED_FOLLOWUPS: Pick<BlockContent, "yes" | "no"> = {
+  yes: {
+    what: prompt("What did you want that you got?", CATEGORY_OPTIONS),
+    why: prompt("What got you what you want?", CATEGORY_OPTIONS),
+  },
+  no: {
+    what: prompt("What had to move?", CATEGORY_OPTIONS),
+    why: prompt("What got in the way?", CATEGORY_OPTIONS),
+  },
+};
 
 export const DEFAULT_CONFIG: AppConfig = {
   blocks: {
-    "1": {
-      question: { when: "today start", how: "how you wanted" },
-      yes: {
-        what: what("What made it go well?", {
-          friends: "Time with friends",
-          work: "A good start on work",
-          home: "Home felt settled",
-          capacity: "I had the energy for it",
-        }),
-        why: what("What set that up?", {
-          friends: "Connected with someone first",
-          work: "Walked in with a clear plan",
-          home: "Home routine went smoothly",
-          capacity: "I was rested / had margin",
-        }),
-      },
-      no: {
-        what: what("What got in the way?", {
-          friends: "Felt disconnected from friends",
-          work: "Work started rough",
-          home: "Home stuff derailed things",
-          capacity: "I was already running low",
-        }),
-        why: what("What drove that?", {
-          friends: "No time carved out for friends",
-          work: "Unclear priorities this morning",
-          home: "Home responsibilities piled up",
-          capacity: "Didn't sleep / recover enough",
-        }),
-      },
-    },
-    "2": {
-      question: { when: "today end", how: "how you wanted" },
-      yes: {
-        what: what("What made it land well?", {
-          friends: "Good time with friends",
-          work: "Closed work out cleanly",
-          home: "Home felt good tonight",
-          capacity: "Still had energy left",
-        }),
-        why: what("What set that up?", {
-          friends: "Made space for people today",
-          work: "Stayed on top of things",
-          home: "Home stayed manageable",
-          capacity: "Paced myself well today",
-        }),
-      },
-      no: {
-        what: what("What threw it off?", {
-          friends: "Missed out on friend time",
-          work: "Work bled into the evening",
-          home: "Home stuff piled up",
-          capacity: "Ran out of gas",
-        }),
-        why: what("What drove that?", {
-          friends: "Didn't prioritize friends today",
-          work: "Overcommitted today",
-          home: "Home got neglected today",
-          capacity: "Overextended today",
-        }),
-      },
-    },
+    "1": { question: { when: "today start", how: "how you wanted" }, ...SHARED_FOLLOWUPS },
+    "2": { question: { when: "today end", how: "how you wanted" }, ...SHARED_FOLLOWUPS },
   },
 };
 

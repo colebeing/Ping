@@ -10,6 +10,12 @@ interface AnswerBody {
   answer: Answer;
 }
 
+/** WHAT and WHY alternate across successive same-valence answers for a block, rather than both firing every time. */
+function determineVariant(state: Awaited<ReturnType<typeof getState>>, block: BlockId, answer: Answer, today: string): FollowupVariant {
+  const priorCount = state.answers.filter((a) => a.block === block && a.answer === answer && a.date !== today).length;
+  return priorCount % 2 === 0 ? "what" : "why";
+}
+
 export async function handleAnswer(request: Request, env: Env, userId: string): Promise<Response> {
   const body = await readJson<AnswerBody>(request);
   if ((body.block !== "1" && body.block !== "2") || (body.answer !== "yes" && body.answer !== "no")) {
@@ -21,33 +27,32 @@ export async function handleAnswer(request: Request, env: Env, userId: string): 
 
   const existingIdx = state.answers.findIndex((a) => a.date === today && a.block === body.block);
   if (existingIdx !== -1) {
-    // Editing today's answer: undo any prior follow-up counts before overwriting.
+    // Editing today's answer: undo any prior follow-up count before overwriting.
     const prev = state.answers[existingIdx];
-    if (prev.what) decrementFollowupEvent(state, prev.block, prev.answer, "what", prev.what);
-    if (prev.why) decrementFollowupEvent(state, prev.block, prev.answer, "why", prev.why);
+    if (prev.variant && prev.category) decrementFollowupEvent(state, prev.block, prev.answer, prev.variant, prev.category);
   }
 
-  const record: AnswerRecord = { date: today, block: body.block, answer: body.answer, timestamp: new Date().toISOString() };
+  const variant = determineVariant(state, body.block, body.answer, today);
+  const record: AnswerRecord = { date: today, block: body.block, answer: body.answer, variant, timestamp: new Date().toISOString() };
   if (existingIdx !== -1) state.answers[existingIdx] = record;
   else state.answers.push(record);
 
   await saveState(env, userId, state);
 
   const config = await getConfig(env);
-  const content = config.blocks[body.block][body.answer];
-  return json({ block: body.block, answer: body.answer, followups: { what: content.what, why: content.why } });
+  const content = config.blocks[body.block][body.answer][variant];
+  return json({ block: body.block, answer: body.answer, followup: { variant, prompt: content.prompt, options: content.options } });
 }
 
 interface FollowupBody {
   block: BlockId;
-  variant: FollowupVariant;
   category: Category;
 }
 
 export async function handleFollowup(request: Request, env: Env, userId: string): Promise<Response> {
   const body = await readJson<FollowupBody>(request);
-  if ((body.block !== "1" && body.block !== "2") || (body.variant !== "what" && body.variant !== "why")) {
-    return errorResponse("block must be 1 or 2 and variant must be 'what' or 'why'", 400);
+  if (body.block !== "1" && body.block !== "2") {
+    return errorResponse("block must be 1 or 2", 400);
   }
   if (!["friends", "work", "home", "capacity"].includes(body.category)) {
     return errorResponse("invalid category", 400);
@@ -59,11 +64,12 @@ export async function handleFollowup(request: Request, env: Env, userId: string)
   if (idx === -1) return errorResponse("Answer the block's yes/no question first", 409);
 
   const record = state.answers[idx];
-  const prevCategory = record[body.variant];
-  if (prevCategory) decrementFollowupEvent(state, record.block, record.answer, body.variant, prevCategory);
+  if (!record.variant) return errorResponse("No follow-up pending for this block", 409);
 
-  record[body.variant] = body.category;
-  const { triggers, primary } = recordFollowupEvent(state, record.block, record.answer, body.variant, body.category);
+  if (record.category) decrementFollowupEvent(state, record.block, record.answer, record.variant, record.category);
+  record.category = body.category;
+
+  const { triggers, primary } = recordFollowupEvent(state, record.block, record.answer, record.variant, body.category);
 
   const newRecs = detectStreaks(state);
   state.pendingRecommendations.push(...newRecs);
