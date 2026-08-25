@@ -27,11 +27,23 @@ async function mountBlock(container: HTMLElement, block: BlockId, onRecommendati
   container.innerHTML = `<div class="card">Loading…</div>`;
   try {
     const q = await api.getQuestion(block);
-    let step: Step = q.existingAnswer
-      ? { kind: "done", answer: q.existingAnswer.answer }
-      : { kind: "question" };
-
     let pendingFollowups: { what: FollowupPrompt; why: FollowupPrompt } | null = null;
+    let step: Step;
+
+    if (!q.existingAnswer) {
+      step = { kind: "question" };
+    } else if (!q.existingAnswer.what || !q.existingAnswer.why) {
+      // Answered yes/no already (e.g. from a notification action) but the
+      // WHAT/WHY follow-ups weren't finished — resume where it left off
+      // instead of showing "done". Re-posting the same answer is a safe
+      // no-op server-side and hands back the follow-up content we need.
+      const res = await api.answer(block, q.existingAnswer.answer);
+      pendingFollowups = res.followups;
+      const variant: FollowupVariant = q.existingAnswer.what ? "why" : "what";
+      step = { kind: "followup", answer: q.existingAnswer.answer, variant, prompt: res.followups[variant] };
+    } else {
+      step = { kind: "done", answer: q.existingAnswer.answer };
+    }
 
     const paint = () => {
       const card = document.createElement("div");

@@ -48,7 +48,7 @@ export async function checkAndNotifyUser(env: Env, userId: string): Promise<void
     const body = override ? `Did ${override.when} ${override.how}?` : BLOCK_PROMPTS[block];
 
     for (const sub of state.pushSubscriptions) {
-      await sendPush(env, sub, { data: JSON.stringify({ title: "Ping", body }), options: { ttl: 3600 } });
+      await sendPush(env, sub, { data: JSON.stringify({ title: "Ping", body, block }), options: { ttl: 3600 } });
     }
     state.lastNotified[block] = today;
     changed = true;

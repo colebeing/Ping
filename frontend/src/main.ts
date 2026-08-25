@@ -10,7 +10,15 @@ if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("./sw.js").catch((err) => console.error("SW registration failed", err));
   });
+  // Fired when a notification's Yes/No action already answered a block in
+  // the background and the app was already open — jump to Today and
+  // re-render so it reflects that instead of showing stale yes/no buttons.
+  navigator.serviceWorker.addEventListener("message", (event) => {
+    if (event.data?.type === "ping:go-to-today") goToToday?.();
+  });
 }
+
+let goToToday: (() => void) | null = null;
 
 type Tab = "today" | "recommendations" | "settings";
 
@@ -27,6 +35,7 @@ async function boot(): Promise<void> {
 }
 
 function showAuth(): void {
+  goToToday = null;
   app!.innerHTML = "";
   renderAuth(app!, showApp);
 }
@@ -43,6 +52,11 @@ function showApp(): void {
   document.body.appendChild(tabs);
 
   let active: Tab = "today";
+
+  goToToday = () => {
+    active = "today";
+    renderActive();
+  };
 
   const renderActive = () => {
     if (active === "today") renderToday(content, handleRecommendations);
