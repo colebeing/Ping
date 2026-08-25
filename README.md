@@ -1,11 +1,13 @@
 # Ping
 
+Development for Ping, the question engine that powers a more intentional life.
+
 Phone-first PWA nightly-check app, per `nightly-check-spec.md`. Two independent projects:
 
 - `backend/` — Cloudflare Worker (API + KV storage + hourly push cron)
 - `frontend/` — static PWA (Vite), deployable to GitHub Pages
 
-Node.js and npm must be installed to build/run either project (not available in the environment this was scaffolded in, so none of this has been run yet — set aside time to work through it end to end before relying on it).
+Backend is live at `https://ping-backend.colebeing.workers.dev`, KV namespaces created and seeded, VAPID push secrets set. Frontend hasn't been deployed yet.
 
 ## Backend setup
 
