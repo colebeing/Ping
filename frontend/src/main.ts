@@ -59,7 +59,7 @@ function showApp(): void {
   };
 
   const renderActive = () => {
-    if (active === "today") renderToday(content, handleRecommendations);
+    if (active === "today") void renderToday(content, handleRecommendations);
     else if (active === "recommendations") void renderRecommendations(content);
     else void renderSettings(content, () => {
       tabs.remove();

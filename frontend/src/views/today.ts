@@ -1,6 +1,7 @@
-import { api, type Answer, type BlockId, type Category, type FollowupPrompt, type FollowupVariant, type Recommendation } from "../api";
+import { api, type Answer, type BlockId, type Cadence, type Category, type FollowupPrompt, type FollowupVariant, type Recommendation } from "../api";
 
 const BLOCK_LABEL: Record<BlockId, string> = { "1": "Morning", "2": "Evening" };
+const OTHER_BLOCK: Record<BlockId, BlockId> = { "1": "2", "2": "1" };
 const CATEGORY_LABEL: Record<Category, string> = { friends: "Friends", work: "Work", home: "Home", capacity: "Capacity" };
 
 type Step =
@@ -8,19 +9,56 @@ type Step =
   | { kind: "followup"; answer: Answer; variant: FollowupVariant; prompt: FollowupPrompt }
   | { kind: "done"; answer: Answer };
 
-export function renderToday(root: HTMLElement, onRecommendations: (recs: Recommendation[]) => void): void {
+/** Whichever block's check-in time most recently passed is "current" — handles wraparound past midnight. */
+function currentBlock(cadence: Cadence): BlockId {
+  const toMinutes = (hhmm: string) => {
+    const [h, m] = hhmm.split(":").map(Number);
+    return ((h % 24) * 60 + (m || 0) + 1440) % 1440;
+  };
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: cadence.timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const hh = parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10) % 24;
+  const mm = parseInt(parts.find((p) => p.type === "minute")?.value ?? "0", 10);
+  const now = hh * 60 + mm;
+
+  const since = (target: number) => (now - target + 1440) % 1440;
+  return since(toMinutes(cadence.block1)) <= since(toMinutes(cadence.block2)) ? "1" : "2";
+}
+
+export async function renderToday(root: HTMLElement, onRecommendations: (recs: Recommendation[]) => void): Promise<void> {
   root.innerHTML = "";
   const heading = document.createElement("h2");
   heading.textContent = "Today";
   root.appendChild(heading);
 
-  const block1 = document.createElement("div");
-  const block2 = document.createElement("div");
-  root.appendChild(block1);
-  root.appendChild(block2);
+  const primary = document.createElement("div");
+  root.appendChild(primary);
 
-  void mountBlock(block1, "1", onRecommendations);
-  void mountBlock(block2, "2", onRecommendations);
+  let block: BlockId = "1";
+  try {
+    const me = await api.me();
+    block = currentBlock(me.cadence);
+  } catch {
+    // fall through with block "1" — mountBlock's own error handling covers a real auth failure
+  }
+
+  void mountBlock(primary, block, onRecommendations);
+
+  const otherToggle = document.createElement("button");
+  otherToggle.className = "btn";
+  otherToggle.style.marginTop = "4px";
+  otherToggle.textContent = `Missed ${BLOCK_LABEL[OTHER_BLOCK[block]]}? Answer it too`;
+  const otherContainer = document.createElement("div");
+  otherToggle.addEventListener("click", () => {
+    otherToggle.remove();
+    root.appendChild(otherContainer);
+    void mountBlock(otherContainer, OTHER_BLOCK[block], onRecommendations);
+  });
+  root.appendChild(otherToggle);
 }
 
 async function mountBlock(container: HTMLElement, block: BlockId, onRecommendations: (recs: Recommendation[]) => void): Promise<void> {
