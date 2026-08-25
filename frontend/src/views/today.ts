@@ -9,7 +9,12 @@ type Step =
   | { kind: "followup"; answer: Answer; variant: FollowupVariant; prompt: FollowupPrompt }
   | { kind: "done"; answer: Answer };
 
-/** Whichever block's check-in time most recently passed is "current" — handles wraparound past midnight. */
+/**
+ * Splits the day in half at the midpoints between the two check-in times,
+ * so "current" flips as soon as you're past the halfway point toward the
+ * next one — not only once it's actually fired. With 11:55am/11:55pm, that
+ * means Evening becomes current at 5:55pm, not at 11:55pm.
+ */
 function currentBlock(cadence: Cadence): BlockId {
   const toMinutes = (hhmm: string) => {
     const [h, m] = hhmm.split(":").map(Number);
@@ -25,8 +30,15 @@ function currentBlock(cadence: Cadence): BlockId {
   const mm = parseInt(parts.find((p) => p.type === "minute")?.value ?? "0", 10);
   const now = hh * 60 + mm;
 
-  const since = (target: number) => (now - target + 1440) % 1440;
-  return since(toMinutes(cadence.block1)) <= since(toMinutes(cadence.block2)) ? "1" : "2";
+  const b1 = toMinutes(cadence.block1);
+  const b2 = toMinutes(cadence.block2);
+  const midAfterB1 = (b1 + ((b2 - b1 + 1440) % 1440) / 2) % 1440; // midpoint between block1 and block2
+  const midAfterB2 = (b2 + ((b1 - b2 + 1440) % 1440) / 2) % 1440; // midpoint between block2 and next-day block1
+
+  const inRange = (value: number, start: number, end: number) =>
+    start <= end ? value >= start && value < end : value >= start || value < end;
+
+  return inRange(now, midAfterB2, midAfterB1) ? "1" : "2";
 }
 
 export async function renderToday(root: HTMLElement, onRecommendations: (recs: Recommendation[]) => void): Promise<void> {
