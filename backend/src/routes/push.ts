@@ -1,7 +1,8 @@
-import type { Env, PushSubscriptionJSON } from "../types";
+import type { BlockId, Env, PushSubscriptionJSON } from "../types";
 import { errorResponse, json, readJson } from "../http";
 import { getState, saveState } from "../state";
 import { scheduleUserPush } from "../scheduler";
+import { sendTestPush } from "../push";
 
 export async function handleSubscribe(request: Request, env: Env, userId: string): Promise<Response> {
   const subscription = await readJson<PushSubscriptionJSON>(request);
@@ -19,4 +20,12 @@ export async function handleSubscribe(request: Request, env: Env, userId: string
 
 export async function handleGetVapidPublicKey(_request: Request, env: Env): Promise<Response> {
   return json({ publicKey: env.VAPID_PUBLIC_KEY ?? null });
+}
+
+export async function handleTestPush(request: Request, env: Env, userId: string): Promise<Response> {
+  const body = await readJson<{ block?: BlockId }>(request);
+  const block: BlockId = body.block === "2" ? "2" : "1";
+  const result = await sendTestPush(env, userId, block);
+  if (!result.ok) return errorResponse(result.reason ?? "Couldn't send test push", 400);
+  return json({ ok: true });
 }

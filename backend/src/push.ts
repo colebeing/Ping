@@ -25,6 +25,18 @@ const BLOCK_PROMPTS: Record<BlockId, string> = {
   "2": "Did today end how you wanted?",
 };
 
+function blockPushBody(state: Awaited<ReturnType<typeof getState>>, block: BlockId): string {
+  const override = state.activeOverrides[block];
+  return override ? `Did ${override.when} ${override.how}?` : BLOCK_PROMPTS[block];
+}
+
+async function sendBlockPush(env: Env, state: Awaited<ReturnType<typeof getState>>, block: BlockId): Promise<void> {
+  const body = blockPushBody(state, block);
+  for (const sub of state.pushSubscriptions) {
+    await sendPush(env, sub, { data: JSON.stringify({ title: "Ping", body, block }), options: { ttl: 3600 } });
+  }
+}
+
 /**
  * Called by a user's PushScheduler Durable Object when its alarm fires.
  * Sends any block whose cadence is due right now (within a small tolerance,
@@ -44,17 +56,21 @@ export async function checkAndNotifyUser(env: Env, userId: string): Promise<void
     if (state.lastNotified[block] === today) continue;
     if (!isDueNow(cadenceTime, state.cadence.timezone)) continue;
 
-    const override = state.activeOverrides[block];
-    const body = override ? `Did ${override.when} ${override.how}?` : BLOCK_PROMPTS[block];
-
-    for (const sub of state.pushSubscriptions) {
-      await sendPush(env, sub, { data: JSON.stringify({ title: "Ping", body, block }), options: { ttl: 3600 } });
-    }
+    await sendBlockPush(env, state, block);
     state.lastNotified[block] = today;
     changed = true;
   }
 
   if (changed) await saveState(env, userId, state);
+}
+
+/** On-demand send for testing — ignores cadence/lastNotified entirely. */
+export async function sendTestPush(env: Env, userId: string, block: BlockId): Promise<{ ok: boolean; reason?: string }> {
+  if (!vapidKeys(env)) return { ok: false, reason: "Push isn't configured on the server (missing VAPID secrets)" };
+  const state = await getState(env, userId);
+  if (state.pushSubscriptions.length === 0) return { ok: false, reason: "No push subscription on this device yet" };
+  await sendBlockPush(env, state, block);
+  return { ok: true };
 }
 
 /** Epoch ms of the soonest upcoming block cadence for this user, or null if they have no push subscriptions. */

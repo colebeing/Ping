@@ -76,6 +76,30 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
       enableBtn.textContent = result.ok ? "Enabled" : result.reason ?? "Couldn't enable";
     });
     pushCard.appendChild(enableBtn);
+
+    const testRow = document.createElement("div");
+    testRow.className = "btn-row";
+    const testStatus = document.createElement("p");
+    testStatus.className = "muted";
+    const testBtn = (label: string, block: "1" | "2") => {
+      const btn = document.createElement("button");
+      btn.className = "btn";
+      btn.textContent = label;
+      btn.addEventListener("click", async () => {
+        testStatus.textContent = "Sending…";
+        try {
+          await api.sendTestPush(block);
+          testStatus.textContent = "Sent — check your device.";
+        } catch (err) {
+          testStatus.textContent = err instanceof Error ? err.message : "Couldn't send test push.";
+        }
+      });
+      return btn;
+    };
+    testRow.append(testBtn("Test morning", "1"), testBtn("Test evening", "2"));
+    pushCard.appendChild(testRow);
+    pushCard.appendChild(testStatus);
+
     root.appendChild(pushCard);
   } catch (err) {
     root.innerHTML = `<div class="card error">Couldn't load settings.</div>`;

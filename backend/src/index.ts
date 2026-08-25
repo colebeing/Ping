@@ -6,7 +6,7 @@ import { handleMe } from "./routes/me";
 import { handleGetQuestion } from "./routes/question";
 import { handleAnswer, handleFollowup } from "./routes/answer";
 import { handleListRecommendations, handleAcceptRecommendation, handleUpdateCadence } from "./routes/recommendations";
-import { handleSubscribe, handleGetVapidPublicKey } from "./routes/push";
+import { handleSubscribe, handleGetVapidPublicKey, handleTestPush } from "./routes/push";
 import { PushScheduler } from "./scheduler";
 
 export { PushScheduler };
@@ -40,6 +40,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === "/api/recommendations" && method === "GET") return handleListRecommendations(request, env, userId);
   if (pathname === "/api/cadence" && method === "POST") return handleUpdateCadence(request, env, userId);
   if (pathname === "/api/push/subscribe" && method === "POST") return handleSubscribe(request, env, userId);
+  if (pathname === "/api/push/test" && method === "POST") return handleTestPush(request, env, userId);
 
   const acceptMatch = pathname.match(/^\/api\/recommendations\/([^/]+)\/accept$/);
   if (acceptMatch && method === "POST") return handleAcceptRecommendation(request, env, userId, acceptMatch[1]);

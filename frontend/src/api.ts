@@ -88,6 +88,8 @@ export const api = {
   getVapidPublicKey: () => request<{ publicKey: string | null }>("/api/push/vapid-public-key"),
   subscribePush: (subscription: PushSubscriptionJSON) =>
     request<{ ok: true }>("/api/push/subscribe", { method: "POST", body: JSON.stringify(subscription) }),
+  sendTestPush: (block: BlockId) =>
+    request<{ ok: true }>("/api/push/test", { method: "POST", body: JSON.stringify({ block }) }),
 };
 
 export { ApiError };
