@@ -25,8 +25,8 @@ const BLOCK_PROMPTS: Record<BlockId, string> = {
   "2": "Did today end how you wanted?",
 };
 
-/** Called from the hourly scheduled handler. Sends to any user whose cadence matches the current local hour and hasn't been notified yet today for that block. */
-export async function runHourlyPushSweep(env: Env): Promise<void> {
+/** Called from the once-a-minute scheduled handler. Sends to any user whose cadence matches the current local time (within a small tolerance window) and hasn't been notified yet today for that block. */
+export async function runPushSweep(env: Env): Promise<void> {
   if (!vapidKeys(env)) return; // no secrets configured yet — no-op until deployed
 
   const list = await env.STATE_KV.list({ prefix: "state:" });
@@ -39,7 +39,7 @@ export async function runHourlyPushSweep(env: Env): Promise<void> {
       const cadenceTime = block === "1" ? state.cadence.block1 : state.cadence.block2;
       const today = todayLocal(state.cadence.timezone);
       if (state.lastNotified[block] === today) continue;
-      if (!isDueThisHour(cadenceTime, state.cadence.timezone)) continue;
+      if (!isDueNow(cadenceTime, state.cadence.timezone)) continue;
 
       const override = state.activeOverrides[block];
       const body = override ? `Did ${override.when} ${override.how}?` : BLOCK_PROMPTS[block];
@@ -55,8 +55,28 @@ export async function runHourlyPushSweep(env: Env): Promise<void> {
   }
 }
 
-function isDueThisHour(cadenceHHMM: string, timezone: string): boolean {
-  const [hh] = cadenceHHMM.split(":");
-  const nowHour = new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "2-digit", hour12: false }).format(new Date());
-  return parseInt(nowHour, 10) % 24 === parseInt(hh, 10) % 24;
+function currentMinutesInTz(timezone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const hh = parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10) % 24;
+  const mm = parseInt(parts.find((p) => p.type === "minute")?.value ?? "0", 10);
+  return hh * 60 + mm;
+}
+
+function cadenceMinutes(cadenceHHMM: string): number {
+  const [hh, mm] = cadenceHHMM.split(":").map(Number);
+  return (hh % 24) * 60 + (mm || 0);
+}
+
+// Tolerance window so a delayed/missed minute-tick doesn't silently skip a
+// user's notification for the whole day; lastNotified still caps it to one send.
+const DUE_WINDOW_MINUTES = 5;
+
+function isDueNow(cadenceHHMM: string, timezone: string): boolean {
+  const diff = (currentMinutesInTz(timezone) - cadenceMinutes(cadenceHHMM) + 1440) % 1440;
+  return diff < DUE_WINDOW_MINUTES;
 }

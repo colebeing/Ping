@@ -4,10 +4,10 @@ compatibility_date = "2024-09-23"
 # @block65/webcrypto-web-push falls back to node:crypto in some code paths.
 compatibility_flags = ["nodejs_compat"]
 
-# Runs hourly; the scheduled handler checks each user's own cadence
-# (default 11am / 11pm, per-user timezone) and only sends what's due.
+# Runs every minute; the scheduled handler checks each user's own cadence
+# (exact HH:MM, per-user timezone, ±5min tolerance) and only sends what's due.
 [triggers]
-crons = ["0 * * * *"]
+crons = ["* * * * *"]
 
 # Create these with `wrangler kv namespace create CONFIG_KV` / `STATE_KV`,
 # then replace the ids below.

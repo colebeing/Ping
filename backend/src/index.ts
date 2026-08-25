@@ -7,7 +7,7 @@ import { handleGetQuestion } from "./routes/question";
 import { handleAnswer, handleFollowup } from "./routes/answer";
 import { handleListRecommendations, handleAcceptRecommendation, handleUpdateCadence } from "./routes/recommendations";
 import { handleSubscribe, handleGetVapidPublicKey } from "./routes/push";
-import { runHourlyPushSweep } from "./push";
+import { runPushSweep } from "./push";
 
 function withCors(response: Response, request: Request, env: Env): Response {
   const headers = new Headers(response.headers);
@@ -58,6 +58,6 @@ export default {
   },
 
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(runHourlyPushSweep(env));
+    ctx.waitUntil(runPushSweep(env));
   },
 };
