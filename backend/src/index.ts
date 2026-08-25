@@ -1,12 +1,13 @@
 import type { Env } from "./types";
 import { corsHeaders, errorResponse, handlePreflight, HttpError } from "./http";
 import { requireAuth } from "./auth";
-import { handleSignup, handleLogin, handleLogout } from "./routes/auth";
+import { handleSignup, handleLogin, handleLogout, handleRequestPasswordReset, handleConfirmPasswordReset } from "./routes/auth";
 import { handleMe } from "./routes/me";
 import { handleGetQuestion } from "./routes/question";
 import { handleAnswer, handleFollowup } from "./routes/answer";
 import { handleListRecommendations, handleAcceptRecommendation, handleUpdateCadence } from "./routes/recommendations";
 import { handleSubscribe, handleGetVapidPublicKey, handleTestPush } from "./routes/push";
+import { handleCreateInvite } from "./routes/invite";
 import { PushScheduler } from "./scheduler";
 
 export { PushScheduler };
@@ -28,6 +29,8 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === "/api/login" && method === "POST") return handleLogin(request, env);
   if (pathname === "/api/logout" && method === "POST") return handleLogout(request, env);
   if (pathname === "/api/push/vapid-public-key" && method === "GET") return handleGetVapidPublicKey(request, env);
+  if (pathname === "/api/password-reset/request" && method === "POST") return handleRequestPasswordReset(request, env);
+  if (pathname === "/api/password-reset/confirm" && method === "POST") return handleConfirmPasswordReset(request, env);
 
   // Everything below requires a session.
   const userId = await requireAuth(request, env);
@@ -41,6 +44,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === "/api/cadence" && method === "POST") return handleUpdateCadence(request, env, userId);
   if (pathname === "/api/push/subscribe" && method === "POST") return handleSubscribe(request, env, userId);
   if (pathname === "/api/push/test" && method === "POST") return handleTestPush(request, env, userId);
+  if (pathname === "/api/invite" && method === "POST") return handleCreateInvite(request, env, userId);
 
   const acceptMatch = pathname.match(/^\/api\/recommendations\/([^/]+)\/accept$/);
   if (acceptMatch && method === "POST") return handleAcceptRecommendation(request, env, userId, acceptMatch[1]);

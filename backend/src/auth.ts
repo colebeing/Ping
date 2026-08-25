@@ -1,7 +1,8 @@
-import type { Env, SessionRecord, UserRecord } from "./types";
+import type { Env, PasswordResetToken, SessionRecord, UserRecord } from "./types";
 
 const PBKDF2_ITERATIONS = 100_000;
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+const RESET_TOKEN_TTL_SECONDS = 60 * 60; // 1 hour
 export const SESSION_COOKIE = "ping_session";
 
 function toHex(buf: ArrayBuffer): string {
@@ -57,6 +58,31 @@ export async function createUser(env: Env, email: string, password: string): Pro
 
 export async function getUser(env: Env, email: string): Promise<UserRecord | null> {
   return env.STATE_KV.get<UserRecord>(`user:${normalizeEmail(email)}`, "json");
+}
+
+export async function setPassword(env: Env, userId: string, newPassword: string): Promise<void> {
+  const user = await getUser(env, userId);
+  if (!user) throw new Error("User not found");
+  const { hash, salt } = await hashPassword(newPassword);
+  const updated: UserRecord = { ...user, passwordHash: hash, salt };
+  await env.STATE_KV.put(`user:${userId}`, JSON.stringify(updated));
+}
+
+/** Always succeeds from the caller's perspective, even for an unknown email — avoids leaking which emails have accounts. Returns null only when there's genuinely no email to send to. */
+export async function createPasswordResetToken(env: Env, email: string): Promise<string | null> {
+  const user = await getUser(env, email);
+  if (!user) return null;
+  const token = crypto.randomUUID();
+  const record: PasswordResetToken = { userId: user.id, expiresAt: Date.now() + RESET_TOKEN_TTL_SECONDS * 1000 };
+  await env.STATE_KV.put(`reset:${token}`, JSON.stringify(record), { expirationTtl: RESET_TOKEN_TTL_SECONDS });
+  return token;
+}
+
+export async function consumePasswordResetToken(env: Env, token: string): Promise<string | null> {
+  const record = await env.STATE_KV.get<PasswordResetToken>(`reset:${token}`, "json");
+  if (!record || record.expiresAt < Date.now()) return null;
+  await env.STATE_KV.delete(`reset:${token}`);
+  return record.userId;
 }
 
 export async function createSession(env: Env, userId: string): Promise<string> {

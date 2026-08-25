@@ -62,12 +62,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  signup: (email: string, password: string) =>
-    request<{ email: string }>("/api/signup", { method: "POST", body: JSON.stringify({ email, password }) }),
+  signup: (email: string, password: string, inviteToken: string) =>
+    request<{ email: string }>("/api/signup", { method: "POST", body: JSON.stringify({ email, password, inviteToken }) }),
   login: (email: string, password: string) =>
     request<{ email: string }>("/api/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   logout: () => request<{ ok: true }>("/api/logout", { method: "POST" }),
   me: () => request<{ email: string; cadence: Cadence; pushSubscriptionCount: number }>("/api/me"),
+
+  requestPasswordReset: (email: string) =>
+    request<{ ok: true }>("/api/password-reset/request", { method: "POST", body: JSON.stringify({ email }) }),
+  confirmPasswordReset: (token: string, newPassword: string) =>
+    request<{ ok: true }>("/api/password-reset/confirm", { method: "POST", body: JSON.stringify({ token, newPassword }) }),
+
+  sendInvite: (email: string) => request<{ ok: true }>("/api/invite", { method: "POST", body: JSON.stringify({ email }) }),
 
   getQuestion: (block: BlockId) => request<QuestionResponse>(`/api/question?block=${block}`),
   answer: (block: BlockId, answer: Answer) =>

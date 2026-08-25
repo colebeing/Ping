@@ -118,6 +118,17 @@ export interface SessionRecord {
   expiresAt: number; // epoch ms
 }
 
+export interface PasswordResetToken {
+  userId: string;
+  expiresAt: number; // epoch ms
+}
+
+export interface InviteToken {
+  email: string; // normalized — the invite may only be redeemed by this exact email
+  invitedBy: string;
+  expiresAt: number; // epoch ms
+}
+
 export interface Env {
   CONFIG_KV: KVNamespace;
   STATE_KV: KVNamespace;
@@ -127,4 +138,9 @@ export interface Env {
   VAPID_SUBJECT?: string;
   /** Comma-separated list of allowed frontend origins for CORS (e.g. the GitHub Pages URL). */
   ALLOWED_ORIGINS?: string;
+  RESEND_API_KEY?: string;
+  /** e.g. "Ping <onboarding@resend.dev>" — defaults to Resend's shared test address if unset. */
+  EMAIL_FROM?: string;
+  /** Frontend origin for building reset/invite links, e.g. "https://colebeing.github.io/Ping". */
+  FRONTEND_URL?: string;
 }

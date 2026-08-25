@@ -1,4 +1,4 @@
-import { api } from "../api";
+import { api, ApiError } from "../api";
 import { enablePushNotifications } from "../push-setup";
 
 export async function renderSettings(root: HTMLElement, onLogout: () => void): Promise<void> {
@@ -101,6 +101,35 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
     pushCard.appendChild(testStatus);
 
     root.appendChild(pushCard);
+
+    const inviteCard = document.createElement("div");
+    inviteCard.className = "card";
+    inviteCard.innerHTML = `<h3>Invite someone</h3><p class="muted">Signing up needs an invite — send one to get someone else in.</p>`;
+    const inviteForm = document.createElement("div");
+    inviteForm.className = "form";
+    const inviteEmail = document.createElement("input");
+    inviteEmail.type = "email";
+    inviteEmail.placeholder = "Their email";
+    const inviteStatus = document.createElement("p");
+    inviteStatus.className = "muted";
+    const inviteBtn = document.createElement("button");
+    inviteBtn.className = "btn btn-primary";
+    inviteBtn.textContent = "Send invite";
+    inviteBtn.addEventListener("click", async () => {
+      inviteStatus.textContent = "Sending…";
+      inviteBtn.setAttribute("disabled", "true");
+      try {
+        await api.sendInvite(inviteEmail.value);
+        inviteStatus.textContent = `Invite sent to ${inviteEmail.value}.`;
+        inviteEmail.value = "";
+      } catch (err) {
+        inviteStatus.textContent = err instanceof ApiError ? err.message : "Couldn't send invite.";
+      }
+      inviteBtn.removeAttribute("disabled");
+    });
+    inviteForm.append(inviteEmail, inviteBtn, inviteStatus);
+    inviteCard.appendChild(inviteForm);
+    root.appendChild(inviteCard);
   } catch (err) {
     root.innerHTML = `<div class="card error">Couldn't load settings.</div>`;
     console.error(err);
