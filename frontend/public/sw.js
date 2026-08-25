@@ -1,5 +1,5 @@
-const CACHE_NAME = "ping-shell-v1";
-const SHELL_FILES = ["./", "./index.html", "./manifest.webmanifest", "./icon.svg"];
+const CACHE_NAME = "ping-shell-v2";
+const SHELL_FILES = ["./manifest.webmanifest", "./icon.svg"];
 
 // public/ files aren't processed by Vite, so this can't read VITE_API_BASE —
 // keep in sync with frontend/.env.example / the deploy workflow's VITE_API_BASE.
@@ -21,6 +21,17 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return; // never intercept API calls to the Worker
+
+  // Network-first for navigations (the HTML document) and hashed build
+  // assets: Vite renames JS/CSS files on every build, so a cached HTML
+  // shell can end up pointing at a filename that no longer exists once a
+  // new version is deployed. Only truly static files (manifest/icon) are
+  // cache-first. Falls back to cache only when there's no network at all.
+  if (event.request.mode === "navigate" || url.pathname.includes("/assets/")) {
+    event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+    return;
+  }
+
   event.respondWith(caches.match(event.request).then((cached) => cached ?? fetch(event.request)));
 });
 
