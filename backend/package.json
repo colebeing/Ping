@@ -10,18 +10,18 @@
     "seed": "npm run generate-seed && wrangler kv key put --binding=CONFIG_KV config --path=./scripts/config-seed.json"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250801.0",
+    "@cloudflare/workers-types": "^5.20260825.1",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
-    "wrangler": "^3.90.0"
+    "wrangler": "^4.125.0"
   },
   "dependencies": {
     "@block65/webcrypto-web-push": "^1.0.2"
   },
   "allowScripts": {
     "esbuild@0.28.2": true,
-    "esbuild@0.17.19": true,
     "sharp@0.33.5": true,
-    "workerd@1.20250718.0": true
+    "esbuild@0.28.1": true,
+    "workerd@1.20260820.1": true
   }
 }
