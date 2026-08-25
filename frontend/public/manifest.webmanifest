@@ -1,0 +1,13 @@
+{
+  "name": "Ping",
+  "short_name": "Ping",
+  "description": "A twice-daily check-in on whether today is going how you wanted.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#141414",
+  "theme_color": "#141414",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
