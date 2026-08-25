@@ -25,34 +25,58 @@ const BLOCK_PROMPTS: Record<BlockId, string> = {
   "2": "Did today end how you wanted?",
 };
 
-/** Called from the once-a-minute scheduled handler. Sends to any user whose cadence matches the current local time (within a small tolerance window) and hasn't been notified yet today for that block. */
-export async function runPushSweep(env: Env): Promise<void> {
+/**
+ * Called by a user's PushScheduler Durable Object when its alarm fires.
+ * Sends any block whose cadence is due right now (within a small tolerance,
+ * in case the alarm landed a little early/late) and hasn't been sent today.
+ */
+export async function checkAndNotifyUser(env: Env, userId: string): Promise<void> {
   if (!vapidKeys(env)) return; // no secrets configured yet — no-op until deployed
 
-  const list = await env.STATE_KV.list({ prefix: "state:" });
-  for (const key of list.keys) {
-    const userId = key.name.slice("state:".length);
-    const state = await getState(env, userId);
-    let changed = false;
+  const state = await getState(env, userId);
+  if (state.pushSubscriptions.length === 0) return;
 
-    for (const block of ["1", "2"] as BlockId[]) {
-      const cadenceTime = block === "1" ? state.cadence.block1 : state.cadence.block2;
-      const today = todayLocal(state.cadence.timezone);
-      if (state.lastNotified[block] === today) continue;
-      if (!isDueNow(cadenceTime, state.cadence.timezone)) continue;
+  const today = todayLocal(state.cadence.timezone);
+  let changed = false;
 
-      const override = state.activeOverrides[block];
-      const body = override ? `Did ${override.when} ${override.how}?` : BLOCK_PROMPTS[block];
+  for (const block of ["1", "2"] as BlockId[]) {
+    const cadenceTime = block === "1" ? state.cadence.block1 : state.cadence.block2;
+    if (state.lastNotified[block] === today) continue;
+    if (!isDueNow(cadenceTime, state.cadence.timezone)) continue;
 
-      for (const sub of state.pushSubscriptions) {
-        await sendPush(env, sub, { data: JSON.stringify({ title: "Ping", body }), options: { ttl: 3600 } });
-      }
-      state.lastNotified[block] = today;
-      changed = true;
+    const override = state.activeOverrides[block];
+    const body = override ? `Did ${override.when} ${override.how}?` : BLOCK_PROMPTS[block];
+
+    for (const sub of state.pushSubscriptions) {
+      await sendPush(env, sub, { data: JSON.stringify({ title: "Ping", body }), options: { ttl: 3600 } });
     }
-
-    if (changed) await saveState(env, userId, state);
+    state.lastNotified[block] = today;
+    changed = true;
   }
+
+  if (changed) await saveState(env, userId, state);
+}
+
+/** Epoch ms of the soonest upcoming block cadence for this user, or null if they have no push subscriptions. */
+export async function computeNextAlarmTime(env: Env, userId: string): Promise<number | null> {
+  const state = await getState(env, userId);
+  if (state.pushSubscriptions.length === 0) return null;
+
+  const now = new Date();
+  const times = (["1", "2"] as BlockId[]).map((block) => {
+    const cadenceTime = block === "1" ? state.cadence.block1 : state.cadence.block2;
+    return nextOccurrence(cadenceTime, state.cadence.timezone, now);
+  });
+  return Math.min(...times.map((d) => d.getTime()));
+}
+
+// Small tolerance so a slightly-early/late alarm firing still counts as due;
+// lastNotified still caps delivery to once per block per day regardless.
+const DUE_WINDOW_MINUTES = 3;
+
+function isDueNow(cadenceHHMM: string, timezone: string): boolean {
+  const diff = (currentMinutesInTz(timezone) - cadenceMinutes(cadenceHHMM) + 1440) % 1440;
+  return diff < DUE_WINDOW_MINUTES;
 }
 
 function currentMinutesInTz(timezone: string): number {
@@ -72,11 +96,44 @@ function cadenceMinutes(cadenceHHMM: string): number {
   return (hh % 24) * 60 + (mm || 0);
 }
 
-// Tolerance window so a delayed/missed minute-tick doesn't silently skip a
-// user's notification for the whole day; lastNotified still caps it to one send.
-const DUE_WINDOW_MINUTES = 5;
+/** What UTC instant does `timezone`'s local clock differ from UTC by, evaluated near `atUtc`? (minutes, e.g. -240 for EDT) */
+function tzOffsetMinutes(timezone: string, atUtc: Date): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(atUtc);
+  const p = Object.fromEntries(parts.map((x) => [x.type, x.value]));
+  const asUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+  return (asUtc - atUtc.getTime()) / 60000;
+}
 
-function isDueNow(cadenceHHMM: string, timezone: string): boolean {
-  const diff = (currentMinutesInTz(timezone) - cadenceMinutes(cadenceHHMM) + 1440) % 1440;
-  return diff < DUE_WINDOW_MINUTES;
+function wallClockDateInTz(timezone: string, atUtc: Date): { y: number; m: number; d: number } {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(atUtc);
+  const p = Object.fromEntries(parts.map((x) => [x.type, x.value]));
+  return { y: +p.year, m: +p.month, d: +p.day };
+}
+
+function utcForWallClock(timezone: string, y: number, m: number, d: number, hh: number, mm: number): Date {
+  const guess = Date.UTC(y, m - 1, d, hh, mm, 0);
+  const offset = tzOffsetMinutes(timezone, new Date(guess));
+  return new Date(guess - offset * 60000);
+}
+
+/** Next UTC instant this cadence (HH:MM, per-user timezone) occurs, strictly after `after`. */
+function nextOccurrence(cadenceHHMM: string, timezone: string, after: Date): Date {
+  const [hh, mm] = cadenceHHMM.split(":").map(Number);
+  const { y, m, d } = wallClockDateInTz(timezone, after);
+  let candidate = utcForWallClock(timezone, y, m, d, hh, mm);
+  if (candidate.getTime() <= after.getTime()) {
+    const tomorrow = new Date(after.getTime() + 24 * 60 * 60 * 1000);
+    const t = wallClockDateInTz(timezone, tomorrow);
+    candidate = utcForWallClock(timezone, t.y, t.m, t.d, hh, mm);
+  }
+  return candidate;
 }

@@ -120,6 +120,7 @@ export interface SessionRecord {
 export interface Env {
   CONFIG_KV: KVNamespace;
   STATE_KV: KVNamespace;
+  PUSH_SCHEDULER: DurableObjectNamespace<import("./scheduler").PushScheduler>;
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_KEY?: string;
   VAPID_SUBJECT?: string;

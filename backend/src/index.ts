@@ -7,7 +7,9 @@ import { handleGetQuestion } from "./routes/question";
 import { handleAnswer, handleFollowup } from "./routes/answer";
 import { handleListRecommendations, handleAcceptRecommendation, handleUpdateCadence } from "./routes/recommendations";
 import { handleSubscribe, handleGetVapidPublicKey } from "./routes/push";
-import { runPushSweep } from "./push";
+import { PushScheduler } from "./scheduler";
+
+export { PushScheduler };
 
 function withCors(response: Response, request: Request, env: Env): Response {
   const headers = new Headers(response.headers);
@@ -55,9 +57,5 @@ export default {
       console.error(err);
       return withCors(errorResponse("Internal error", 500), request, env);
     }
-  },
-
-  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(runPushSweep(env));
   },
 };

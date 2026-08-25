@@ -2,6 +2,7 @@ import type { Env } from "../types";
 import { errorResponse, json, readJson } from "../http";
 import { getState, saveState } from "../state";
 import { acceptRecommendation } from "../recommendations";
+import { scheduleUserPush } from "../scheduler";
 
 export async function handleListRecommendations(_request: Request, env: Env, userId: string): Promise<Response> {
   const state = await getState(env, userId);
@@ -29,5 +30,6 @@ export async function handleUpdateCadence(request: Request, env: Env, userId: st
   if (body.block2) state.cadence.block2 = body.block2;
   if (body.timezone) state.cadence.timezone = body.timezone;
   await saveState(env, userId, state);
+  await scheduleUserPush(env, userId);
   return json({ cadence: state.cadence });
 }

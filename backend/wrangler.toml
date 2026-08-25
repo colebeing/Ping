@@ -4,11 +4,6 @@ compatibility_date = "2024-09-23"
 # @block65/webcrypto-web-push falls back to node:crypto in some code paths.
 compatibility_flags = ["nodejs_compat"]
 
-# Runs every minute; the scheduled handler checks each user's own cadence
-# (exact HH:MM, per-user timezone, ±5min tolerance) and only sends what's due.
-[triggers]
-crons = ["* * * * *"]
-
 # Create these with `wrangler kv namespace create CONFIG_KV` / `STATE_KV`,
 # then replace the ids below.
 [[kv_namespaces]]
@@ -18,6 +13,18 @@ id = "1f376b12ca9540a083cdae487f5d0a5c"
 [[kv_namespaces]]
 binding = "STATE_KV"
 id = "3869129cae394626997c4d6a2501c030"
+
+# One Durable Object per user, alarmed for their exact next check-in time.
+# (Cron Triggers are NOT used for push scheduling: they registered correctly
+# via both the dashboard and API but never actually executed on this account
+# across three tested schedules — a Cloudflare-side issue, not a config one.)
+[[durable_objects.bindings]]
+name = "PUSH_SCHEDULER"
+class_name = "PushScheduler"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PushScheduler"]
 
 # Secrets (set via `wrangler secret put <NAME>`, not stored here):
 #   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT (e.g. "mailto:you@example.com")

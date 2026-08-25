@@ -1,6 +1,7 @@
 import type { Env, PushSubscriptionJSON } from "../types";
 import { errorResponse, json, readJson } from "../http";
 import { getState, saveState } from "../state";
+import { scheduleUserPush } from "../scheduler";
 
 export async function handleSubscribe(request: Request, env: Env, userId: string): Promise<Response> {
   const subscription = await readJson<PushSubscriptionJSON>(request);
@@ -12,6 +13,7 @@ export async function handleSubscribe(request: Request, env: Env, userId: string
     state.pushSubscriptions.push(subscription);
     await saveState(env, userId, state);
   }
+  await scheduleUserPush(env, userId);
   return json({ ok: true });
 }
 
