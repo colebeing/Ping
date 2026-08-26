@@ -16,7 +16,12 @@ export interface QuestionResponse {
   how: string;
   text: string;
   overridden: boolean;
-  existingAnswer: { answer: Answer; variant?: FollowupVariant; category?: Category } | null;
+  existingAnswer: {
+    answer: Answer;
+    variant?: FollowupVariant;
+    category?: Category;
+    followup?: { prompt: string; optionLabel: string };
+  } | null;
 }
 
 export interface AnswerResponse {

@@ -6,7 +6,7 @@ export const CATEGORY_LABEL: Record<Category, string> = { friends: "Friends", wo
 type Step =
   | { kind: "question" }
   | { kind: "followup"; answer: Answer; variant: FollowupVariant; prompt: FollowupPrompt }
-  | { kind: "done"; answer: Answer; category: Category };
+  | { kind: "done"; answer: Answer; category: Category; followupPrompt: string; optionLabel: string };
 
 /**
  * The live, interactive yes/no + follow-up card for one block, for a given
@@ -31,23 +31,46 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
       const res = await api.answer(block, q.existingAnswer.answer, date);
       step = { kind: "followup", answer: q.existingAnswer.answer, variant: res.followup.variant, prompt: res.followup };
     } else {
-      step = { kind: "done", answer: q.existingAnswer.answer, category: q.existingAnswer.category };
+      step = {
+        kind: "done",
+        answer: q.existingAnswer.answer,
+        category: q.existingAnswer.category,
+        followupPrompt: q.existingAnswer.followup?.prompt ?? "",
+        optionLabel: q.existingAnswer.followup?.optionLabel ?? CATEGORY_LABEL[q.existingAnswer.category],
+      };
       onDone?.();
     }
 
     const paint = () => {
       const card = document.createElement("div");
-      card.className = "card";
+      card.className = "card block-card";
+
+      const header = document.createElement("div");
+      header.className = "block-header";
 
       const label = document.createElement("span");
       label.className = "pill";
       label.textContent = BLOCK_LABEL[block];
-      card.appendChild(label);
+      header.appendChild(label);
 
-      const question = document.createElement("h3");
-      question.style.marginTop = "10px";
+      const question = document.createElement("span");
+      question.className = "block-question";
       question.textContent = q.text;
-      card.appendChild(question);
+      header.appendChild(question);
+
+      if (step.kind === "done") {
+        const edit = document.createElement("button");
+        edit.className = "icon-btn";
+        edit.setAttribute("aria-label", "Edit");
+        edit.textContent = "✏️";
+        edit.addEventListener("click", () => {
+          step = { kind: "question" };
+          paint();
+        });
+        header.appendChild(edit);
+      }
+
+      card.appendChild(header);
 
       if (step.kind === "question") {
         const row = document.createElement("div");
@@ -58,6 +81,7 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
         card.appendChild(row);
       } else if (step.kind === "followup") {
         const p = document.createElement("p");
+        p.className = "followup-prompt";
         p.textContent = step.prompt.prompt;
         card.appendChild(p);
         const grid = document.createElement("div");
@@ -67,20 +91,25 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
         }
         card.appendChild(grid);
       } else {
-        const pill = document.createElement("span");
-        pill.className = `pill answered-${step.answer}`;
-        pill.textContent = step.answer === "yes" ? "Yes" : "No";
-        card.appendChild(pill);
-        const response = document.createElement("p");
-        response.className = "muted";
-        response.style.marginTop = "8px";
-        response.textContent = CATEGORY_LABEL[step.category];
-        card.appendChild(response);
-        const edit = button("Edit", "btn", () => {
-          step = { kind: "question" };
-          paint();
-        });
-        card.appendChild(edit);
+        const answerRow = document.createElement("div");
+        answerRow.className = "answer-row";
+        const badge = document.createElement("span");
+        badge.className = `answer-badge answered-${step.answer}`;
+        badge.textContent = step.answer === "yes" ? "Yes" : "No";
+        answerRow.appendChild(badge);
+        card.appendChild(answerRow);
+
+        if (step.followupPrompt) {
+          const followupLine = document.createElement("p");
+          followupLine.className = "followup-line";
+          const fq = document.createElement("span");
+          fq.className = "followup-q";
+          fq.textContent = step.followupPrompt;
+          const fa = document.createElement("strong");
+          fa.textContent = step.optionLabel;
+          followupLine.append(fq, " ", fa);
+          card.appendChild(followupLine);
+        }
       }
 
       container.innerHTML = "";
@@ -95,7 +124,13 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
 
     const submitFollowup = async (current: Extract<Step, { kind: "followup" }>, category: Category) => {
       await api.followup(block, category, date);
-      step = { kind: "done", answer: current.answer, category };
+      step = {
+        kind: "done",
+        answer: current.answer,
+        category,
+        followupPrompt: current.prompt.prompt,
+        optionLabel: current.prompt.options[category],
+      };
       paint();
       onDone?.();
     };

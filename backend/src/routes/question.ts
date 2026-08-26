@@ -27,6 +27,11 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
   const whenText = date === today ? when : when.replace(/\btoday\b/, "the day");
 
   const existingAnswer = state.answers.find((a) => a.date === date && a.block === block);
+  let followup: { prompt: string; optionLabel: string } | undefined;
+  if (existingAnswer?.variant && existingAnswer.category) {
+    const content = config.blocks[block as BlockId][existingAnswer.answer][existingAnswer.variant];
+    followup = { prompt: content.prompt, optionLabel: content.options[existingAnswer.category] };
+  }
 
   return json({
     block,
@@ -35,6 +40,6 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
     how,
     text: `Did ${whenText} ${how}?`,
     overridden: Boolean(override),
-    existingAnswer: existingAnswer ?? null,
+    existingAnswer: existingAnswer ? { ...existingAnswer, followup } : null,
   });
 }
