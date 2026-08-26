@@ -93,10 +93,12 @@ async function answerFromNotification(block, answer) {
 
 async function focusOrOpenApp(message) {
   const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-  const existing = clients[0];
-  if (existing) {
-    if (message) existing.postMessage(message);
-    return existing.focus();
+  if (clients.length > 0) {
+    // Every open tab needs to know, not just the one we're about to focus —
+    // an un-refreshed stale tab still showing "Yes/No" could otherwise
+    // overwrite a just-recorded answer if it's tapped later.
+    if (message) for (const client of clients) client.postMessage(message);
+    return clients[0].focus();
   }
   return self.clients.openWindow("./");
 }
