@@ -31,14 +31,6 @@ export interface Cadence {
   timezone: string;
 }
 
-export interface HistoryAnswer {
-  date: string;
-  block: BlockId;
-  answer: Answer;
-  variant?: FollowupVariant;
-  category?: Category;
-}
-
 class ApiError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -75,16 +67,15 @@ export const api = {
 
   sendInvite: (email: string) => request<{ ok: true }>("/api/invite", { method: "POST", body: JSON.stringify({ email }) }),
 
-  getQuestion: (block: BlockId) => request<QuestionResponse>(`/api/question?block=${block}`),
-  answer: (block: BlockId, answer: Answer) =>
-    request<AnswerResponse>("/api/answer", { method: "POST", body: JSON.stringify({ block, answer }) }),
-  followup: (block: BlockId, category: Category) =>
+  getQuestion: (block: BlockId, date?: string) =>
+    request<QuestionResponse>(`/api/question?block=${block}${date ? `&date=${date}` : ""}`),
+  answer: (block: BlockId, answer: Answer, date?: string) =>
+    request<AnswerResponse>("/api/answer", { method: "POST", body: JSON.stringify({ block, answer, date }) }),
+  followup: (block: BlockId, category: Category, date?: string) =>
     request<{ ok: true }>("/api/followup", {
       method: "POST",
-      body: JSON.stringify({ block, category }),
+      body: JSON.stringify({ block, category, date }),
     }),
-
-  getHistory: () => request<{ answers: HistoryAnswer[]; cadence: Cadence }>("/api/history"),
 
   updateCadence: (cadence: Partial<Cadence>) =>
     request<{ cadence: Cadence }>("/api/cadence", { method: "POST", body: JSON.stringify(cadence) }),

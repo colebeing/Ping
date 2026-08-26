@@ -1,6 +1,6 @@
 import type { Answer, AnswerRecord, BlockId, Category, Env, FollowupVariant } from "../types";
 import { errorResponse, json, readJson } from "../http";
-import { getState, saveState, todayLocal } from "../state";
+import { getState, saveState, resolveDate } from "../state";
 import { getConfig } from "../config";
 import { decrementFollowupEvent, recordFollowupEvent } from "../escalation";
 import { detectStreaks } from "../recommendations";
@@ -8,11 +8,12 @@ import { detectStreaks } from "../recommendations";
 interface AnswerBody {
   block: BlockId;
   answer: Answer;
+  date?: string;
 }
 
 /** WHAT and WHY alternate across successive same-valence answers for a block, rather than both firing every time. */
-function determineVariant(state: Awaited<ReturnType<typeof getState>>, block: BlockId, answer: Answer, today: string): FollowupVariant {
-  const priorCount = state.answers.filter((a) => a.block === block && a.answer === answer && a.date !== today).length;
+function determineVariant(state: Awaited<ReturnType<typeof getState>>, block: BlockId, answer: Answer, date: string): FollowupVariant {
+  const priorCount = state.answers.filter((a) => a.block === block && a.answer === answer && a.date !== date).length;
   return priorCount % 2 === 0 ? "what" : "why";
 }
 
@@ -23,17 +24,17 @@ export async function handleAnswer(request: Request, env: Env, userId: string): 
   }
 
   const state = await getState(env, userId);
-  const today = todayLocal(state.cadence.timezone);
+  const date = resolveDate(state.cadence.timezone, body.date);
 
-  const existingIdx = state.answers.findIndex((a) => a.date === today && a.block === body.block);
+  const existingIdx = state.answers.findIndex((a) => a.date === date && a.block === body.block);
   if (existingIdx !== -1) {
-    // Editing today's answer: undo any prior follow-up count before overwriting.
+    // Editing an existing answer (today or backfilling a past day): undo any prior follow-up count before overwriting.
     const prev = state.answers[existingIdx];
     if (prev.variant && prev.category) decrementFollowupEvent(state, prev.block, prev.answer, prev.variant, prev.category);
   }
 
-  const variant = determineVariant(state, body.block, body.answer, today);
-  const record: AnswerRecord = { date: today, block: body.block, answer: body.answer, variant, timestamp: new Date().toISOString() };
+  const variant = determineVariant(state, body.block, body.answer, date);
+  const record: AnswerRecord = { date, block: body.block, answer: body.answer, variant, timestamp: new Date().toISOString() };
   if (existingIdx !== -1) state.answers[existingIdx] = record;
   else state.answers.push(record);
 
@@ -41,12 +42,13 @@ export async function handleAnswer(request: Request, env: Env, userId: string): 
 
   const config = await getConfig(env);
   const content = config.blocks[body.block][body.answer][variant];
-  return json({ block: body.block, answer: body.answer, followup: { variant, prompt: content.prompt, options: content.options } });
+  return json({ block: body.block, date, answer: body.answer, followup: { variant, prompt: content.prompt, options: content.options } });
 }
 
 interface FollowupBody {
   block: BlockId;
   category: Category;
+  date?: string;
 }
 
 export async function handleFollowup(request: Request, env: Env, userId: string): Promise<Response> {
@@ -59,8 +61,8 @@ export async function handleFollowup(request: Request, env: Env, userId: string)
   }
 
   const state = await getState(env, userId);
-  const today = todayLocal(state.cadence.timezone);
-  const idx = state.answers.findIndex((a) => a.date === today && a.block === body.block);
+  const date = resolveDate(state.cadence.timezone, body.date);
+  const idx = state.answers.findIndex((a) => a.date === date && a.block === body.block);
   if (idx === -1) return errorResponse("Answer the block's yes/no question first", 409);
 
   const record = state.answers[idx];

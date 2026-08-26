@@ -6,13 +6,17 @@ export const CATEGORY_LABEL: Record<Category, string> = { friends: "Friends", wo
 type Step =
   | { kind: "question" }
   | { kind: "followup"; answer: Answer; variant: FollowupVariant; prompt: FollowupPrompt }
-  | { kind: "done"; answer: Answer };
+  | { kind: "done"; answer: Answer; category: Category };
 
-/** The live, interactive yes/no + follow-up card for one block — used by both Today (the current block) and History (today's blocks, for catching a missed one). */
-export async function mountBlockCard(container: HTMLElement, block: BlockId): Promise<void> {
+/**
+ * The live, interactive yes/no + follow-up card for one block, for a given
+ * date (defaults to today). Used by Today (the current block) and History
+ * (every day shown, so old ones can be filled in too, not just viewed).
+ */
+export async function mountBlockCard(container: HTMLElement, block: BlockId, date?: string): Promise<void> {
   container.innerHTML = `<div class="card">Loading…</div>`;
   try {
-    const q = await api.getQuestion(block);
+    const q = await api.getQuestion(block, date);
     let step: Step;
 
     if (!q.existingAnswer) {
@@ -22,10 +26,10 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId): Pr
       // follow-up category wasn't picked yet — resume where it left off
       // instead of showing "done". Re-posting the same answer is a safe
       // no-op server-side and hands back the follow-up content we need.
-      const res = await api.answer(block, q.existingAnswer.answer);
+      const res = await api.answer(block, q.existingAnswer.answer, date);
       step = { kind: "followup", answer: q.existingAnswer.answer, variant: res.followup.variant, prompt: res.followup };
     } else {
-      step = { kind: "done", answer: q.existingAnswer.answer };
+      step = { kind: "done", answer: q.existingAnswer.answer, category: q.existingAnswer.category };
     }
 
     const paint = () => {
@@ -62,13 +66,17 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId): Pr
       } else {
         const pill = document.createElement("span");
         pill.className = `pill answered-${step.answer}`;
-        pill.textContent = step.answer === "yes" ? "Answered: yes" : "Answered: no";
+        pill.textContent = step.answer === "yes" ? "Yes" : "No";
         card.appendChild(pill);
+        const response = document.createElement("p");
+        response.className = "muted";
+        response.style.marginTop = "8px";
+        response.textContent = CATEGORY_LABEL[step.category];
+        card.appendChild(response);
         const edit = button("Edit", "btn", () => {
           step = { kind: "question" };
           paint();
         });
-        edit.style.marginLeft = "8px";
         card.appendChild(edit);
       }
 
@@ -77,14 +85,14 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId): Pr
     };
 
     const submitAnswer = async (answer: Answer) => {
-      const res = await api.answer(block, answer);
+      const res = await api.answer(block, answer, date);
       step = { kind: "followup", answer, variant: res.followup.variant, prompt: res.followup };
       paint();
     };
 
     const submitFollowup = async (current: Extract<Step, { kind: "followup" }>, category: Category) => {
-      await api.followup(block, category);
-      step = { kind: "done", answer: current.answer };
+      await api.followup(block, category, date);
+      step = { kind: "done", answer: current.answer, category };
       paint();
     };
 

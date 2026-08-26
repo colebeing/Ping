@@ -31,3 +31,10 @@ export function todayLocal(timezone: string, at = new Date()): string {
     return at.toISOString().slice(0, 10);
   }
 }
+
+/** Resolves a client-requested date for answering/viewing a block: defaults to today, and never allows the future (backfilling the past is fine, answering ahead isn't). */
+export function resolveDate(timezone: string, requested?: string | null): string {
+  const today = todayLocal(timezone);
+  if (!requested || !/^\d{4}-\d{2}-\d{2}$/.test(requested)) return today;
+  return requested > today ? today : requested;
+}
