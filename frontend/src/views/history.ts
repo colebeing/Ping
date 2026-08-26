@@ -1,5 +1,5 @@
-import { api, type BlockId } from "../api";
-import { mountBlockCard } from "../blockCard";
+import { api } from "../api";
+import { mountBlockCard, BLOCK_LABEL } from "../blockCard";
 
 const DAYS_SHOWN = 14;
 
@@ -16,6 +16,22 @@ function dayLabel(date: string, today: string, yesterday: string): string {
   if (date === today) return "Today";
   if (date === yesterday) return "Yesterday";
   return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+function renderLocked(container: HTMLElement): void {
+  container.innerHTML = "";
+  const card = document.createElement("div");
+  card.className = "card";
+  const label = document.createElement("span");
+  label.className = "pill";
+  label.textContent = BLOCK_LABEL["2"];
+  card.appendChild(label);
+  const p = document.createElement("p");
+  p.className = "muted";
+  p.style.marginTop = "8px";
+  p.textContent = "Answer Morning first";
+  card.appendChild(p);
+  container.appendChild(card);
 }
 
 export async function renderHistory(root: HTMLElement): Promise<void> {
@@ -38,11 +54,17 @@ export async function renderHistory(root: HTMLElement): Promise<void> {
       dayHeading.textContent = dayLabel(date, today, yesterday);
       root.appendChild(dayHeading);
 
-      for (const block of ["1", "2"] as BlockId[]) {
-        const container = document.createElement("div");
-        root.appendChild(container);
-        void mountBlockCard(container, block, date);
-      }
+      const morningContainer = document.createElement("div");
+      root.appendChild(morningContainer);
+      const eveningContainer = document.createElement("div");
+      root.appendChild(eveningContainer);
+
+      // Evening starts locked; Morning's onDone (fires immediately if
+      // already complete, or live once the user finishes it) reveals it.
+      renderLocked(eveningContainer);
+      void mountBlockCard(morningContainer, "1", date, () => {
+        void mountBlockCard(eveningContainer, "2", date);
+      });
     }
   } catch (err) {
     root.innerHTML = `<div class="card error">Couldn't load history.</div>`;

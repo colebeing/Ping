@@ -12,8 +12,10 @@ type Step =
  * The live, interactive yes/no + follow-up card for one block, for a given
  * date (defaults to today). Used by Today (the current block) and History
  * (every day shown, so old ones can be filled in too, not just viewed).
+ * `onDone` fires once, the moment this block's category gets picked — lets a
+ * caller react live (e.g. History unlocking Evening once Morning completes).
  */
-export async function mountBlockCard(container: HTMLElement, block: BlockId, date?: string): Promise<void> {
+export async function mountBlockCard(container: HTMLElement, block: BlockId, date?: string, onDone?: () => void): Promise<void> {
   container.innerHTML = `<div class="card">Loading…</div>`;
   try {
     const q = await api.getQuestion(block, date);
@@ -30,6 +32,7 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
       step = { kind: "followup", answer: q.existingAnswer.answer, variant: res.followup.variant, prompt: res.followup };
     } else {
       step = { kind: "done", answer: q.existingAnswer.answer, category: q.existingAnswer.category };
+      onDone?.();
     }
 
     const paint = () => {
@@ -94,6 +97,7 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
       await api.followup(block, category, date);
       step = { kind: "done", answer: current.answer, category };
       paint();
+      onDone?.();
     };
 
     paint();
