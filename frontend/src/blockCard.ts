@@ -107,7 +107,7 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
   }
 }
 
-function button(text: string, className: string, onClick: () => void): HTMLButtonElement {
+export function button(text: string, className: string, onClick: () => void): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.className = className;
   btn.textContent = text;
