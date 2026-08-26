@@ -27,12 +27,18 @@ export const DEFAULT_CONFIG: AppConfig = {
   blocks: {
     "1": { question: { when: "today start", how: "how you wanted" }, ...SHARED_FOLLOWUPS },
     "2": { question: { when: "today end", how: "how you wanted" }, ...SHARED_FOLLOWUPS },
+    // The once-daily question. Same WHAT/WHY content as block 1 (mirrored on
+    // every admin save, same convention as block 2) — only its own WHEN slot differs.
+    combined: { question: { when: "today go", how: "how you wanted" }, ...SHARED_FOLLOWUPS },
   },
 };
 
 export async function getConfig(env: Env): Promise<AppConfig> {
-  const stored = await env.CONFIG_KV.get("config", "json");
-  return (stored as AppConfig | null) ?? DEFAULT_CONFIG;
+  const stored = await env.CONFIG_KV.get<AppConfig>("config", "json");
+  if (!stored) return DEFAULT_CONFIG;
+  // Backfill for config saved before the "combined" block existed.
+  if (!stored.blocks.combined) stored.blocks.combined = DEFAULT_CONFIG.blocks.combined;
+  return stored;
 }
 
 // Kept in separate KV keys from "config" (question content) on purpose: the

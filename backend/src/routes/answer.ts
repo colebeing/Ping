@@ -1,4 +1,4 @@
-import type { Answer, AnswerRecord, BlockId, Category, Env, FollowupVariant } from "../types";
+import { isBlockId, type Answer, type AnswerRecord, type BlockId, type Category, type Env, type FollowupVariant } from "../types";
 import { errorResponse, json, readJson } from "../http";
 import { getState, saveState, resolveDate } from "../state";
 import { getConfig, getTriggerConfig, getRecommendationCopy } from "../config";
@@ -19,8 +19,8 @@ function determineVariant(state: Awaited<ReturnType<typeof getState>>, block: Bl
 
 export async function handleAnswer(request: Request, env: Env, userId: string): Promise<Response> {
   const body = await readJson<AnswerBody>(request);
-  if ((body.block !== "1" && body.block !== "2") || (body.answer !== "yes" && body.answer !== "no")) {
-    return errorResponse("block must be 1 or 2 and answer must be 'yes' or 'no'", 400);
+  if (!isBlockId(body.block) || (body.answer !== "yes" && body.answer !== "no")) {
+    return errorResponse("block must be 1, 2, or combined, and answer must be 'yes' or 'no'", 400);
   }
 
   const state = await getState(env, userId);
@@ -53,8 +53,8 @@ interface FollowupBody {
 
 export async function handleFollowup(request: Request, env: Env, userId: string): Promise<Response> {
   const body = await readJson<FollowupBody>(request);
-  if (body.block !== "1" && body.block !== "2") {
-    return errorResponse("block must be 1 or 2", 400);
+  if (!isBlockId(body.block)) {
+    return errorResponse("block must be 1, 2, or combined", 400);
   }
   if (!["friends", "work", "home", "capacity"].includes(body.category)) {
     return errorResponse("invalid category", 400);

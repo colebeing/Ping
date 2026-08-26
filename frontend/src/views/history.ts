@@ -1,4 +1,4 @@
-import { api, type Answer, type Category, type FollowupPrompt, type FollowupVariant } from "../api";
+import { api, type Answer, type Category, type FollowupPrompt, type FollowupVariant, type Frequency } from "../api";
 import { mountBlockCard, button, BLOCK_LABEL, CATEGORY_LABEL } from "../blockCard";
 
 const DAYS_SHOWN = 14;
@@ -112,18 +112,35 @@ async function renderCollapsedDay(container: HTMLElement, date: string): Promise
   }
 }
 
-async function renderDay(container: HTMLElement, date: string, isToday: boolean): Promise<void> {
-  if (isToday) {
+/**
+ * Each day's mode is decided by whatever data it actually has, not by the
+ * account's current setting — that's what lets some days in History be
+ * Twice Daily and others Once Daily as the setting changes over time. Only
+ * a fully blank day falls back to the current setting, since there's
+ * nothing else to go on for it.
+ */
+async function renderDay(container: HTMLElement, date: string, isToday: boolean, currentFrequency: Frequency): Promise<void> {
+  container.innerHTML = `<div class="card">Loading…</div>`;
+
+  const combined = await api.getQuestion("combined", date);
+  if (combined.existingAnswer) {
+    void mountBlockCard(container, "combined", date);
+    return;
+  }
+
+  const [morning, evening] = await Promise.all([api.getQuestion("1", date), api.getQuestion("2", date)]);
+  if (morning.existingAnswer || evening.existingAnswer) {
     renderTwoBlocks(container, date);
     return;
   }
 
-  container.innerHTML = `<div class="card">Loading…</div>`;
-  const [morning, evening] = await Promise.all([api.getQuestion("1", date), api.getQuestion("2", date)]);
-  if (!morning.existingAnswer && !evening.existingAnswer) {
-    void renderCollapsedDay(container, date);
-  } else {
+  // Fully blank — nothing to preserve, so use whichever mode is active now.
+  if (currentFrequency === "once") {
+    void mountBlockCard(container, "combined", date);
+  } else if (isToday) {
     renderTwoBlocks(container, date);
+  } else {
+    void renderCollapsedDay(container, date);
   }
 }
 
@@ -149,7 +166,7 @@ export async function renderHistory(root: HTMLElement): Promise<void> {
 
       const dayContainer = document.createElement("div");
       root.appendChild(dayContainer);
-      void renderDay(dayContainer, date, date === today);
+      void renderDay(dayContainer, date, date === today, me.cadence.frequency);
     }
   } catch (err) {
     root.innerHTML = `<div class="card error">Couldn't load history.</div>`;

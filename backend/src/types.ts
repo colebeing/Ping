@@ -20,7 +20,14 @@ export const DOMAIN_NEED_MAP: Record<Category, NeedQuadrant[]> = {
   capacity: ["be", "become", "believe", "belong"],
 };
 
-export type BlockId = "1" | "2";
+/** "combined" is the single once-daily question — a real third block, not block "1" or "2" repurposed, so it keeps its own history/streaks/escalation independent of whichever twice-daily blocks it isn't currently replacing. */
+export type BlockId = "1" | "2" | "combined";
+export const TWICE_DAILY_BLOCKS: BlockId[] = ["1", "2"];
+export const ALL_BLOCKS: BlockId[] = ["1", "2", "combined"];
+export function isBlockId(value: unknown): value is BlockId {
+  return value === "1" || value === "2" || value === "combined";
+}
+export type Frequency = "twice" | "once";
 export type Answer = "yes" | "no";
 export type FollowupVariant = "what" | "why"; // "a" / "b" in path notation
 
@@ -104,9 +111,10 @@ export interface PushSubscriptionJSON {
 }
 
 export interface Cadence {
-  block1: string; // "HH:MM" 24h, user-local
+  block1: string; // "HH:MM" 24h, user-local — also "the" check-in time when frequency is "once"
   block2: string;
   timezone: string; // IANA tz name
+  frequency: Frequency;
 }
 
 export interface UserState {

@@ -1,6 +1,6 @@
 import { api, type Answer, type BlockId, type Category, type FollowupPrompt, type FollowupVariant } from "./api";
 
-export const BLOCK_LABEL: Record<BlockId, string> = { "1": "Morning", "2": "Evening" };
+export const BLOCK_LABEL: Record<BlockId, string> = { "1": "Morning", "2": "Evening", combined: "Today" };
 export const CATEGORY_LABEL: Record<Category, string> = { friends: "Friends", work: "Work", home: "Home", capacity: "Capacity" };
 
 type Step =
@@ -97,10 +97,9 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
         badge.className = `answer-badge answered-${step.answer}`;
         badge.textContent = step.answer === "yes" ? "Yes" : "No";
         answerRow.appendChild(badge);
-        card.appendChild(answerRow);
 
         if (step.followupPrompt) {
-          const followupLine = document.createElement("p");
+          const followupLine = document.createElement("span");
           followupLine.className = "followup-line";
           const fq = document.createElement("span");
           fq.className = "followup-q";
@@ -108,8 +107,10 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
           const fa = document.createElement("strong");
           fa.textContent = step.optionLabel;
           followupLine.append(fq, " ", fa);
-          card.appendChild(followupLine);
+          answerRow.appendChild(followupLine);
         }
+
+        card.appendChild(answerRow);
       }
 
       container.innerHTML = "";

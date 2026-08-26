@@ -8,7 +8,7 @@ export function defaultState(): UserState {
     activeOverrides: {},
     retiredOverrides: [],
     pendingRecommendations: [],
-    cadence: { block1: "11:00", block2: "23:00", timezone: "UTC" },
+    cadence: { block1: "11:00", block2: "23:00", timezone: "UTC", frequency: "twice" },
     pushSubscriptions: [],
     lastNotified: {},
   };
@@ -16,7 +16,10 @@ export function defaultState(): UserState {
 
 export async function getState(env: Env, userId: string): Promise<UserState> {
   const stored = await env.STATE_KV.get<UserState>(`state:${userId}`, "json");
-  return stored ?? defaultState();
+  if (!stored) return defaultState();
+  // Backfills for state saved before a field existed.
+  if (!stored.cadence.frequency) stored.cadence.frequency = "twice";
+  return stored;
 }
 
 export async function saveState(env: Env, userId: string, state: UserState): Promise<void> {

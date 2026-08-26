@@ -30,11 +30,13 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
       saveBtn.textContent = "Saving…";
       saveBtn.setAttribute("disabled", "true");
       try {
-        // Morning and Evening only ever differ by their WHEN slot — keep
-        // Evening's HOW/follow-up content mirrored to Morning's on save, in
-        // case they'd drifted apart before this UI stopped allowing that.
+        // Morning, Evening, and the once-daily question only ever differ by
+        // their WHEN slot — keep the other two mirrored to Morning's content
+        // on save, in case they'd drifted apart before this UI stopped allowing that.
         const eveningWhen = config.blocks["2"].question.when;
+        const combinedWhen = config.blocks.combined.question.when;
         config.blocks["2"] = { ...JSON.parse(JSON.stringify(config.blocks["1"])), question: { ...config.blocks["1"].question, when: eveningWhen } };
+        config.blocks.combined = { ...JSON.parse(JSON.stringify(config.blocks["1"])), question: { ...config.blocks["1"].question, when: combinedWhen } };
 
         await api.saveAdminConfig(config);
         status.textContent = "Saved.";
@@ -62,16 +64,18 @@ function renderQuestionSection(config: AdminConfig): HTMLElement {
 
   const note = document.createElement("p");
   note.className = "muted";
-  note.textContent = "Morning and Evening ask the same question and follow-ups — only the WHEN slot differs between them.";
+  note.textContent = "Morning, Evening, and the Once Daily question all ask the same thing and share follow-ups — only each one's WHEN slot differs.";
   card.appendChild(note);
 
-  // Morning's content is the shared source of truth; Evening keeps its own WHEN only (mirrored on save).
+  // Morning's content is the shared source of truth; the other two keep their own WHEN only (mirrored on save).
   const content = config.blocks["1"];
 
   card.appendChild(fieldLabel('Morning WHEN slot (e.g. "today start")'));
   card.appendChild(textInput(content.question.when, (v) => (content.question.when = v)));
   card.appendChild(fieldLabel('Evening WHEN slot (e.g. "today end")'));
   card.appendChild(textInput(config.blocks["2"].question.when, (v) => (config.blocks["2"].question.when = v)));
+  card.appendChild(fieldLabel('Once Daily WHEN slot (e.g. "today go")'));
+  card.appendChild(textInput(config.blocks.combined.question.when, (v) => (config.blocks.combined.question.when = v)));
 
   card.appendChild(fieldLabel('HOW slot (e.g. "how you wanted")'));
   card.appendChild(textInput(content.question.how, (v) => (content.question.how = v)));

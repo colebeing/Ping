@@ -206,6 +206,9 @@ input[type="text"] {
 
 .answer-row {
   margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .answer-badge {
@@ -227,9 +230,13 @@ input[type="text"] {
 }
 
 .followup-line {
-  margin: 8px 0 0;
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .followup-line .followup-q {

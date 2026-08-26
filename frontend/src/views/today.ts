@@ -40,7 +40,7 @@ export async function renderToday(root: HTMLElement): Promise<void> {
   let block: BlockId = "1";
   try {
     const me = await api.me();
-    block = currentBlock(me.cadence);
+    block = me.cadence.frequency === "once" ? "combined" : currentBlock(me.cadence);
   } catch {
     // fall through with block "1" — mountBlockCard's own error handling covers a real auth failure
   }

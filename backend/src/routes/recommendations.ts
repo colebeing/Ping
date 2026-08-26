@@ -1,4 +1,4 @@
-import type { Env } from "../types";
+import type { Env, Frequency } from "../types";
 import { errorResponse, json, readJson } from "../http";
 import { getState, saveState } from "../state";
 import { acceptRecommendation } from "../recommendations";
@@ -21,6 +21,7 @@ interface CadenceBody {
   block1?: string;
   block2?: string;
   timezone?: string;
+  frequency?: Frequency;
 }
 
 export async function handleUpdateCadence(request: Request, env: Env, userId: string): Promise<Response> {
@@ -29,6 +30,7 @@ export async function handleUpdateCadence(request: Request, env: Env, userId: st
   if (body.block1) state.cadence.block1 = body.block1;
   if (body.block2) state.cadence.block2 = body.block2;
   if (body.timezone) state.cadence.timezone = body.timezone;
+  if (body.frequency === "once" || body.frequency === "twice") state.cadence.frequency = body.frequency;
   await saveState(env, userId, state);
   await scheduleUserPush(env, userId);
   return json({ cadence: state.cadence });

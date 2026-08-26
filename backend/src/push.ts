@@ -1,6 +1,15 @@
 import { buildPushPayload, type PushMessage, type PushSubscription as WebPushSubscription, type VapidKeys } from "@block65/webcrypto-web-push";
-import type { BlockId, Env, PushSubscriptionJSON } from "./types";
+import type { BlockId, Cadence, Env, PushSubscriptionJSON } from "./types";
 import { getState, saveState, todayLocal } from "./state";
+
+/** Which block(s) are actually live for this user's current cadence, and what time each is due. "once" collapses to a single "combined" block using block1's time slot. */
+function activeBlockTimes(cadence: Cadence): { block: BlockId; time: string }[] {
+  if (cadence.frequency === "once") return [{ block: "combined", time: cadence.block1 }];
+  return [
+    { block: "1", time: cadence.block1 },
+    { block: "2", time: cadence.block2 },
+  ];
+}
 
 function vapidKeys(env: Env): VapidKeys | null {
   if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT) return null;
@@ -23,6 +32,7 @@ export async function sendPush(env: Env, subscription: PushSubscriptionJSON, mes
 const BLOCK_PROMPTS: Record<BlockId, string> = {
   "1": "Did today start how you wanted?",
   "2": "Did today end how you wanted?",
+  combined: "Did today go how you wanted?",
 };
 
 function blockPushBody(state: Awaited<ReturnType<typeof getState>>, block: BlockId): string {
@@ -51,10 +61,9 @@ export async function checkAndNotifyUser(env: Env, userId: string): Promise<void
   const today = todayLocal(state.cadence.timezone);
   let changed = false;
 
-  for (const block of ["1", "2"] as BlockId[]) {
-    const cadenceTime = block === "1" ? state.cadence.block1 : state.cadence.block2;
+  for (const { block, time } of activeBlockTimes(state.cadence)) {
     if (state.lastNotified[block] === today) continue;
-    if (!isDueNow(cadenceTime, state.cadence.timezone)) continue;
+    if (!isDueNow(time, state.cadence.timezone)) continue;
 
     await sendBlockPush(env, state, block);
     state.lastNotified[block] = today;
@@ -79,10 +88,7 @@ export async function computeNextAlarmTime(env: Env, userId: string): Promise<nu
   if (state.pushSubscriptions.length === 0) return null;
 
   const now = new Date();
-  const times = (["1", "2"] as BlockId[]).map((block) => {
-    const cadenceTime = block === "1" ? state.cadence.block1 : state.cadence.block2;
-    return nextOccurrence(cadenceTime, state.cadence.timezone, now);
-  });
+  const times = activeBlockTimes(state.cadence).map(({ time }) => nextOccurrence(time, state.cadence.timezone, now));
   return Math.min(...times.map((d) => d.getTime()));
 }
 

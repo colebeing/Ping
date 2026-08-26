@@ -121,9 +121,11 @@ function renderAnswerBalance(data: AnalyticsResponse): HTMLElement {
   h.textContent = "Yes / No balance";
   card.appendChild(h);
 
-  for (const block of ["1", "2"] as BlockId[]) {
+  for (const block of ["1", "2", "combined"] as BlockId[]) {
     const { yes, no } = data.answerBalance[block];
-    const total = Math.max(1, yes + no);
+    const total = yes + no;
+    if (total === 0) continue; // e.g. no once-daily history yet
+    const totalForBar = Math.max(1, total);
 
     const label = document.createElement("p");
     label.className = "muted";
@@ -131,8 +133,8 @@ function renderAnswerBalance(data: AnalyticsResponse): HTMLElement {
     label.textContent = BLOCK_LABEL[block];
     card.appendChild(label);
 
-    card.appendChild(barRow("Yes", yes, total));
-    card.appendChild(barRow("No", no, total, "no"));
+    card.appendChild(barRow("Yes", yes, totalForBar));
+    card.appendChild(barRow("No", no, totalForBar, "no"));
   }
   return card;
 }

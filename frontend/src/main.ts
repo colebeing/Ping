@@ -52,10 +52,25 @@ function showApp(isAdmin: boolean): void {
   tabs.className = "tabs";
   document.body.appendChild(tabs);
 
-  let active: Tab = "today";
+  const tabDefs: { id: Tab; label: string }[] = [
+    { id: "today", label: "Today" },
+    { id: "history", label: "History" },
+    { id: "settings", label: "Settings" },
+  ];
+  if (isAdmin) tabDefs.push({ id: "analytics", label: "Analytics" }, { id: "admin", label: "Admin" });
+  const validTabs = tabDefs.map((d) => d.id);
+
+  // Stay on the tab across a refresh by round-tripping it through the URL hash.
+  const tabFromHash = (): Tab => {
+    const h = location.hash.slice(1);
+    return (validTabs as string[]).includes(h) ? (h as Tab) : "today";
+  };
+
+  let active: Tab = tabFromHash();
 
   goToToday = () => {
     active = "today";
+    location.hash = "today";
     renderActive();
   };
 
@@ -73,12 +88,13 @@ function showApp(isAdmin: boolean): void {
     }
   };
 
-  const tabDefs: { id: Tab; label: string }[] = [
-    { id: "today", label: "Today" },
-    { id: "history", label: "History" },
-    { id: "settings", label: "Settings" },
-  ];
-  if (isAdmin) tabDefs.push({ id: "analytics", label: "Analytics" }, { id: "admin", label: "Admin" });
+  window.addEventListener("hashchange", () => {
+    const next = tabFromHash();
+    if (next !== active) {
+      active = next;
+      renderActive();
+    }
+  });
 
   for (const def of tabDefs) {
     const btn = document.createElement("button");
@@ -86,6 +102,7 @@ function showApp(isAdmin: boolean): void {
     btn.textContent = def.label;
     btn.addEventListener("click", () => {
       active = def.id;
+      location.hash = def.id;
       renderActive();
     });
     tabs.appendChild(btn);

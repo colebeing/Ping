@@ -52,7 +52,11 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
   const cutoff30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
 
   const categoryTotals: Record<Category, number> = { friends: 0, work: 0, home: 0, capacity: 0 };
-  const answerBalance: Record<BlockId, { yes: number; no: number }> = { "1": { yes: 0, no: 0 }, "2": { yes: 0, no: 0 } };
+  const answerBalance: Record<BlockId, { yes: number; no: number }> = {
+    "1": { yes: 0, no: 0 },
+    "2": { yes: 0, no: 0 },
+    combined: { yes: 0, no: 0 },
+  };
   const dailyCounts = new Map<string, number>();
   const users: AnalyticsUserSummary[] = [];
   let answerCount = 0;

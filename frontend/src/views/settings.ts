@@ -26,13 +26,32 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
 
     const cadenceCard = document.createElement("div");
     cadenceCard.className = "card";
-    cadenceCard.innerHTML = `<h3>Check-in times</h3>`;
+
+    const cadenceHeader = document.createElement("div");
+    cadenceHeader.style.display = "flex";
+    cadenceHeader.style.alignItems = "center";
+    cadenceHeader.style.justifyContent = "space-between";
+    cadenceHeader.style.gap = "10px";
+    const cadenceHeading = document.createElement("h3");
+    cadenceHeading.style.margin = "0";
+    cadenceHeading.textContent = "Check-in times";
+    const frequencySelect = document.createElement("select");
+    for (const [value, label] of [["twice", "Twice Daily"], ["once", "Once Daily"]] as const) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = label;
+      frequencySelect.appendChild(opt);
+    }
+    frequencySelect.value = me.cadence.frequency;
+    cadenceHeader.append(cadenceHeading, frequencySelect);
+    cadenceCard.appendChild(cadenceHeader);
+
     const form = document.createElement("div");
     form.className = "form";
+    form.style.marginTop = "10px";
 
     const block1Label = document.createElement("label");
     block1Label.className = "muted";
-    block1Label.textContent = "Morning block";
     const block1Input = document.createElement("input");
     block1Input.type = "time";
     block1Input.value = me.cadence.block1;
@@ -44,6 +63,15 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
     block2Input.type = "time";
     block2Input.value = me.cadence.block2;
 
+    const updateLabelsForFrequency = () => {
+      const isOnce = frequencySelect.value === "once";
+      block1Label.textContent = isOnce ? "Check-in time" : "Morning block";
+      block2Label.style.display = isOnce ? "none" : "block";
+      block2Input.style.display = isOnce ? "none" : "block";
+    };
+    frequencySelect.addEventListener("change", updateLabelsForFrequency);
+    updateLabelsForFrequency();
+
     const save = document.createElement("button");
     save.className = "btn btn-primary";
     save.textContent = "Save";
@@ -53,6 +81,7 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
         block1: block1Input.value,
         block2: block2Input.value,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        frequency: frequencySelect.value === "once" ? "once" : "twice",
       });
       save.textContent = "Saved";
       setTimeout(() => (save.textContent = "Save"), 1200);
@@ -81,7 +110,7 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
     testRow.className = "btn-row";
     const testStatus = document.createElement("p");
     testStatus.className = "muted";
-    const testBtn = (label: string, block: "1" | "2") => {
+    const testBtn = (label: string, block: "1" | "2" | "combined") => {
       const btn = document.createElement("button");
       btn.className = "btn";
       btn.textContent = label;
@@ -96,7 +125,11 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
       });
       return btn;
     };
-    testRow.append(testBtn("Test morning", "1"), testBtn("Test evening", "2"));
+    if (me.cadence.frequency === "once") {
+      testRow.append(testBtn("Test check-in", "combined"));
+    } else {
+      testRow.append(testBtn("Test morning", "1"), testBtn("Test evening", "2"));
+    }
     pushCard.appendChild(testRow);
     pushCard.appendChild(testStatus);
 

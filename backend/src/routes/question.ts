@@ -1,4 +1,4 @@
-import type { BlockId, Env } from "../types";
+import { isBlockId, type Env } from "../types";
 import { errorResponse, json } from "../http";
 import { getState, saveState, todayLocal, resolveDate } from "../state";
 import { getConfig, getTriggerConfig } from "../config";
@@ -7,7 +7,7 @@ import { checkRetirement } from "../recommendations";
 export async function handleGetQuestion(request: Request, env: Env, userId: string): Promise<Response> {
   const url = new URL(request.url);
   const block = url.searchParams.get("block");
-  if (block !== "1" && block !== "2") return errorResponse("block must be 1 or 2", 400);
+  if (!isBlockId(block)) return errorResponse("block must be 1, 2, or combined", 400);
 
   const state = await getState(env, userId);
   const today = todayLocal(state.cadence.timezone);
@@ -19,9 +19,9 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
   if (JSON.stringify(state.activeOverrides) !== before) await saveState(env, userId, state);
 
   const config = await getConfig(env);
-  const override = state.activeOverrides[block as BlockId];
-  const when = override?.when ?? config.blocks[block as BlockId].question.when;
-  const how = override?.how ?? config.blocks[block as BlockId].question.how;
+  const override = state.activeOverrides[block];
+  const when = override?.when ?? config.blocks[block].question.when;
+  const how = override?.how ?? config.blocks[block].question.how;
   // For a day that isn't actually today (History looking back), "today" in
   // the question text is ambiguous — say "the day" instead to disambiguate.
   const whenText = date === today ? when : when.replace(/\btoday\b/, "the day");
@@ -29,7 +29,7 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
   const existingAnswer = state.answers.find((a) => a.date === date && a.block === block);
   let followup: { prompt: string; optionLabel: string } | undefined;
   if (existingAnswer?.variant && existingAnswer.category) {
-    const content = config.blocks[block as BlockId][existingAnswer.answer][existingAnswer.variant];
+    const content = config.blocks[block][existingAnswer.answer][existingAnswer.variant];
     followup = { prompt: content.prompt, optionLabel: content.options[existingAnswer.category] };
   }
 
