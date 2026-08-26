@@ -25,19 +25,18 @@ export interface AnswerResponse {
   followup: { variant: FollowupVariant } & FollowupPrompt;
 }
 
-export interface Recommendation {
-  id: string;
-  block: BlockId;
-  category: Category;
-  valence: "amplify" | "resolve";
-  suggestedHow: string;
-  createdAt: string;
-}
-
 export interface Cadence {
   block1: string;
   block2: string;
   timezone: string;
+}
+
+export interface HistoryAnswer {
+  date: string;
+  block: BlockId;
+  answer: Answer;
+  variant?: FollowupVariant;
+  category?: Category;
 }
 
 class ApiError extends Error {
@@ -80,14 +79,12 @@ export const api = {
   answer: (block: BlockId, answer: Answer) =>
     request<AnswerResponse>("/api/answer", { method: "POST", body: JSON.stringify({ block, answer }) }),
   followup: (block: BlockId, category: Category) =>
-    request<{ pendingRecommendations: Recommendation[] }>("/api/followup", {
+    request<{ ok: true }>("/api/followup", {
       method: "POST",
       body: JSON.stringify({ block, category }),
     }),
 
-  listRecommendations: () =>
-    request<{ pending: Recommendation[]; active: Partial<Record<BlockId, unknown>> }>("/api/recommendations"),
-  acceptRecommendation: (id: string) => request(`/api/recommendations/${id}/accept`, { method: "POST" }),
+  getHistory: () => request<{ answers: HistoryAnswer[]; cadence: Cadence }>("/api/history"),
 
   updateCadence: (cadence: Partial<Cadence>) =>
     request<{ cadence: Cadence }>("/api/cadence", { method: "POST", body: JSON.stringify(cadence) }),

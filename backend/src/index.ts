@@ -8,6 +8,7 @@ import { handleAnswer, handleFollowup } from "./routes/answer";
 import { handleListRecommendations, handleAcceptRecommendation, handleUpdateCadence } from "./routes/recommendations";
 import { handleSubscribe, handleGetVapidPublicKey, handleTestPush } from "./routes/push";
 import { handleCreateInvite } from "./routes/invite";
+import { handleGetHistory } from "./routes/history";
 import { PushScheduler } from "./scheduler";
 
 export { PushScheduler };
@@ -45,6 +46,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === "/api/push/subscribe" && method === "POST") return handleSubscribe(request, env, userId);
   if (pathname === "/api/push/test" && method === "POST") return handleTestPush(request, env, userId);
   if (pathname === "/api/invite" && method === "POST") return handleCreateInvite(request, env, userId);
+  if (pathname === "/api/history" && method === "GET") return handleGetHistory(request, env, userId);
 
   const acceptMatch = pathname.match(/^\/api\/recommendations\/([^/]+)\/accept$/);
   if (acceptMatch && method === "POST") return handleAcceptRecommendation(request, env, userId, acceptMatch[1]);

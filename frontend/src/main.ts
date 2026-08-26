@@ -2,9 +2,8 @@ import "./style.css";
 import { api } from "./api";
 import { renderAuth } from "./views/auth";
 import { renderToday } from "./views/today";
-import { renderRecommendations } from "./views/recommendations";
+import { renderHistory } from "./views/history";
 import { renderSettings } from "./views/settings";
-import type { Recommendation } from "./api";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -20,7 +19,7 @@ if ("serviceWorker" in navigator) {
 
 let goToToday: (() => void) | null = null;
 
-type Tab = "today" | "recommendations" | "settings";
+type Tab = "today" | "history" | "settings";
 
 const app = document.getElementById("app");
 if (!app) throw new Error("Missing #app root element");
@@ -42,10 +41,8 @@ function showAuth(): void {
 
 function showApp(): void {
   app!.innerHTML = "";
-
-  const banner = document.createElement("div");
   const content = document.createElement("div");
-  app!.append(banner, content);
+  app!.appendChild(content);
 
   const tabs = document.createElement("nav");
   tabs.className = "tabs";
@@ -59,8 +56,8 @@ function showApp(): void {
   };
 
   const renderActive = () => {
-    if (active === "today") void renderToday(content, handleRecommendations);
-    else if (active === "recommendations") void renderRecommendations(content);
+    if (active === "today") void renderToday(content);
+    else if (active === "history") void renderHistory(content);
     else void renderSettings(content, () => {
       tabs.remove();
       showAuth();
@@ -72,7 +69,7 @@ function showApp(): void {
 
   const tabDefs: { id: Tab; label: string }[] = [
     { id: "today", label: "Today" },
-    { id: "recommendations", label: "Suggestions" },
+    { id: "history", label: "History" },
     { id: "settings", label: "Settings" },
   ];
   for (const def of tabDefs) {
@@ -84,15 +81,6 @@ function showApp(): void {
       renderActive();
     });
     tabs.appendChild(btn);
-  }
-
-  function handleRecommendations(recs: Recommendation[]): void {
-    if (recs.length === 0) return;
-    banner.innerHTML = "";
-    const el = document.createElement("div");
-    el.className = "banner";
-    el.innerHTML = `<strong>New suggestion available</strong><p class="muted">Check the Suggestions tab.</p>`;
-    banner.appendChild(el);
   }
 
   renderActive();
