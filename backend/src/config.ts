@@ -8,19 +8,13 @@ function prompt(text: string, options: Record<string, string>): FollowupPrompt {
   return { prompt: text, options: options as FollowupPrompt["options"] };
 }
 
-const CATEGORY_OPTIONS = { friends: "Friends", work: "Work", home: "Home", capacity: "Capacity" };
+const CATEGORY_OPTIONS = { friends: "Friends", colleagues: "Colleagues", family: "Family", me: "Me" };
 
-// Same WHAT/WHY content serves both blocks — only the base question's WHEN
-// slot ("today start" vs "today end") differs between morning and evening.
+// Same WHY content serves both blocks — only the base question's WHEN slot
+// ("today start" vs "today end") differs between morning and evening.
 const SHARED_FOLLOWUPS: Pick<BlockContent, "yes" | "no"> = {
-  yes: {
-    what: prompt("What did you want that you got?", CATEGORY_OPTIONS),
-    why: prompt("What got you what you want?", CATEGORY_OPTIONS),
-  },
-  no: {
-    what: prompt("What had to move?", CATEGORY_OPTIONS),
-    why: prompt("What got in the way?", CATEGORY_OPTIONS),
-  },
+  yes: prompt("Who made it work?", CATEGORY_OPTIONS),
+  no: prompt("Who had to move?", CATEGORY_OPTIONS),
 };
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -55,15 +49,15 @@ export const DEFAULT_TRIGGERS: TriggerConfig = {
 export const DEFAULT_RECOMMENDATION_COPY: RecommendationCopy = {
   amplify: {
     friends: "protect friend time today",
-    work: "protect focused work time today",
-    home: "protect home time today",
-    capacity: "protect recovery time today",
+    colleagues: "lean on your colleagues today",
+    family: "protect family time today",
+    me: "protect time for yourself today",
   },
   resolve: {
     friends: "make space for friends today",
-    work: "get ahead of work stress today",
-    home: "get on top of home stuff today",
-    capacity: "protect your energy today",
+    colleagues: "get ahead of what colleagues need today",
+    family: "make space for family today",
+    me: "protect your own time today",
   },
 };
 

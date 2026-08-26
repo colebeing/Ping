@@ -64,7 +64,7 @@ function renderQuestionSection(config: AdminConfig): HTMLElement {
 
   const note = document.createElement("p");
   note.className = "muted";
-  note.textContent = "Morning, Evening, and the Once Daily question all ask the same thing and share follow-ups — only each one's WHEN slot differs.";
+  note.textContent = "Morning, Evening, and the Once Daily question all ask the same thing and share the WHY follow-up — only each one's WHEN slot differs.";
   card.appendChild(note);
 
   // Morning's content is the shared source of truth; the other two keep their own WHEN only (mirrored on save).
@@ -81,9 +81,7 @@ function renderQuestionSection(config: AdminConfig): HTMLElement {
   card.appendChild(textInput(content.question.how, (v) => (content.question.how = v)));
 
   for (const answer of ["yes", "no"] as const) {
-    for (const variant of ["what", "why"] as const) {
-      card.appendChild(renderFollowupEditor(content[answer][variant], `${answer === "yes" ? "Yes" : "No"} → ${variant.toUpperCase()}`));
-    }
+    card.appendChild(renderFollowupEditor(content[answer], answer === "yes" ? "Yes → WHY" : "No → WHY"));
   }
 
   return card;

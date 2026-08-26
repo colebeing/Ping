@@ -1,11 +1,11 @@
-import { api, type Answer, type BlockId, type Category, type FollowupPrompt, type FollowupVariant } from "./api";
+import { api, type Answer, type BlockId, type Category, type FollowupPrompt } from "./api";
 
 export const BLOCK_LABEL: Record<BlockId, string> = { "1": "Morning", "2": "Evening", combined: "Today" };
-export const CATEGORY_LABEL: Record<Category, string> = { friends: "Friends", work: "Work", home: "Home", capacity: "Capacity" };
+export const CATEGORY_LABEL: Record<Category, string> = { friends: "Friends", colleagues: "Colleagues", family: "Family", me: "Me" };
 
 type Step =
   | { kind: "question" }
-  | { kind: "followup"; answer: Answer; variant: FollowupVariant; prompt: FollowupPrompt }
+  | { kind: "followup"; answer: Answer; prompt: FollowupPrompt }
   | { kind: "done"; answer: Answer; category: Category; followupPrompt: string; optionLabel: string };
 
 /**
@@ -29,7 +29,7 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
       // instead of showing "done". Re-posting the same answer is a safe
       // no-op server-side and hands back the follow-up content we need.
       const res = await api.answer(block, q.existingAnswer.answer, date);
-      step = { kind: "followup", answer: q.existingAnswer.answer, variant: res.followup.variant, prompt: res.followup };
+      step = { kind: "followup", answer: q.existingAnswer.answer, prompt: res.followup };
     } else {
       step = {
         kind: "done",
@@ -119,7 +119,7 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
 
     const submitAnswer = async (answer: Answer) => {
       const res = await api.answer(block, answer, date);
-      step = { kind: "followup", answer, variant: res.followup.variant, prompt: res.followup };
+      step = { kind: "followup", answer, prompt: res.followup };
       paint();
     };
 

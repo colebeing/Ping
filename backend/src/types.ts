@@ -1,23 +1,23 @@
-export type Category = "friends" | "work" | "home" | "capacity";
+export type Category = "friends" | "colleagues" | "family" | "me";
 
-// Path-key letter codes, per spec notation {block}{y/n}{A/B}{category}.
+// Path-key letter codes, per spec notation {block}{y/n}{category}.
 export const CATEGORY_CODE: Record<Category, string> = {
   friends: "a",
-  work: "b",
-  home: "c",
-  capacity: "d",
+  colleagues: "b",
+  family: "c",
+  me: "d",
 };
 
-export const CATEGORIES: Category[] = ["friends", "work", "home", "capacity"];
+export const CATEGORIES: Category[] = ["friends", "colleagues", "family", "me"];
 
 export type NeedQuadrant = "be" | "become" | "believe" | "belong";
 
-// Backend-only. Users never see quadrant names, only domain labels.
+// Backend-only. Users never see quadrant names, only who labels.
 export const DOMAIN_NEED_MAP: Record<Category, NeedQuadrant[]> = {
   friends: ["belong"],
-  work: ["become", "be", "believe", "belong"],
-  home: ["be", "belong"],
-  capacity: ["be", "become", "believe", "belong"],
+  colleagues: ["become", "be", "believe", "belong"],
+  family: ["be", "belong"],
+  me: ["be", "become", "believe", "belong"],
 };
 
 /** "combined" is the single once-daily question — a real third block, not block "1" or "2" repurposed, so it keeps its own history/streaks/escalation independent of whichever twice-daily blocks it isn't currently replacing. */
@@ -29,7 +29,6 @@ export function isBlockId(value: unknown): value is BlockId {
 }
 export type Frequency = "twice" | "once";
 export type Answer = "yes" | "no";
-export type FollowupVariant = "what" | "why"; // "a" / "b" in path notation
 
 export interface QuestionTemplate {
   /** e.g. "today start" — the WHEN slot */
@@ -39,16 +38,17 @@ export interface QuestionTemplate {
 }
 
 export interface FollowupPrompt {
-  /** The follow-up question text itself, e.g. "What happened?" */
+  /** The follow-up question text itself, e.g. "Who made it work?" */
   prompt: string;
   /** Tap-to-select answer option labels, one per category. */
   options: Record<Category, string>;
 }
 
+/** WHY is now the only follow-up (WHAT was dropped) — one prompt per answer valence. */
 export interface BlockContent {
   question: QuestionTemplate;
-  yes: { what: FollowupPrompt; why: FollowupPrompt };
-  no: { what: FollowupPrompt; why: FollowupPrompt };
+  yes: FollowupPrompt;
+  no: FollowupPrompt;
 }
 
 export interface AppConfig {
@@ -56,7 +56,7 @@ export interface AppConfig {
 }
 
 export interface TriggerConfig {
-  /** Same exact path (block+answer+variant+category) repeats this many times → branch trigger. */
+  /** Same exact path (block+answer+category) repeats this many times → branch trigger. */
   exactPathThreshold: number;
   /** Same category hit this many times total across different paths → branch trigger. */
   categoryVolumeThreshold: number;
@@ -91,8 +91,6 @@ export interface AnswerRecord {
   date: string; // YYYY-MM-DD, user-local
   block: BlockId;
   answer: Answer;
-  /** Which follow-up (WHAT or WHY) was asked — alternates across successive same-valence answers for this block. */
-  variant?: FollowupVariant;
   category?: Category;
   timestamp: string; // ISO
 }

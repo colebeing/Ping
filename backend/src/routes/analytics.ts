@@ -51,7 +51,7 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
   const cutoff7 = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
   const cutoff30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
 
-  const categoryTotals: Record<Category, number> = { friends: 0, work: 0, home: 0, capacity: 0 };
+  const categoryTotals: Record<Category, number> = { friends: 0, colleagues: 0, family: 0, me: 0 };
   const answerBalance: Record<BlockId, { yes: number; no: number }> = {
     "1": { yes: 0, no: 0 },
     "2": { yes: 0, no: 0 },
@@ -68,7 +68,7 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
     if (!user) continue;
 
     let lastActive: string | null = null;
-    const catCounts: Record<Category, number> = { friends: 0, work: 0, home: 0, capacity: 0 };
+    const catCounts: Record<Category, number> = { friends: 0, colleagues: 0, family: 0, me: 0 };
 
     for (const a of state.answers) {
       answerCount++;

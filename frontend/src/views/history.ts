@@ -1,4 +1,4 @@
-import { api, type Answer, type Category, type FollowupPrompt, type FollowupVariant, type Frequency } from "../api";
+import { api, type Answer, type Category, type FollowupPrompt, type Frequency } from "../api";
 import { mountBlockCard, button, BLOCK_LABEL, CATEGORY_LABEL } from "../blockCard";
 
 const DAYS_SHOWN = 14;
@@ -51,13 +51,12 @@ function renderTwoBlocks(container: HTMLElement, date: string): void {
 /**
  * For a past day with nothing recorded on either block: one question instead
  * of two. Answering it records the same answer + category on both blocks
- * under the hood (each keeping its own alternation history intact), so once
- * done it reads identically to a normally-answered day.
+ * under the hood, so once done it reads identically to a normally-answered day.
  */
 async function renderCollapsedDay(container: HTMLElement, date: string): Promise<void> {
   container.innerHTML = `<div class="card">Loading…</div>`;
   try {
-    let step: { kind: "question" } | { kind: "followup"; answer: Answer; variant: FollowupVariant; prompt: FollowupPrompt } = {
+    let step: { kind: "question" } | { kind: "followup"; answer: Answer; prompt: FollowupPrompt } = {
       kind: "question",
     };
     let pendingAnswer: Answer = "yes";
@@ -94,7 +93,7 @@ async function renderCollapsedDay(container: HTMLElement, date: string): Promise
     const submitAnswer = async (answer: Answer) => {
       pendingAnswer = answer;
       const res = await api.answer("1", answer, date);
-      step = { kind: "followup", answer, variant: res.followup.variant, prompt: res.followup };
+      step = { kind: "followup", answer, prompt: res.followup };
       paint();
     };
 

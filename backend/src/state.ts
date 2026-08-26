@@ -3,7 +3,7 @@ import type { Env, UserState } from "./types";
 export function defaultState(): UserState {
   return {
     pathCounts: {},
-    categoryCounts: { friends: 0, work: 0, home: 0, capacity: 0 },
+    categoryCounts: { friends: 0, colleagues: 0, family: 0, me: 0 },
     answers: [],
     activeOverrides: {},
     retiredOverrides: [],
@@ -19,6 +19,18 @@ export async function getState(env: Env, userId: string): Promise<UserState> {
   if (!stored) return defaultState();
   // Backfills for state saved before a field existed.
   if (!stored.cadence.frequency) stored.cadence.frequency = "twice";
+  // The WHY follow-up's category set changed (friends/work/home/capacity ->
+  // friends/colleagues/family/me) and WHAT was dropped entirely — old
+  // path/category counts and answer categories are no longer meaningful
+  // under the new scheme, so a stale shape resets all answer history.
+  if (!("colleagues" in stored.categoryCounts)) {
+    stored.categoryCounts = { friends: 0, colleagues: 0, family: 0, me: 0 };
+    stored.pathCounts = {};
+    stored.answers = [];
+    stored.activeOverrides = {};
+    stored.retiredOverrides = [];
+    stored.pendingRecommendations = [];
+  }
   return stored;
 }
 

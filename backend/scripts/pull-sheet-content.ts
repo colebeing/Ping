@@ -4,11 +4,13 @@
 // in the same AppConfig shape src/config.ts's DEFAULT_CONFIG uses.
 //
 // Sheet columns: Path, When, How, Question, Earned By, Variant Type,
-// Response 1-4 (Friends/Work/Home/Capacity option text), R1-4 Tag (parked —
+// Response 1-4 (Friends/Colleagues/Family/Me option text), R1-4 Tag (parked —
 // per-response need-quadrant disambiguation isn't built, see spec), Status, Notes.
 //
-// Only block 1 is drafted; block 2 (evening) reuses the same WHAT/WHY content
-// with only the base question's WHEN slot swapped (start -> end).
+// WHY is the only follow-up now (WHAT was dropped) — expects one row per
+// block valence: path "1y" and "1n". Only block 1 is drafted; block 2
+// (evening) reuses the same WHY content with only the base question's WHEN
+// slot swapped (start -> end).
 import { writeFileSync } from "node:fs";
 
 const SHEET_ID = "1i1l824brm4c23hj704_ItinbBXyDSauM_oQe0Tr-sVw";
@@ -16,7 +18,7 @@ const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?forma
 
 interface FollowupPrompt {
   prompt: string;
-  options: { friends: string; work: string; home: string; capacity: string };
+  options: { friends: string; colleagues: string; family: string; me: string };
 }
 
 function parseCsv(text: string): string[][] {
@@ -98,12 +100,12 @@ async function main() {
     if (!r) throw new Error(`Missing row with Path "${path}"`);
     return {
       prompt: r[iQuestion],
-      options: { friends: r[iR1], work: r[iR2], home: r[iR3], capacity: r[iR4] },
+      options: { friends: r[iR1], colleagues: r[iR2], family: r[iR3], me: r[iR4] },
     };
   }
 
   // Sanity-check the variant-type labels match what we expect at each path.
-  const expectVariant: Record<string, string> = { "1yA": "What", "1yB": "Why", "1nA": "What", "1nB": "Why" };
+  const expectVariant: Record<string, string> = { "1y": "Why", "1n": "Why" };
   for (const [path, expected] of Object.entries(expectVariant)) {
     const actual = byPath.get(path)?.[iVariant];
     if (actual !== expected) {
@@ -112,8 +114,8 @@ async function main() {
   }
 
   const sharedFollowups = {
-    yes: { what: followup("1yA"), why: followup("1yB") },
-    no: { what: followup("1nA"), why: followup("1nB") },
+    yes: followup("1y"),
+    no: followup("1n"),
   };
 
   const config = {

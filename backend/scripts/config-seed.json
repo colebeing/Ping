@@ -6,43 +6,21 @@
         "how": "how you wanted"
       },
       "yes": {
-        "what": {
-          "prompt": "What did you want that you got?",
-          "options": {
-            "friends": "Friends",
-            "work": "Work",
-            "home": "Home",
-            "capacity": "Capacity"
-          }
-        },
-        "why": {
-          "prompt": "What got you what you want?",
-          "options": {
-            "friends": "Friends",
-            "work": "Work",
-            "home": "Home",
-            "capacity": "Capacity"
-          }
+        "prompt": "Who made it work?",
+        "options": {
+          "friends": "Friends",
+          "colleagues": "Colleagues",
+          "family": "Family",
+          "me": "Me"
         }
       },
       "no": {
-        "what": {
-          "prompt": "What had to move?",
-          "options": {
-            "friends": "Friends",
-            "work": "Work",
-            "home": "Home",
-            "capacity": "Capacity"
-          }
-        },
-        "why": {
-          "prompt": "What got in the way?",
-          "options": {
-            "friends": "Friends",
-            "work": "Work",
-            "home": "Home",
-            "capacity": "Capacity"
-          }
+        "prompt": "Who had to move?",
+        "options": {
+          "friends": "Friends",
+          "colleagues": "Colleagues",
+          "family": "Family",
+          "me": "Me"
         }
       }
     },
@@ -52,43 +30,45 @@
         "how": "how you wanted"
       },
       "yes": {
-        "what": {
-          "prompt": "What did you want that you got?",
-          "options": {
-            "friends": "Friends",
-            "work": "Work",
-            "home": "Home",
-            "capacity": "Capacity"
-          }
-        },
-        "why": {
-          "prompt": "What got you what you want?",
-          "options": {
-            "friends": "Friends",
-            "work": "Work",
-            "home": "Home",
-            "capacity": "Capacity"
-          }
+        "prompt": "Who made it work?",
+        "options": {
+          "friends": "Friends",
+          "colleagues": "Colleagues",
+          "family": "Family",
+          "me": "Me"
         }
       },
       "no": {
-        "what": {
-          "prompt": "What had to move?",
-          "options": {
-            "friends": "Friends",
-            "work": "Work",
-            "home": "Home",
-            "capacity": "Capacity"
-          }
-        },
-        "why": {
-          "prompt": "What got in the way?",
-          "options": {
-            "friends": "Friends",
-            "work": "Work",
-            "home": "Home",
-            "capacity": "Capacity"
-          }
+        "prompt": "Who had to move?",
+        "options": {
+          "friends": "Friends",
+          "colleagues": "Colleagues",
+          "family": "Family",
+          "me": "Me"
+        }
+      }
+    },
+    "combined": {
+      "question": {
+        "when": "today go",
+        "how": "how you wanted"
+      },
+      "yes": {
+        "prompt": "Who made it work?",
+        "options": {
+          "friends": "Friends",
+          "colleagues": "Colleagues",
+          "family": "Family",
+          "me": "Me"
+        }
+      },
+      "no": {
+        "prompt": "Who had to move?",
+        "options": {
+          "friends": "Friends",
+          "colleagues": "Colleagues",
+          "family": "Family",
+          "me": "Me"
         }
       }
     }

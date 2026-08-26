@@ -1,11 +1,10 @@
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8787";
 
-export type Category = "friends" | "work" | "home" | "capacity";
+export type Category = "friends" | "colleagues" | "family" | "me";
 /** "combined" is the once-daily question — a real third block with its own history, not a repurposed "1". */
 export type BlockId = "1" | "2" | "combined";
 export type Frequency = "twice" | "once";
 export type Answer = "yes" | "no";
-export type FollowupVariant = "what" | "why";
 
 export interface FollowupPrompt {
   prompt: string;
@@ -20,7 +19,6 @@ export interface QuestionResponse {
   overridden: boolean;
   existingAnswer: {
     answer: Answer;
-    variant?: FollowupVariant;
     category?: Category;
     followup?: { prompt: string; optionLabel: string };
   } | null;
@@ -29,7 +27,7 @@ export interface QuestionResponse {
 export interface AnswerResponse {
   block: BlockId;
   answer: Answer;
-  followup: { variant: FollowupVariant } & FollowupPrompt;
+  followup: FollowupPrompt;
 }
 
 export interface Cadence {
@@ -41,8 +39,8 @@ export interface Cadence {
 
 export interface BlockContent {
   question: { when: string; how: string };
-  yes: { what: FollowupPrompt; why: FollowupPrompt };
-  no: { what: FollowupPrompt; why: FollowupPrompt };
+  yes: FollowupPrompt;
+  no: FollowupPrompt;
 }
 
 export interface TriggerConfig {

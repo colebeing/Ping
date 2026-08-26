@@ -1,10 +1,9 @@
-import { CATEGORY_CODE, type Answer, type BlockId, type BranchEvent, type Category, type FollowupVariant, type TriggerConfig, type UserState } from "./types";
+import { CATEGORY_CODE, type Answer, type BlockId, type BranchEvent, type Category, type TriggerConfig, type UserState } from "./types";
 
-/** Path key per spec notation: {block}{y/n}{A/B}{category}, e.g. "1nAc". */
-export function pathKey(block: BlockId, answer: Answer, variant: FollowupVariant, category: Category): string {
+/** Path key per spec notation: {block}{y/n}{category}, e.g. "1nc". */
+export function pathKey(block: BlockId, answer: Answer, category: Category): string {
   const yn = answer === "yes" ? "y" : "n";
-  const ab = variant === "what" ? "A" : "B";
-  return `${block}${yn}${ab}${CATEGORY_CODE[category]}`;
+  return `${block}${yn}${CATEGORY_CODE[category]}`;
 }
 
 export interface EscalationResult {
@@ -14,19 +13,18 @@ export interface EscalationResult {
 }
 
 /**
- * Records one follow-up selection (one WHAT or one WHY pick) and evaluates
- * both escalation triggers. Mutates `state` in place. Both counters always
- * run and never reset (all-time), regardless of which trigger fires.
+ * Records one follow-up (WHY) category pick and evaluates both escalation
+ * triggers. Mutates `state` in place. Both counters always run and never
+ * reset (all-time), regardless of which trigger fires.
  */
 export function recordFollowupEvent(
   state: UserState,
   block: BlockId,
   answer: Answer,
-  variant: FollowupVariant,
   category: Category,
   thresholds: TriggerConfig,
 ): EscalationResult {
-  const key = pathKey(block, answer, variant, category);
+  const key = pathKey(block, answer, category);
   const newPathCount = (state.pathCounts[key] ?? 0) + 1;
   state.pathCounts[key] = newPathCount;
 
@@ -52,14 +50,8 @@ export function recordFollowupEvent(
  * Undoes a previously recorded follow-up event. Used when a user edits a
  * post-hoc answer/follow-up so counters stay accurate rather than double-counting.
  */
-export function decrementFollowupEvent(
-  state: UserState,
-  block: BlockId,
-  answer: Answer,
-  variant: FollowupVariant,
-  category: Category,
-): void {
-  const key = pathKey(block, answer, variant, category);
+export function decrementFollowupEvent(state: UserState, block: BlockId, answer: Answer, category: Category): void {
+  const key = pathKey(block, answer, category);
   if (state.pathCounts[key]) state.pathCounts[key] = Math.max(0, state.pathCounts[key] - 1);
   if (state.categoryCounts[category]) state.categoryCounts[category] = Math.max(0, state.categoryCounts[category] - 1);
 }
