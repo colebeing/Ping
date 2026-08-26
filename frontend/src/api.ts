@@ -31,6 +31,30 @@ export interface Cadence {
   timezone: string;
 }
 
+export interface BlockContent {
+  question: { when: string; how: string };
+  yes: { what: FollowupPrompt; why: FollowupPrompt };
+  no: { what: FollowupPrompt; why: FollowupPrompt };
+}
+
+export interface TriggerConfig {
+  exactPathThreshold: number;
+  categoryVolumeThreshold: number;
+  streakThreshold: number;
+  retireAfterDays: number;
+}
+
+export interface RecommendationCopy {
+  amplify: Record<Category, string>;
+  resolve: Record<Category, string>;
+}
+
+export interface AdminConfig {
+  blocks: Record<BlockId, BlockContent>;
+  triggers: TriggerConfig;
+  recommendationCopy: RecommendationCopy;
+}
+
 class ApiError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -58,7 +82,7 @@ export const api = {
   login: (email: string, password: string) =>
     request<{ email: string }>("/api/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   logout: () => request<{ ok: true }>("/api/logout", { method: "POST" }),
-  me: () => request<{ email: string; cadence: Cadence; pushSubscriptionCount: number }>("/api/me"),
+  me: () => request<{ email: string; cadence: Cadence; pushSubscriptionCount: number; isAdmin: boolean }>("/api/me"),
 
   requestPasswordReset: (email: string) =>
     request<{ ok: true }>("/api/password-reset/request", { method: "POST", body: JSON.stringify({ email }) }),
@@ -85,6 +109,10 @@ export const api = {
     request<{ ok: true }>("/api/push/subscribe", { method: "POST", body: JSON.stringify(subscription) }),
   sendTestPush: (block: BlockId) =>
     request<{ ok: true }>("/api/push/test", { method: "POST", body: JSON.stringify({ block }) }),
+
+  getAdminConfig: () => request<AdminConfig>("/api/admin/config"),
+  saveAdminConfig: (config: AdminConfig) =>
+    request<{ ok: true }>("/api/admin/config", { method: "PUT", body: JSON.stringify(config) }),
 };
 
 export { ApiError };

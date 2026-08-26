@@ -1,6 +1,6 @@
 import type { Env } from "./types";
 import { corsHeaders, errorResponse, handlePreflight, HttpError } from "./http";
-import { requireAuth } from "./auth";
+import { requireAuth, isAdmin } from "./auth";
 import { handleSignup, handleLogin, handleLogout, handleRequestPasswordReset, handleConfirmPasswordReset } from "./routes/auth";
 import { handleMe } from "./routes/me";
 import { handleGetQuestion } from "./routes/question";
@@ -8,6 +8,7 @@ import { handleAnswer, handleFollowup } from "./routes/answer";
 import { handleListRecommendations, handleAcceptRecommendation, handleUpdateCadence } from "./routes/recommendations";
 import { handleSubscribe, handleGetVapidPublicKey, handleTestPush } from "./routes/push";
 import { handleCreateInvite } from "./routes/invite";
+import { handleGetAdminConfig, handleSaveAdminConfig } from "./routes/admin";
 import { PushScheduler } from "./scheduler";
 
 export { PushScheduler };
@@ -48,6 +49,12 @@ async function route(request: Request, env: Env): Promise<Response> {
 
   const acceptMatch = pathname.match(/^\/api\/recommendations\/([^/]+)\/accept$/);
   if (acceptMatch && method === "POST") return handleAcceptRecommendation(request, env, userId, acceptMatch[1]);
+
+  if (pathname === "/api/admin/config") {
+    if (!(await isAdmin(env, userId))) return errorResponse("Admin access required", 403);
+    if (method === "GET") return handleGetAdminConfig(request, env);
+    if (method === "PUT") return handleSaveAdminConfig(request, env);
+  }
 
   return errorResponse("Not found", 404);
 }

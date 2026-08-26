@@ -1,22 +1,5 @@
-import type { BlockId, Category, Env, Recommendation, UserState } from "./types";
+import type { BlockId, Category, Env, Recommendation, RecommendationCopy, TriggerConfig, UserState } from "./types";
 import { getConfig } from "./config";
-
-const STREAK_THRESHOLD = 3; // consecutive days — spec says "streaks, not single instances" without a fixed number
-const RETIRE_AFTER_DAYS = 7;
-
-const AMPLIFY_HOW: Record<Category, string> = {
-  friends: "protect friend time today",
-  work: "protect focused work time today",
-  home: "protect home time today",
-  capacity: "protect recovery time today",
-};
-
-const RESOLVE_HOW: Record<Category, string> = {
-  friends: "make space for friends today",
-  work: "get ahead of work stress today",
-  home: "get on top of home stuff today",
-  capacity: "protect your energy today",
-};
 
 function daysBetween(a: string, b: string): number {
   const msPerDay = 24 * 60 * 60 * 1000;
@@ -33,7 +16,7 @@ function isPrevCalendarDay(earlier: string, later: string): boolean {
  * yes-streaks (do more of what's working), resolve for no-streaks —
  * symmetric per spec.
  */
-export function detectStreaks(state: UserState): Recommendation[] {
+export function detectStreaks(state: UserState, thresholds: TriggerConfig, copy: RecommendationCopy): Recommendation[] {
   const newRecs: Recommendation[] = [];
   const blocks: BlockId[] = ["1", "2"];
 
@@ -56,7 +39,7 @@ export function detectStreaks(state: UserState): Recommendation[] {
       }
     }
 
-    if (runLen < STREAK_THRESHOLD) continue;
+    if (runLen < thresholds.streakThreshold) continue;
 
     const valence: "amplify" | "resolve" = runValence === "yes" ? "amplify" : "resolve";
     const alreadyPending = state.pendingRecommendations.some((r) => r.block === block && r.category === runCategory && r.valence === valence);
@@ -68,7 +51,7 @@ export function detectStreaks(state: UserState): Recommendation[] {
       block,
       category: runCategory,
       valence,
-      suggestedHow: (valence === "amplify" ? AMPLIFY_HOW : RESOLVE_HOW)[runCategory],
+      suggestedHow: copy[valence][runCategory],
       createdAt: new Date().toISOString(),
     });
   }
@@ -92,13 +75,13 @@ export async function acceptRecommendation(env: Env, state: UserState, recommend
   return true;
 }
 
-/** Lazily retires a promoted question once its boundary has held for RETIRE_AFTER_DAYS with no "no" answer since acceptance. */
-export function checkRetirement(state: UserState, todayStr: string): void {
+/** Lazily retires a promoted question once its boundary has held for thresholds.retireAfterDays with no "no" answer since acceptance. */
+export function checkRetirement(state: UserState, todayStr: string, thresholds: TriggerConfig): void {
   for (const block of ["1", "2"] as BlockId[]) {
     const override = state.activeOverrides[block];
     if (!override) continue;
     const acceptedDate = override.acceptedAt.slice(0, 10);
-    if (daysBetween(acceptedDate, todayStr) < RETIRE_AFTER_DAYS) continue;
+    if (daysBetween(acceptedDate, todayStr) < thresholds.retireAfterDays) continue;
 
     const heldWithNoSetback = !state.answers.some(
       (a) => a.block === block && a.date >= acceptedDate && a.answer === "no",

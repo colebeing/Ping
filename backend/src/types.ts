@@ -48,6 +48,22 @@ export interface AppConfig {
   blocks: Record<BlockId, BlockContent>;
 }
 
+export interface TriggerConfig {
+  /** Same exact path (block+answer+variant+category) repeats this many times → branch trigger. */
+  exactPathThreshold: number;
+  /** Same category hit this many times total across different paths → branch trigger. */
+  categoryVolumeThreshold: number;
+  /** Consecutive same-category, same-valence days → a recommendation is proposed. */
+  streakThreshold: number;
+  /** Days an accepted recommendation must hold (no "no" answer) before it retires. */
+  retireAfterDays: number;
+}
+
+export interface RecommendationCopy {
+  amplify: Record<Category, string>;
+  resolve: Record<Category, string>;
+}
+
 export interface QuestionOverride {
   when: string;
   how: string;
@@ -111,6 +127,7 @@ export interface UserRecord {
   passwordHash: string;
   salt: string;
   createdAt: string;
+  isAdmin?: boolean;
 }
 
 export interface SessionRecord {

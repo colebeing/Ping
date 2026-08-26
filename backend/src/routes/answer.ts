@@ -1,7 +1,7 @@
 import type { Answer, AnswerRecord, BlockId, Category, Env, FollowupVariant } from "../types";
 import { errorResponse, json, readJson } from "../http";
 import { getState, saveState, resolveDate } from "../state";
-import { getConfig } from "../config";
+import { getConfig, getTriggerConfig, getRecommendationCopy } from "../config";
 import { decrementFollowupEvent, recordFollowupEvent } from "../escalation";
 import { detectStreaks } from "../recommendations";
 
@@ -71,9 +71,10 @@ export async function handleFollowup(request: Request, env: Env, userId: string)
   if (record.category) decrementFollowupEvent(state, record.block, record.answer, record.variant, record.category);
   record.category = body.category;
 
-  const { triggers, primary } = recordFollowupEvent(state, record.block, record.answer, record.variant, body.category);
+  const [thresholds, copy] = await Promise.all([getTriggerConfig(env), getRecommendationCopy(env)]);
+  const { triggers, primary } = recordFollowupEvent(state, record.block, record.answer, record.variant, body.category, thresholds);
 
-  const newRecs = detectStreaks(state);
+  const newRecs = detectStreaks(state, thresholds, copy);
   state.pendingRecommendations.push(...newRecs);
 
   await saveState(env, userId, state);

@@ -1,7 +1,4 @@
-import { CATEGORY_CODE, type Answer, type BlockId, type BranchEvent, type Category, type FollowupVariant, type UserState } from "./types";
-
-const EXACT_PATH_THRESHOLD = 3;
-const CATEGORY_VOLUME_THRESHOLD = 6;
+import { CATEGORY_CODE, type Answer, type BlockId, type BranchEvent, type Category, type FollowupVariant, type TriggerConfig, type UserState } from "./types";
 
 /** Path key per spec notation: {block}{y/n}{A/B}{category}, e.g. "1nAc". */
 export function pathKey(block: BlockId, answer: Answer, variant: FollowupVariant, category: Category): string {
@@ -27,6 +24,7 @@ export function recordFollowupEvent(
   answer: Answer,
   variant: FollowupVariant,
   category: Category,
+  thresholds: TriggerConfig,
 ): EscalationResult {
   const key = pathKey(block, answer, variant, category);
   const newPathCount = (state.pathCounts[key] ?? 0) + 1;
@@ -36,10 +34,10 @@ export function recordFollowupEvent(
   state.categoryCounts[category] = newCategoryCount;
 
   const triggers: BranchEvent[] = [];
-  if (newPathCount === EXACT_PATH_THRESHOLD) {
+  if (newPathCount === thresholds.exactPathThreshold) {
     triggers.push({ kind: "exact-path", pathKey: key, category, count: newPathCount });
   }
-  if (newCategoryCount === CATEGORY_VOLUME_THRESHOLD) {
+  if (newCategoryCount === thresholds.categoryVolumeThreshold) {
     triggers.push({ kind: "category-volume", category, count: newCategoryCount });
   }
 

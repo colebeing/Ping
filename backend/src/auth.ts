@@ -129,3 +129,8 @@ export function getSessionToken(request: Request): string | null {
   const cookies = parseCookies(request.headers.get("Cookie"));
   return cookies[SESSION_COOKIE] ?? null;
 }
+
+export async function isAdmin(env: Env, userId: string): Promise<boolean> {
+  const user = await getUser(env, userId);
+  return user?.isAdmin === true;
+}
