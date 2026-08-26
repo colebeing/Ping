@@ -52,6 +52,21 @@ npx wrangler secret put EMAIL_FROM     # optional, defaults to Resend's shared "
 
 Without a verified domain in Resend, `onboarding@resend.dev` can only deliver to the email your Resend account itself is registered under — invites to anyone else's inbox won't arrive until you verify a domain there. Password reset for your own account works either way.
 
+For "Sign in with Google": in [Google Cloud Console](https://console.cloud.google.com/apis/credentials), create an OAuth 2.0 Client ID (Web application). Add this exact Authorized redirect URI:
+
+```
+https://ping-backend.colebeing.workers.dev/api/auth/google/callback
+```
+
+Then:
+
+```bash
+npx wrangler secret put GOOGLE_CLIENT_ID
+npx wrangler secret put GOOGLE_CLIENT_SECRET
+```
+
+Until both secrets are set, `/api/auth/google/start` returns 501 rather than breaking — verified. Google sign-in follows the same invite rule as password signup: logging into an *existing* account (matched by email) always works, creating a *new* one still needs a valid invite token.
+
 Run locally: `npm run dev`. Deploy: `npm run deploy`.
 
 ## Frontend setup
@@ -89,16 +104,20 @@ Only block 1 (morning) content is drafted; block 2 reuses it verbatim (only the 
 
 Signup requires a valid invite (`POST /api/signup` takes an `inviteToken`) — there's no open signup. Any logged-in user can invite someone via Settings → Invite someone (`POST /api/invite`), which emails a signup link good for 7 days, single-use. Password reset (`POST /api/password-reset/request` → emails a 1-hour link → `POST /api/password-reset/confirm`) doesn't reveal whether an email has an account, by design.
 
+## Admin
+
+The Admin tab (shown only when `GET /api/me` reports `isAdmin: true` — set directly in KV, no self-service grant) edits question content, WHAT/WHY copy, escalation/streak thresholds, and recommendation phrasing, saved live via `PUT /api/admin/config`. Question content there and the Google Sheet write the same underlying data (`CONFIG_KV`'s `config` key) — whichever you touch last wins. Thresholds and recommendation copy live in separate KV keys (`config:triggers`, `config:recommendation-copy`) specifically so the sheet pull can never overwrite them.
+
 ## What's deliberately not built yet
 
-Per the spec's "do not build until told go" and parked-idea sections: no admin UI for editing questions/content (the sheet + `npm run seed-from-sheet` fills that role informally), no calendar integration, no couples/B2B features, no custom category labels. Per-response need-quadrant tagging (the sheet's R1-4 Tag columns) also isn't wired in — the spec explicitly parks that disambiguation logic; the backend still uses the coarser static `DOMAIN_NEED_MAP` in `src/types.ts`.
+Per the spec's "do not build until told go" and parked-idea sections: no calendar integration, no couples/B2B features, no custom category labels, no SAML (would only matter for a B2B direction the spec marks "tracked, not active"). Per-response need-quadrant tagging (the sheet's R1-4 Tag columns) also isn't wired in — the spec explicitly parks that disambiguation logic; the backend still uses the coarser static `DOMAIN_NEED_MAP` in `src/types.ts`.
 
 ## Known gaps worth knowing about before relying on this
 
-- No email verification on signup (an invite implicitly vouches for the email, but nothing confirms the invitee actually controls that inbox).
+- No email verification on password-based signup (an invite implicitly vouches for the email, but nothing confirms the invitee actually controls that inbox). Google sign-in doesn't have this gap — Google's own `email_verified` is checked.
 - Password reset doesn't invalidate other existing sessions for the account — a stolen session token would survive a reset.
 - Invite/reset emails silently no-op if `RESEND_API_KEY` isn't set (reset always returns success either way, by design, to avoid leaking account existence — so a misconfigured key is easy to miss without checking Worker logs).
 - No way to unsubscribe/remove a stale push subscription from a device you no longer use.
-- Streak length (3 days) and retirement window (7 days) are tunable constants in `backend/src/recommendations.ts` — the spec doesn't pin exact numbers, these are reasonable defaults.
 - The app icon (`frontend/public/icon.svg`) is a placeholder; add real branding + a PNG version for better iOS home-screen support before shipping.
 - Only block 1's content is drafted in the sheet; block 2 is a verbatim reuse, not independently written.
+- No onboarding flow — the spec calls for something minimal ("channel choice up front, calendar access earned later"); right now a new user just lands on login/signup.
