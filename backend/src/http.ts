@@ -49,7 +49,7 @@ export function handlePreflight(request: Request, env: Env): Response {
     status: 204,
     headers: {
       ...corsHeaders(request, env),
-      "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
     },
   });
