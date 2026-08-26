@@ -2,10 +2,12 @@ import { api, type BlockId, type Cadence } from "../api";
 import { mountBlockCard } from "../blockCard";
 
 /**
- * Splits the day in half at the midpoints between the two check-in times,
- * so "current" flips as soon as you're past the halfway point toward the
- * next one — not only once it's actually fired. With 11:55am/11:55pm, that
- * means Evening becomes current at 5:55pm, not at 11:55pm.
+ * The current block is whichever check-in is coming up next — Morning owns
+ * the stretch from the previous Evening reminder up to this Morning's
+ * reminder, Evening owns the stretch from Morning's reminder up to Evening's.
+ * Purely time-based (compares wall-clock time against cadence), so this
+ * flips right on schedule regardless of whether the push notification has
+ * actually fired yet.
  */
 function currentBlock(cadence: Cadence): BlockId {
   const toMinutes = (hhmm: string) => {
@@ -22,15 +24,8 @@ function currentBlock(cadence: Cadence): BlockId {
   const mm = parseInt(parts.find((p) => p.type === "minute")?.value ?? "0", 10);
   const now = hh * 60 + mm;
 
-  const b1 = toMinutes(cadence.block1);
-  const b2 = toMinutes(cadence.block2);
-  const midAfterB1 = (b1 + ((b2 - b1 + 1440) % 1440) / 2) % 1440; // midpoint between block1 and block2
-  const midAfterB2 = (b2 + ((b1 - b2 + 1440) % 1440) / 2) % 1440; // midpoint between block2 and next-day block1
-
-  const inRange = (value: number, start: number, end: number) =>
-    start <= end ? value >= start && value < end : value >= start || value < end;
-
-  return inRange(now, midAfterB2, midAfterB1) ? "1" : "2";
+  const until = (target: number) => (target - now + 1440) % 1440;
+  return until(toMinutes(cadence.block1)) <= until(toMinutes(cadence.block2)) ? "1" : "2";
 }
 
 export async function renderToday(root: HTMLElement): Promise<void> {

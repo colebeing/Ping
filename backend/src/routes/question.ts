@@ -22,6 +22,9 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
   const override = state.activeOverrides[block as BlockId];
   const when = override?.when ?? config.blocks[block as BlockId].question.when;
   const how = override?.how ?? config.blocks[block as BlockId].question.how;
+  // For a day that isn't actually today (History looking back), "today" in
+  // the question text is ambiguous — say "the day" instead to disambiguate.
+  const whenText = date === today ? when : when.replace(/\btoday\b/, "the day");
 
   const existingAnswer = state.answers.find((a) => a.date === date && a.block === block);
 
@@ -30,7 +33,7 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
     date,
     when,
     how,
-    text: `Did ${when} ${how}?`,
+    text: `Did ${whenText} ${how}?`,
     overridden: Boolean(override),
     existingAnswer: existingAnswer ?? null,
   });
