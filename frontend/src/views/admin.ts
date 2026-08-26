@@ -1,4 +1,4 @@
-import { api, type AdminConfig, type BlockId, type Category, type FollowupPrompt } from "../api";
+import { api, type AdminConfig, type Category, type FollowupPrompt } from "../api";
 import { CATEGORY_LABEL } from "../blockCard";
 
 export async function renderAdmin(root: HTMLElement): Promise<void> {
@@ -16,9 +16,7 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
     intro.textContent = "Edits apply immediately on save — no redeploy needed. Question content here is also editable via the Google Sheet + npm run seed-from-sheet; whichever you use last wins.";
     root.appendChild(intro);
 
-    for (const block of ["1", "2"] as BlockId[]) {
-      root.appendChild(renderBlockSection(config, block));
-    }
+    root.appendChild(renderQuestionSection(config));
     root.appendChild(renderTriggersSection(config));
     root.appendChild(renderRecommendationCopySection(config));
 
@@ -32,6 +30,12 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
       saveBtn.textContent = "Saving…";
       saveBtn.setAttribute("disabled", "true");
       try {
+        // Morning and Evening only ever differ by their WHEN slot — keep
+        // Evening's HOW/follow-up content mirrored to Morning's on save, in
+        // case they'd drifted apart before this UI stopped allowing that.
+        const eveningWhen = config.blocks["2"].question.when;
+        config.blocks["2"] = { ...JSON.parse(JSON.stringify(config.blocks["1"])), question: { ...config.blocks["1"].question, when: eveningWhen } };
+
         await api.saveAdminConfig(config);
         status.textContent = "Saved.";
       } catch (err) {
@@ -48,17 +52,27 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
   }
 }
 
-function renderBlockSection(config: AdminConfig, block: BlockId): HTMLElement {
+function renderQuestionSection(config: AdminConfig): HTMLElement {
   const card = document.createElement("div");
   card.className = "card";
 
   const h = document.createElement("h3");
-  h.textContent = block === "1" ? "Morning block" : "Evening block";
+  h.textContent = "Question";
   card.appendChild(h);
 
-  const content = config.blocks[block];
-  card.appendChild(fieldLabel('WHEN slot (e.g. "today start")'));
+  const note = document.createElement("p");
+  note.className = "muted";
+  note.textContent = "Morning and Evening ask the same question and follow-ups — only the WHEN slot differs between them.";
+  card.appendChild(note);
+
+  // Morning's content is the shared source of truth; Evening keeps its own WHEN only (mirrored on save).
+  const content = config.blocks["1"];
+
+  card.appendChild(fieldLabel('Morning WHEN slot (e.g. "today start")'));
   card.appendChild(textInput(content.question.when, (v) => (content.question.when = v)));
+  card.appendChild(fieldLabel('Evening WHEN slot (e.g. "today end")'));
+  card.appendChild(textInput(config.blocks["2"].question.when, (v) => (config.blocks["2"].question.when = v)));
+
   card.appendChild(fieldLabel('HOW slot (e.g. "how you wanted")'));
   card.appendChild(textInput(content.question.how, (v) => (content.question.how = v)));
 

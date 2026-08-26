@@ -9,6 +9,7 @@ import { handleListRecommendations, handleAcceptRecommendation, handleUpdateCade
 import { handleSubscribe, handleGetVapidPublicKey, handleTestPush } from "./routes/push";
 import { handleCreateInvite } from "./routes/invite";
 import { handleGetAdminConfig, handleSaveAdminConfig } from "./routes/admin";
+import { handleGetAnalytics } from "./routes/analytics";
 import { handleGoogleStart, handleGoogleCallback } from "./routes/googleAuth";
 import { PushScheduler } from "./scheduler";
 
@@ -57,6 +58,11 @@ async function route(request: Request, env: Env): Promise<Response> {
     if (!(await isAdmin(env, userId))) return errorResponse("Admin access required", 403);
     if (method === "GET") return handleGetAdminConfig(request, env);
     if (method === "PUT") return handleSaveAdminConfig(request, env);
+  }
+
+  if (pathname === "/api/admin/analytics") {
+    if (!(await isAdmin(env, userId))) return errorResponse("Admin access required", 403);
+    if (method === "GET") return handleGetAnalytics(request, env);
   }
 
   return errorResponse("Not found", 404);

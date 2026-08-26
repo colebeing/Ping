@@ -108,6 +108,8 @@ Signup requires a valid invite (`POST /api/signup` takes an `inviteToken`) — t
 
 The Admin tab (shown only when `GET /api/me` reports `isAdmin: true` — set directly in KV, no self-service grant) edits question content, WHAT/WHY copy, escalation/streak thresholds, and recommendation phrasing, saved live via `PUT /api/admin/config`. Question content there and the Google Sheet write the same underlying data (`CONFIG_KV`'s `config` key) — whichever you touch last wins. Thresholds and recommendation copy live in separate KV keys (`config:triggers`, `config:recommendation-copy`) specifically so the sheet pull can never overwrite them.
 
+Admins also get an Analytics tab (`GET /api/admin/analytics`) showing usage across all users: total users/check-ins, active-user counts (7d/30d), a 30-day daily check-in chart, aggregate category and yes/no breakdowns, and a per-user table (join date, check-in count, last active, current daily streak, top category). Since `STATE_KV` has no query/scan beyond key listing, this handler lists every `user:*` key and reads each user's full state to aggregate — fine at current scale, but worth revisiting (e.g. a maintained user-index key) if the user count grows large enough to make that expensive.
+
 ## What's deliberately not built yet
 
 Per the spec's "do not build until told go" and parked-idea sections: no calendar integration, no couples/B2B features, no custom category labels, no SAML (would only matter for a B2B direction the spec marks "tracked, not active"). Per-response need-quadrant tagging (the sheet's R1-4 Tag columns) also isn't wired in — the spec explicitly parks that disambiguation logic; the backend still uses the coarser static `DOMAIN_NEED_MAP` in `src/types.ts`.

@@ -55,6 +55,23 @@ export interface AdminConfig {
   recommendationCopy: RecommendationCopy;
 }
 
+export interface AnalyticsUserSummary {
+  email: string;
+  createdAt: string;
+  totalAnswers: number;
+  lastActive: string | null;
+  activeDayStreak: number;
+  topCategory: Category | null;
+}
+
+export interface AnalyticsResponse {
+  totals: { userCount: number; answerCount: number; activeUsers7d: number; activeUsers30d: number };
+  categoryTotals: Record<Category, number>;
+  answerBalance: Record<BlockId, { yes: number; no: number }>;
+  dailyActivity: { date: string; count: number }[];
+  users: AnalyticsUserSummary[];
+}
+
 class ApiError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -116,6 +133,8 @@ export const api = {
   getAdminConfig: () => request<AdminConfig>("/api/admin/config"),
   saveAdminConfig: (config: AdminConfig) =>
     request<{ ok: true }>("/api/admin/config", { method: "PUT", body: JSON.stringify(config) }),
+
+  getAnalytics: () => request<AnalyticsResponse>("/api/admin/analytics"),
 };
 
 export { ApiError };

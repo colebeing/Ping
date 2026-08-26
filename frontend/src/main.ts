@@ -5,6 +5,7 @@ import { renderToday } from "./views/today";
 import { renderHistory } from "./views/history";
 import { renderSettings } from "./views/settings";
 import { renderAdmin } from "./views/admin";
+import { renderAnalytics } from "./views/analytics";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -20,7 +21,7 @@ if ("serviceWorker" in navigator) {
 
 let goToToday: (() => void) | null = null;
 
-type Tab = "today" | "history" | "settings" | "admin";
+type Tab = "today" | "history" | "settings" | "admin" | "analytics";
 
 const app = document.getElementById("app");
 if (!app) throw new Error("Missing #app root element");
@@ -62,6 +63,7 @@ function showApp(isAdmin: boolean): void {
     if (active === "today") void renderToday(content);
     else if (active === "history") void renderHistory(content);
     else if (active === "admin") void renderAdmin(content);
+    else if (active === "analytics") void renderAnalytics(content);
     else void renderSettings(content, () => {
       tabs.remove();
       showAuth();
@@ -76,7 +78,7 @@ function showApp(isAdmin: boolean): void {
     { id: "history", label: "History" },
     { id: "settings", label: "Settings" },
   ];
-  if (isAdmin) tabDefs.push({ id: "admin", label: "Admin" });
+  if (isAdmin) tabDefs.push({ id: "analytics", label: "Analytics" }, { id: "admin", label: "Admin" });
 
   for (const def of tabDefs) {
     const btn = document.createElement("button");
