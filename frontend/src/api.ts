@@ -110,6 +110,9 @@ export const api = {
   sendTestPush: (block: BlockId) =>
     request<{ ok: true }>("/api/push/test", { method: "POST", body: JSON.stringify({ block }) }),
 
+  googleSignInUrl: (inviteToken?: string | null) =>
+    `${API_BASE}/api/auth/google/start${inviteToken ? `?invite=${encodeURIComponent(inviteToken)}` : ""}`,
+
   getAdminConfig: () => request<AdminConfig>("/api/admin/config"),
   saveAdminConfig: (config: AdminConfig) =>
     request<{ ok: true }>("/api/admin/config", { method: "PUT", body: JSON.stringify(config) }),

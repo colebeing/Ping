@@ -60,6 +60,12 @@ export async function getUser(env: Env, email: string): Promise<UserRecord | nul
   return env.STATE_KV.get<UserRecord>(`user:${normalizeEmail(email)}`, "json");
 }
 
+/** Google sign-in never needs a password, but UserRecord always has one so password-login and reset keep working uniformly — this one is just never handed to the user. */
+export async function createUserFromGoogle(env: Env, email: string): Promise<UserRecord> {
+  const unusedPassword = crypto.randomUUID() + crypto.randomUUID();
+  return createUser(env, email, unusedPassword);
+}
+
 export async function setPassword(env: Env, userId: string, newPassword: string): Promise<void> {
   const user = await getUser(env, userId);
   if (!user) throw new Error("User not found");

@@ -160,4 +160,6 @@ export interface Env {
   EMAIL_FROM?: string;
   /** Frontend origin for building reset/invite links, e.g. "https://colebeing.github.io/Ping". */
   FRONTEND_URL?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
 }

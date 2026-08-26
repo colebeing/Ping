@@ -9,6 +9,7 @@ import { handleListRecommendations, handleAcceptRecommendation, handleUpdateCade
 import { handleSubscribe, handleGetVapidPublicKey, handleTestPush } from "./routes/push";
 import { handleCreateInvite } from "./routes/invite";
 import { handleGetAdminConfig, handleSaveAdminConfig } from "./routes/admin";
+import { handleGoogleStart, handleGoogleCallback } from "./routes/googleAuth";
 import { PushScheduler } from "./scheduler";
 
 export { PushScheduler };
@@ -32,6 +33,8 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === "/api/push/vapid-public-key" && method === "GET") return handleGetVapidPublicKey(request, env);
   if (pathname === "/api/password-reset/request" && method === "POST") return handleRequestPasswordReset(request, env);
   if (pathname === "/api/password-reset/confirm" && method === "POST") return handleConfirmPasswordReset(request, env);
+  if (pathname === "/api/auth/google/start" && method === "GET") return handleGoogleStart(request, env);
+  if (pathname === "/api/auth/google/callback" && method === "GET") return handleGoogleCallback(request, env);
 
   // Everything below requires a session.
   const userId = await requireAuth(request, env);
