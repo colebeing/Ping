@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "127518116512",
+    "project_id": "ping-1586b",
+    "storage_bucket": "ping-1586b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:127518116512:android:b52a9d8520acc199b6d7c5",
+        "android_client_info": {
+          "package_name": "com.colebeing.ping"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDKJjgzzNlABxeDRKp5GzLVgjz0gQbUvbg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

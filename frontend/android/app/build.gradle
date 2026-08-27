@@ -20,8 +20,13 @@ android {
     buildTypes {
         release {
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
+    }
+    // capacitor.build.gradle (auto-generated, applied after this block) hardcodes Java to 21 and
+    // always will on every `cap sync` — match Kotlin to that rather than fighting it here.
+    kotlinOptions {
+        jvmTarget = "21"
     }
 }
 
@@ -39,6 +44,10 @@ dependencies {
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     // EncryptedSharedPreferences, for the device token NotificationActionReceiver authenticates with.
     implementation "androidx.security:security-crypto:1.1.0"
+    // @capacitor/push-notifications declares this with Gradle's `implementation` scope, which keeps
+    // it private to that module rather than exposing it transitively — app needs its own reference
+    // (matching push-notifications' own pinned version, so only one copy resolves on the classpath).
+    implementation "com.google.firebase:firebase-messaging:25.0.1"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
