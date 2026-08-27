@@ -1,5 +1,5 @@
 import { api, type Answer, type Category, type FollowupPrompt, type Frequency } from "../api";
-import { mountBlockCard, button, BLOCK_LABEL, CATEGORY_LABEL } from "../blockCard";
+import { mountBlockCard, button, CATEGORY_LABEL } from "../blockCard";
 
 const DAYS_SHOWN = 14;
 
@@ -18,23 +18,7 @@ function dayLabel(date: string, today: string, yesterday: string): string {
   return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
-function renderLocked(container: HTMLElement): void {
-  container.innerHTML = "";
-  const card = document.createElement("div");
-  card.className = "card";
-  const label = document.createElement("span");
-  label.className = "pill";
-  label.textContent = BLOCK_LABEL["2"];
-  card.appendChild(label);
-  const p = document.createElement("p");
-  p.className = "muted";
-  p.style.marginTop = "8px";
-  p.textContent = "Answer Morning first";
-  card.appendChild(p);
-  container.appendChild(card);
-}
-
-/** Morning + (locked-until-answered) Evening, as two separate blocks. */
+/** Morning + Evening, as two independently fillable blocks — either can be answered first. */
 function renderTwoBlocks(container: HTMLElement, date: string): void {
   container.innerHTML = "";
   const morningContainer = document.createElement("div");
@@ -42,10 +26,8 @@ function renderTwoBlocks(container: HTMLElement, date: string): void {
   const eveningContainer = document.createElement("div");
   container.appendChild(eveningContainer);
 
-  renderLocked(eveningContainer);
-  void mountBlockCard(morningContainer, "1", date, () => {
-    void mountBlockCard(eveningContainer, "2", date);
-  });
+  void mountBlockCard(morningContainer, "1", date);
+  void mountBlockCard(eveningContainer, "2", date);
 }
 
 /**
