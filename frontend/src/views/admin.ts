@@ -1,4 +1,4 @@
-import { api, type AdminConfig, type Category, type FollowupPrompt } from "../api";
+import { api, type AdminConfig, type Category, type FollowupPrompt, type Invitation } from "../api";
 import { CATEGORY_LABEL } from "../blockCard";
 
 export async function renderAdmin(root: HTMLElement): Promise<void> {
@@ -130,26 +130,58 @@ function renderRecommendationCopySection(config: AdminConfig): HTMLElement {
   const card = document.createElement("div");
   card.className = "card";
   const h = document.createElement("h3");
-  h.textContent = "Recommendation copy";
+  h.textContent = "Invitations to swap";
   card.appendChild(h);
 
   const p = document.createElement("p");
   p.className = "muted";
-  p.textContent = 'Used as the promoted question\'s HOW slot, e.g. "Did you {text} today?"';
+  p.textContent =
+    "After a trigger fires, the user is invited to swap their HOW question for one of these. Each is a full question, just like the starter question above — its own HOW slot plus yes/no follow-ups. Up to 10 can fire: one per category for a yes-streak, one per category for a no-streak, and one each for a yes- or no-streak that isn't tied to any single category.";
   card.appendChild(p);
 
   for (const valence of ["amplify", "resolve"] as const) {
     const label = document.createElement("p");
     label.className = "muted";
-    label.style.marginTop = "12px";
-    label.textContent = valence === "amplify" ? "Amplify (yes-streaks)" : "Resolve (no-streaks)";
+    label.style.marginTop = "16px";
+    label.style.fontWeight = "600";
+    label.textContent = valence === "amplify" ? "Amplify — per-category yes-streaks" : "Resolve — per-category no-streaks";
     card.appendChild(label);
     for (const cat of Object.keys(config.recommendationCopy[valence]) as Category[]) {
-      card.appendChild(textInput(config.recommendationCopy[valence][cat], (v) => (config.recommendationCopy[valence][cat] = v), CATEGORY_LABEL[cat]));
+      card.appendChild(renderInvitationEditor(config.recommendationCopy[valence][cat], CATEGORY_LABEL[cat]));
     }
   }
 
+  const generalLabel = document.createElement("p");
+  generalLabel.className = "muted";
+  generalLabel.style.marginTop = "16px";
+  generalLabel.style.fontWeight = "600";
+  generalLabel.textContent = "General — streak with no single category behind it";
+  card.appendChild(generalLabel);
+  card.appendChild(renderInvitationEditor(config.recommendationCopy.generalYes, "Yes-streak, mixed categories"));
+  card.appendChild(renderInvitationEditor(config.recommendationCopy.generalNo, "No-streak, mixed categories"));
+
   return card;
+}
+
+function renderInvitationEditor(invitation: Invitation, title: string): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.style.marginTop = "10px";
+  wrap.style.paddingTop = "10px";
+  wrap.style.paddingLeft = "12px";
+  wrap.style.borderLeft = "3px solid var(--surface-2)";
+
+  const label = document.createElement("p");
+  label.className = "muted";
+  label.textContent = title;
+  wrap.appendChild(label);
+
+  wrap.appendChild(textInput(invitation.how, (v) => (invitation.how = v), 'HOW slot (e.g. "how you wanted")'));
+
+  for (const answer of ["yes", "no"] as const) {
+    wrap.appendChild(renderFollowupEditor(invitation[answer], answer === "yes" ? "Yes → WHY" : "No → WHY"));
+  }
+
+  return wrap;
 }
 
 function fieldLabel(text: string): HTMLElement {

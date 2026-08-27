@@ -1,4 +1,4 @@
-import { ALL_BLOCKS, type Category, type Env, type Recommendation, type RecommendationCopy, type TriggerConfig, type UserState } from "./types";
+import { ALL_BLOCKS, type Category, type Env, type Invitation, type Recommendation, type RecommendationCopy, type TriggerConfig, type UserState } from "./types";
 import { getConfig } from "./config";
 
 function daysBetween(a: string, b: string): number {
@@ -12,9 +12,13 @@ function isPrevCalendarDay(earlier: string, later: string): boolean {
 
 /**
  * Looks for a trailing run (most recent N consecutive days, same block, same
- * category, same yes/no valence) and proposes a recommendation. Amplify for
- * yes-streaks (do more of what's working), resolve for no-streaks —
- * symmetric per spec.
+ * yes/no valence) and proposes a recommendation. Amplify for yes-streaks (do
+ * more of what's working), resolve for no-streaks — symmetric per spec.
+ *
+ * If the run also shares a single category throughout, that's the specific
+ * per-category invitation (8 of the 10 slots). If the valence-only run holds
+ * but the category varies day to day, it's a "no underlying pattern" streak
+ * — the general yes/no invitation (the remaining 2 slots).
  */
 export function detectStreaks(state: UserState, thresholds: TriggerConfig, copy: RecommendationCopy): Recommendation[] {
   const newRecs: Recommendation[] = [];
@@ -23,24 +27,47 @@ export function detectStreaks(state: UserState, thresholds: TriggerConfig, copy:
     const entries = state.answers.filter((a) => a.block === block && a.category).sort((a, b) => a.date.localeCompare(b.date));
     if (entries.length === 0) continue;
 
-    let runLen = 1;
-    let prevDate = entries[entries.length - 1].date;
-    const runCategory = entries[entries.length - 1].category as Category;
-    const runValence = entries[entries.length - 1].answer;
+    const lastEntry = entries[entries.length - 1];
+    const runValence = lastEntry.answer;
+    const lastCategory = lastEntry.category as Category;
 
+    let categoryRunLen = 1;
+    let prevDate = lastEntry.date;
     for (let i = entries.length - 2; i >= 0; i--) {
       const e = entries[i];
-      if (e.category === runCategory && e.answer === runValence && isPrevCalendarDay(e.date, prevDate)) {
-        runLen++;
+      if (e.category === lastCategory && e.answer === runValence && isPrevCalendarDay(e.date, prevDate)) {
+        categoryRunLen++;
         prevDate = e.date;
       } else {
         break;
       }
     }
 
-    if (runLen < thresholds.streakThreshold) continue;
+    let valenceRunLen = 1;
+    prevDate = lastEntry.date;
+    for (let i = entries.length - 2; i >= 0; i--) {
+      const e = entries[i];
+      if (e.answer === runValence && isPrevCalendarDay(e.date, prevDate)) {
+        valenceRunLen++;
+        prevDate = e.date;
+      } else {
+        break;
+      }
+    }
 
     const valence: "amplify" | "resolve" = runValence === "yes" ? "amplify" : "resolve";
+
+    let runCategory: Category | null = null;
+    let invitation: Invitation;
+    if (categoryRunLen >= thresholds.streakThreshold) {
+      runCategory = lastCategory;
+      invitation = copy[valence][lastCategory];
+    } else if (valenceRunLen >= thresholds.streakThreshold) {
+      invitation = valence === "amplify" ? copy.generalYes : copy.generalNo;
+    } else {
+      continue;
+    }
+
     const alreadyPending = state.pendingRecommendations.some((r) => r.block === block && r.category === runCategory && r.valence === valence);
     const alreadyActive = state.activeOverrides[block]?.category === runCategory;
     if (alreadyPending || alreadyActive) continue;
@@ -50,7 +77,7 @@ export function detectStreaks(state: UserState, thresholds: TriggerConfig, copy:
       block,
       category: runCategory,
       valence,
-      suggestedHow: copy[valence][runCategory],
+      invitation,
       createdAt: new Date().toISOString(),
     });
   }
@@ -67,7 +94,9 @@ export async function acceptRecommendation(env: Env, state: UserState, recommend
   const config = await getConfig(env);
   state.activeOverrides[rec.block] = {
     when: config.blocks[rec.block].question.when,
-    how: rec.suggestedHow,
+    how: rec.invitation.how,
+    yes: rec.invitation.yes,
+    no: rec.invitation.no,
     category: rec.category,
     acceptedAt: new Date().toISOString(),
   };

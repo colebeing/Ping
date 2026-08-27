@@ -1,4 +1,4 @@
-import type { AppConfig, BlockContent, Env, FollowupPrompt, RecommendationCopy, TriggerConfig } from "./types";
+import type { AppConfig, BlockContent, Env, FollowupPrompt, Invitation, RecommendationCopy, TriggerConfig } from "./types";
 
 // This is the fallback used only if CONFIG_KV is empty. The real source of
 // truth is the "Ping — Question Library" Google Sheet — see
@@ -46,19 +46,25 @@ export const DEFAULT_TRIGGERS: TriggerConfig = {
   retireAfterDays: 7,
 };
 
+function invitation(how: string): Invitation {
+  return { how, ...SHARED_FOLLOWUPS };
+}
+
 export const DEFAULT_RECOMMENDATION_COPY: RecommendationCopy = {
   amplify: {
-    friends: "protect friend time today",
-    colleagues: "lean on your colleagues today",
-    family: "protect family time today",
-    me: "protect time for yourself today",
+    friends: invitation("protect friend time today"),
+    colleagues: invitation("lean on your colleagues today"),
+    family: invitation("protect family time today"),
+    me: invitation("protect time for yourself today"),
   },
   resolve: {
-    friends: "make space for friends today",
-    colleagues: "get ahead of what colleagues need today",
-    family: "make space for family today",
-    me: "protect your own time today",
+    friends: invitation("make space for friends today"),
+    colleagues: invitation("get ahead of what colleagues need today"),
+    family: invitation("make space for family today"),
+    me: invitation("protect your own time today"),
   },
+  generalYes: invitation("keep doing what's working today"),
+  generalNo: invitation("get ahead of what's pulling at you today"),
 };
 
 export async function getTriggerConfig(env: Env): Promise<TriggerConfig> {
@@ -67,8 +73,15 @@ export async function getTriggerConfig(env: Env): Promise<TriggerConfig> {
 }
 
 export async function getRecommendationCopy(env: Env): Promise<RecommendationCopy> {
-  const stored = await env.CONFIG_KV.get("config:recommendation-copy", "json");
-  return (stored as RecommendationCopy | null) ?? DEFAULT_RECOMMENDATION_COPY;
+  const stored = await env.CONFIG_KV.get<RecommendationCopy>("config:recommendation-copy", "json");
+  if (!stored) return DEFAULT_RECOMMENDATION_COPY;
+  // Recommendation copy used to be a plain string per category/valence (just
+  // the HOW slot) — a stored value in that old shape, or missing the general
+  // slots added alongside it, can't be salvaged piecemeal, so fall back whole.
+  if (typeof stored.amplify?.friends === "string" || !stored.generalYes || !stored.generalNo) {
+    return DEFAULT_RECOMMENDATION_COPY;
+  }
+  return stored;
 }
 
 export interface FullAdminConfig {

@@ -53,9 +53,20 @@ export interface TriggerConfig {
   retireAfterDays: number;
 }
 
+/** A full invitation to swap a block's HOW question — as fleshed out as the starter question, with its own yes/no follow-ups. */
+export interface Invitation {
+  how: string;
+  yes: FollowupPrompt;
+  no: FollowupPrompt;
+}
+
+/** 10 invitations total: one per category per valence (4 x 2), plus a general
+ * yes-streak and general no-streak invitation for when no single category drove the streak. */
 export interface RecommendationCopy {
-  amplify: Record<Category, string>;
-  resolve: Record<Category, string>;
+  amplify: Record<Category, Invitation>;
+  resolve: Record<Category, Invitation>;
+  generalYes: Invitation;
+  generalNo: Invitation;
 }
 
 export interface AdminConfig {

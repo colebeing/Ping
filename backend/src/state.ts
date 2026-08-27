@@ -33,6 +33,12 @@ export async function getState(env: Env, userId: string): Promise<UserState> {
     stored.retiredOverrides = [];
     stored.pendingRecommendations = [];
   }
+  // Recommendations used to carry a plain "suggestedHow" string and overrides
+  // had no yes/no follow-ups of their own (they borrowed the block's) — old-shape
+  // entries can't be salvaged piecemeal, so drop just those, not the whole state.
+  if (Object.values(stored.activeOverrides).some((o) => o && !("yes" in o))) stored.activeOverrides = {};
+  if (stored.retiredOverrides.some((o) => !("yes" in o))) stored.retiredOverrides = [];
+  if (stored.pendingRecommendations.some((r) => !("invitation" in r))) stored.pendingRecommendations = [];
   return stored;
 }
 

@@ -29,7 +29,7 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
   const existingAnswer = state.answers.find((a) => a.date === date && a.block === block);
   let followup: { prompt: string; optionLabel: string } | undefined;
   if (existingAnswer?.category) {
-    const content = config.blocks[block][existingAnswer.answer];
+    const content = override ? override[existingAnswer.answer] : config.blocks[block][existingAnswer.answer];
     followup = { prompt: content.prompt, optionLabel: content.options[existingAnswer.category] };
   }
 

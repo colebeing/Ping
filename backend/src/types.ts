@@ -66,24 +66,39 @@ export interface TriggerConfig {
   retireAfterDays: number;
 }
 
+/** A full invitation to swap the block's HOW question — as fleshed out as the starter question, with its own yes/no follow-ups. */
+export interface Invitation {
+  how: string;
+  yes: FollowupPrompt;
+  no: FollowupPrompt;
+}
+
+/** Up to 10 invitations admins can configure: one per category per valence (4 x 2 = 8),
+ * plus one for a yes-streak and one for a no-streak that don't share a common category. */
 export interface RecommendationCopy {
-  amplify: Record<Category, string>;
-  resolve: Record<Category, string>;
+  amplify: Record<Category, Invitation>;
+  resolve: Record<Category, Invitation>;
+  generalYes: Invitation;
+  generalNo: Invitation;
 }
 
 export interface QuestionOverride {
   when: string;
   how: string;
-  category: Category;
+  yes: FollowupPrompt;
+  no: FollowupPrompt;
+  /** null when this came from a generalYes/generalNo invitation (no single category drove it). */
+  category: Category | null;
   acceptedAt: string; // ISO date
 }
 
 export interface Recommendation {
   id: string;
   block: BlockId;
-  category: Category;
+  /** null when this is a generalYes/generalNo invitation (streak held across mixed categories). */
+  category: Category | null;
   valence: "amplify" | "resolve";
-  suggestedHow: string;
+  invitation: Invitation;
   createdAt: string; // ISO date
 }
 

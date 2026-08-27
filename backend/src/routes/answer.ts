@@ -33,8 +33,8 @@ export async function handleAnswer(request: Request, env: Env, userId: string): 
 
   await saveState(env, userId, state);
 
-  const config = await getConfig(env);
-  const content = config.blocks[body.block][body.answer];
+  const override = state.activeOverrides[body.block];
+  const content = override ? override[body.answer] : (await getConfig(env)).blocks[body.block][body.answer];
   return json({ block: body.block, date, answer: body.answer, followup: { prompt: content.prompt, options: content.options } });
 }
 
