@@ -1,4 +1,4 @@
-import type { Env, PasswordResetToken, SessionRecord, UserRecord } from "./types";
+import type { DeviceTokenRecord, Env, PasswordResetToken, SessionRecord, UserRecord } from "./types";
 
 const PBKDF2_ITERATIONS = 100_000;
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
@@ -102,6 +102,15 @@ export async function destroySession(env: Env, token: string): Promise<void> {
   await env.STATE_KV.delete(`session:${token}`);
 }
 
+/** Minted once for the native Android wrapper, alongside its FCM token registration — no expiry, since
+ * a background notification-action tap has no cookie jar to renew a session from. */
+export async function createDeviceToken(env: Env, userId: string): Promise<string> {
+  const token = crypto.randomUUID();
+  const record: DeviceTokenRecord = { userId };
+  await env.STATE_KV.put(`devicetoken:${token}`, JSON.stringify(record));
+  return token;
+}
+
 function parseCookies(header: string | null): Record<string, string> {
   const out: Record<string, string> = {};
   if (!header) return out;
@@ -123,6 +132,14 @@ export function clearSessionCookieHeader(): string {
 }
 
 export async function requireAuth(request: Request, env: Env): Promise<string | null> {
+  // The native Android wrapper's background notification-action handler has no cookie jar to send —
+  // it authenticates with its own long-lived device token instead, checked first.
+  const authHeader = request.headers.get("Authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    const deviceToken = await env.STATE_KV.get<DeviceTokenRecord>(`devicetoken:${authHeader.slice(7)}`, "json");
+    if (deviceToken) return deviceToken.userId;
+  }
+
   const cookies = parseCookies(request.headers.get("Cookie"));
   const token = cookies[SESSION_COOKIE];
   if (!token) return null;

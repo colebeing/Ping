@@ -6,7 +6,7 @@ import { handleMe } from "./routes/me";
 import { handleGetQuestion } from "./routes/question";
 import { handleAnswer, handleFollowup } from "./routes/answer";
 import { handleListRecommendations, handleAcceptRecommendation, handleUpdateCadence } from "./routes/recommendations";
-import { handleSubscribe, handleGetVapidPublicKey, handleTestPush } from "./routes/push";
+import { handleSubscribe, handleGetVapidPublicKey, handleTestPush, handleRegisterFcmToken } from "./routes/push";
 import { handleCreateInvite } from "./routes/invite";
 import { handleGetAdminConfig, handleSaveAdminConfig } from "./routes/admin";
 import { handleGetAnalytics } from "./routes/analytics";
@@ -48,6 +48,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === "/api/recommendations" && method === "GET") return handleListRecommendations(request, env, userId);
   if (pathname === "/api/cadence" && method === "POST") return handleUpdateCadence(request, env, userId);
   if (pathname === "/api/push/subscribe" && method === "POST") return handleSubscribe(request, env, userId);
+  if (pathname === "/api/push/register-fcm" && method === "POST") return handleRegisterFcmToken(request, env, userId);
   if (pathname === "/api/push/test" && method === "POST") return handleTestPush(request, env, userId);
   if (pathname === "/api/invite" && method === "POST") return handleCreateInvite(request, env, userId);
 

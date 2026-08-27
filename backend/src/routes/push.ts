@@ -3,6 +3,7 @@ import { errorResponse, json, readJson } from "../http";
 import { getState, saveState } from "../state";
 import { scheduleUserPush } from "../scheduler";
 import { sendTestPush } from "../push";
+import { createDeviceToken } from "../auth";
 
 export async function handleSubscribe(request: Request, env: Env, userId: string): Promise<Response> {
   const subscription = await readJson<PushSubscriptionJSON>(request);
@@ -20,6 +21,26 @@ export async function handleSubscribe(request: Request, env: Env, userId: string
 
 export async function handleGetVapidPublicKey(_request: Request, env: Env): Promise<Response> {
   return json({ publicKey: env.VAPID_PUBLIC_KEY ?? null });
+}
+
+/**
+ * Registers the native Android wrapper's FCM token and mints a long-lived
+ * device token in return — the app stores that (native-side, not JS-visible)
+ * so a background notification-action tap can authenticate without a cookie.
+ */
+export async function handleRegisterFcmToken(request: Request, env: Env, userId: string): Promise<Response> {
+  const body = await readJson<{ fcmToken?: string }>(request);
+  if (!body.fcmToken) return errorResponse("fcmToken is required", 400);
+
+  const state = await getState(env, userId);
+  if (!state.fcmTokens.includes(body.fcmToken)) {
+    state.fcmTokens.push(body.fcmToken);
+    await saveState(env, userId, state);
+  }
+  await scheduleUserPush(env, userId);
+
+  const deviceToken = await createDeviceToken(env, userId);
+  return json({ ok: true, deviceToken });
 }
 
 export async function handleTestPush(request: Request, env: Env, userId: string): Promise<Response> {

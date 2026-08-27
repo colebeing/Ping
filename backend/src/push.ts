@@ -1,6 +1,7 @@
 import { buildPushPayload, type PushMessage, type PushSubscription as WebPushSubscription, type VapidKeys } from "@block65/webcrypto-web-push";
 import type { BlockId, Cadence, Env, PushSubscriptionJSON } from "./types";
 import { getState, saveState, todayLocal } from "./state";
+import { sendFcmPush } from "./fcm";
 
 /** Which block(s) are actually live for this user's current cadence, and what time each is due. "once" collapses to a single "combined" block using block1's time slot. */
 function activeBlockTimes(cadence: Cadence): { block: BlockId; time: string }[] {
@@ -44,6 +45,11 @@ async function sendBlockPush(env: Env, state: Awaited<ReturnType<typeof getState
   const body = blockPushBody(state, block);
   for (const sub of state.pushSubscriptions) {
     await sendPush(env, sub, { data: JSON.stringify({ title: "Ping", body, block }), options: { ttl: 3600 } });
+  }
+  // Data-only, not a `notification` payload — the native app's own FirebaseMessagingService builds the
+  // interactive, swap-in-place notification itself rather than letting Android auto-display a plain one.
+  for (const token of state.fcmTokens) {
+    await sendFcmPush(env, token, { title: "Ping", body, block });
   }
 }
 

@@ -9,6 +9,7 @@ export async function handleMe(_request: Request, env: Env, userId: string): Pro
     email: userId,
     cadence: state.cadence,
     pushSubscriptionCount: state.pushSubscriptions.length,
+    fcmTokenCount: state.fcmTokens.length,
     isAdmin: user?.isAdmin === true,
   });
 }

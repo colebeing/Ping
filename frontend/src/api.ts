@@ -130,6 +130,8 @@ export const api = {
   getVapidPublicKey: () => request<{ publicKey: string | null }>("/api/push/vapid-public-key"),
   subscribePush: (subscription: PushSubscriptionJSON) =>
     request<{ ok: true }>("/api/push/subscribe", { method: "POST", body: JSON.stringify(subscription) }),
+  registerFcmToken: (fcmToken: string) =>
+    request<{ ok: true; deviceToken: string }>("/api/push/register-fcm", { method: "POST", body: JSON.stringify({ fcmToken }) }),
   sendTestPush: (block: BlockId) =>
     request<{ ok: true }>("/api/push/test", { method: "POST", body: JSON.stringify({ block }) }),
 

@@ -10,6 +10,7 @@ export function defaultState(): UserState {
     pendingRecommendations: [],
     cadence: { block1: "11:00", block2: "23:00", timezone: "UTC", frequency: "twice" },
     pushSubscriptions: [],
+    fcmTokens: [],
     lastNotified: {},
   };
 }
@@ -19,6 +20,7 @@ export async function getState(env: Env, userId: string): Promise<UserState> {
   if (!stored) return defaultState();
   // Backfills for state saved before a field existed.
   if (!stored.cadence.frequency) stored.cadence.frequency = "twice";
+  if (!stored.fcmTokens) stored.fcmTokens = [];
   // The WHY follow-up's category set changed (friends/work/home/capacity ->
   // friends/colleagues/family/me) and WHAT was dropped entirely — old
   // path/category counts and answer categories are no longer meaningful

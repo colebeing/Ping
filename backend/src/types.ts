@@ -124,6 +124,8 @@ export interface UserState {
   pendingRecommendations: Recommendation[];
   cadence: Cadence;
   pushSubscriptions: PushSubscriptionJSON[];
+  /** FCM registration tokens for the native Android wrapper — separate from pushSubscriptions (Web Push). */
+  fcmTokens: string[];
   lastNotified: Partial<Record<BlockId, string>>; // date string per block
 }
 
@@ -139,6 +141,12 @@ export interface UserRecord {
 export interface SessionRecord {
   userId: string;
   expiresAt: number; // epoch ms
+}
+
+/** Long-lived, non-expiring — minted once when the native app registers its FCM token, so a
+ * background BroadcastReceiver (no cookie jar, no browser) can still authenticate directly. */
+export interface DeviceTokenRecord {
+  userId: string;
 }
 
 export interface PasswordResetToken {
@@ -168,4 +176,6 @@ export interface Env {
   FRONTEND_URL?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  /** Firebase service account JSON (as a string), used to sign FCM HTTP v1 API requests for the Android wrapper. */
+  FCM_SERVICE_ACCOUNT_JSON?: string;
 }
