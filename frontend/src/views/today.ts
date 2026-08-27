@@ -1,15 +1,22 @@
 import { api, type BlockId, type Cadence } from "../api";
 import { mountBlockCard } from "../blockCard";
 
+// Grace period after a block's own cadence time before the other block takes
+// over as "current" — without this, the switch happens the instant the
+// block's own scheduled time passes, so opening the app even a minute after
+// tapping that block's own notification could already show the next block.
+const BLOCK_SWITCH_DELAY_MINUTES = 60;
+
 /**
  * The current block is whichever check-in is coming up next — Morning owns
  * the stretch from the previous Evening reminder up to this Morning's
  * reminder, Evening owns the stretch from Morning's reminder up to Evening's.
  * Purely time-based (compares wall-clock time against cadence), so this
- * flips right on schedule regardless of whether the push notification has
- * actually fired yet.
+ * flips on schedule regardless of whether the push notification has actually
+ * fired yet — delayed by BLOCK_SWITCH_DELAY_MINUTES so there's room to
+ * actually act on that notification before the view moves on.
  */
-function currentBlock(cadence: Cadence): BlockId {
+export function currentBlock(cadence: Cadence): BlockId {
   const toMinutes = (hhmm: string) => {
     const [h, m] = hhmm.split(":").map(Number);
     return ((h % 24) * 60 + (m || 0) + 1440) % 1440;
@@ -22,10 +29,15 @@ function currentBlock(cadence: Cadence): BlockId {
   }).formatToParts(new Date());
   const hh = parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10) % 24;
   const mm = parseInt(parts.find((p) => p.type === "minute")?.value ?? "0", 10);
-  const now = hh * 60 + mm;
+  const now = (hh * 60 + mm - BLOCK_SWITCH_DELAY_MINUTES + 1440) % 1440;
 
   const until = (target: number) => (target - now + 1440) % 1440;
   return until(toMinutes(cadence.block1)) <= until(toMinutes(cadence.block2)) ? "1" : "2";
+}
+
+/** Which block "Today" is currently showing, accounting for once-daily cadence collapsing everything to "combined". */
+export function currentBlockForCadence(cadence: Cadence): BlockId {
+  return cadence.frequency === "once" ? "combined" : currentBlock(cadence);
 }
 
 export async function renderToday(root: HTMLElement): Promise<void> {
@@ -40,7 +52,7 @@ export async function renderToday(root: HTMLElement): Promise<void> {
   let block: BlockId = "1";
   try {
     const me = await api.me();
-    block = me.cadence.frequency === "once" ? "combined" : currentBlock(me.cadence);
+    block = currentBlockForCadence(me.cadence);
   } catch {
     // fall through with block "1" — mountBlockCard's own error handling covers a real auth failure
   }

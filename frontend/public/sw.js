@@ -63,15 +63,20 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   const action = event.action;
+  const block = event.notification.data?.block;
   event.notification.close();
 
   if (action.startsWith("answer-")) {
-    const [, block, answer] = action.split("-");
-    event.waitUntil(answerFromNotification(block, answer));
+    const [, actionBlock, answer] = action.split("-");
+    event.waitUntil(answerFromNotification(actionBlock, answer));
     return;
   }
 
-  event.waitUntil(focusOrOpenApp());
+  // Route to the specific block this notification was for — not just
+  // whatever the app's own "current block" logic would pick — so tapping,
+  // say, the morning notification always opens the morning check-in even if
+  // the view has since moved on to evening.
+  event.waitUntil(focusOrOpenApp(block ? { type: "ping:go-to-block", block } : undefined));
 });
 
 async function answerFromNotification(block, answer) {
@@ -88,7 +93,7 @@ async function answerFromNotification(block, answer) {
   // Whether or not the fetch succeeded (e.g. session expired), opening the
   // app is the right fallback — it'll show the real state, including login
   // if needed.
-  await focusOrOpenApp({ type: "ping:go-to-today" });
+  await focusOrOpenApp({ type: "ping:go-to-block", block });
 }
 
 async function focusOrOpenApp(message) {
