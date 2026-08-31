@@ -51,10 +51,20 @@ self.addEventListener("push", (event) => {
     // which is exactly enough for yes/no. The 4-way follow-up categories
     // can't fit as actions, so those still need the app open — see below.
     options.tag = `block-${payload.block}`;
+    // Without this, replacing an existing same-tag notification (e.g. a
+    // second "Test morning" press, or a real send landing on top of an
+    // undismissed earlier one) is a silent in-place update — on Android that
+    // can leave the action buttons bound to whatever the *first* notification
+    // for this tag declared instead of the new one. Forcing it to always
+    // count as a fresh alert avoids relying on Android to rebind them correctly.
+    options.renotify = true;
     options.data = { block: payload.block };
+    // Bare "yes"/"no" rather than encoding the block into the action id too —
+    // block is already on notification.data, so this is one less thing for
+    // notificationclick to parse back out of a compound string.
     options.actions = [
-      { action: `answer-${payload.block}-yes`, title: "Yes" },
-      { action: `answer-${payload.block}-no`, title: "No" },
+      { action: "yes", title: "Yes" },
+      { action: "no", title: "No" },
     ];
   }
 
@@ -66,9 +76,15 @@ self.addEventListener("notificationclick", (event) => {
   const block = event.notification.data?.block;
   event.notification.close();
 
-  if (action.startsWith("answer-")) {
-    const [, actionBlock, answer] = action.split("-");
-    event.waitUntil(answerFromNotification(actionBlock, answer));
+  // TEMPORARY: confirms the bare "yes"/"no" action ids + renotify actually
+  // fixed the Android mismap before this is stripped back out. Remove once
+  // confirmed one way or the other.
+  event.waitUntil(
+    self.registration.showNotification("Ping debug", { body: `notificationclick action="${action}" block="${block}"`, tag: "ping-debug" }),
+  );
+
+  if (action === "yes" || action === "no") {
+    event.waitUntil(answerFromNotification(block, action));
     return;
   }
 
