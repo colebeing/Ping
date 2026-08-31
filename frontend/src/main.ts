@@ -108,6 +108,16 @@ function showApp(isAdmin: boolean): void {
     }
   });
 
+  // Refresh on refocus, not just when a notification message arrives — a tab
+  // brought to the foreground (e.g. by tapping a notification) can otherwise
+  // sit for a moment showing whatever stale card it had before backgrounding,
+  // Yes/No buttons included, which a reflexive tap could use to overwrite an
+  // answer the notification itself just recorded. Re-rendering immediately
+  // swaps that stale card for a loading state before it's clickable again.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") renderActive();
+  });
+
   for (const def of tabDefs) {
     const btn = document.createElement("button");
     btn.dataset.tab = def.id;

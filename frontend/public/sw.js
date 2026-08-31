@@ -81,12 +81,16 @@ self.addEventListener("notificationclick", (event) => {
 
 async function answerFromNotification(block, answer) {
   try {
-    await fetch(`${API_BASE}/api/answer`, {
+    const res = await fetch(`${API_BASE}/api/answer`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ block, answer }),
     });
+    // fetch() only rejects on a network-level failure, not an HTTP error
+    // status — without this, a rejected request (e.g. an expired session)
+    // would silently no-op instead of surfacing anywhere.
+    if (!res.ok) console.error("quick-answer rejected", res.status);
   } catch (err) {
     console.error("quick-answer failed", err);
   }
