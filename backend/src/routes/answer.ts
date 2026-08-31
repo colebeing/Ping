@@ -13,6 +13,11 @@ interface AnswerBody {
 
 export async function handleAnswer(request: Request, env: Env, userId: string): Promise<Response> {
   const body = await readJson<AnswerBody>(request);
+  // Diagnostic for the notification quick-answer bug: whatever's logged here
+  // is exactly what the server received, decoupled from what the client
+  // (service worker or app) believes it sent — compare against the SW's own
+  // "[ping] posting quick-answer" log for the same tap.
+  console.log("[ping] /api/answer received", { userId, block: body.block, answer: body.answer, date: body.date });
   if (!isBlockId(body.block) || (body.answer !== "yes" && body.answer !== "no")) {
     return errorResponse("block must be 1, 2, or combined, and answer must be 'yes' or 'no'", 400);
   }
@@ -28,6 +33,7 @@ export async function handleAnswer(request: Request, env: Env, userId: string): 
   }
 
   const record: AnswerRecord = { date, block: body.block, answer: body.answer, timestamp: new Date().toISOString() };
+  console.log("[ping] /api/answer storing", record);
   if (existingIdx !== -1) state.answers[existingIdx] = record;
   else state.answers.push(record);
 

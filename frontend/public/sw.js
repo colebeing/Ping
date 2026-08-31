@@ -58,16 +58,27 @@ self.addEventListener("push", (event) => {
     ];
   }
 
+  // Diagnostic: confirms exactly which action strings were assigned to which
+  // button at construction time, to compare against what notificationclick
+  // reports was actually clicked — see the log there for why this matters.
+  console.log("[ping] showing notification", { block: payload.block, actions: options.actions });
+
   event.waitUntil(self.registration.showNotification(payload.title, options));
 });
 
 self.addEventListener("notificationclick", (event) => {
   const action = event.action;
   const block = event.notification.data?.block;
+  // Diagnostic: this is the browser's own report of which action was
+  // clicked. If a tap on the button labeled "Yes" ever logs action ending in
+  // "-no" here, the bug is in Chrome/the OS's notification handling, not in
+  // this code — everything downstream of this line just trusts `action` as given.
+  console.log("[ping] notificationclick", { action, notificationData: event.notification.data });
   event.notification.close();
 
   if (action.startsWith("answer-")) {
     const [, actionBlock, answer] = action.split("-");
+    console.log("[ping] quick-answer parsed", { actionBlock, answer });
     event.waitUntil(answerFromNotification(actionBlock, answer));
     return;
   }
@@ -80,17 +91,24 @@ self.addEventListener("notificationclick", (event) => {
 });
 
 async function answerFromNotification(block, answer) {
+  const body = JSON.stringify({ block, answer });
+  console.log("[ping] posting quick-answer", body);
   try {
     const res = await fetch(`${API_BASE}/api/answer`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ block, answer }),
+      body,
     });
     // fetch() only rejects on a network-level failure, not an HTTP error
     // status — without this, a rejected request (e.g. an expired session)
     // would silently no-op instead of surfacing anywhere.
-    if (!res.ok) console.error("quick-answer rejected", res.status);
+    if (res.ok) {
+      const responseBody = await res.clone().text();
+      console.log("[ping] quick-answer accepted", res.status, responseBody);
+    } else {
+      console.error("quick-answer rejected", res.status);
+    }
   } catch (err) {
     console.error("quick-answer failed", err);
   }
