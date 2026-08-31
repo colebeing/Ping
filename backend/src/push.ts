@@ -23,6 +23,11 @@ export async function sendPush(env: Env, subscription: PushSubscriptionJSON, mes
   try {
     const payload = await buildPushPayload(message, subscription as WebPushSubscription, keys);
     const res = await fetch(subscription.endpoint, payload);
+    // A non-201 (e.g. 404/410 for a stale/expired subscription) isn't a
+    // thrown error — without this it fails completely silently, and callers
+    // that don't check the return value (sendTestPush did exactly this) end
+    // up reporting success for a push that was actually rejected.
+    if (res.status !== 201) console.error("push send rejected", res.status, subscription.endpoint);
     return res.status === 201;
   } catch (err) {
     console.error("push send failed", err);
@@ -41,16 +46,19 @@ function blockPushBody(state: Awaited<ReturnType<typeof getState>>, block: Block
   return override ? `Did ${override.when} ${override.how}?` : BLOCK_PROMPTS[block];
 }
 
-async function sendBlockPush(env: Env, state: Awaited<ReturnType<typeof getState>>, block: BlockId): Promise<void> {
+/** Returns whether at least one of this user's devices actually accepted the push — silent failures (stale subscriptions, rejected FCM tokens) shouldn't read as success. */
+async function sendBlockPush(env: Env, state: Awaited<ReturnType<typeof getState>>, block: BlockId): Promise<boolean> {
   const body = blockPushBody(state, block);
+  let anySent = false;
   for (const sub of state.pushSubscriptions) {
-    await sendPush(env, sub, { data: JSON.stringify({ title: "Ping", body, block }), options: { ttl: 3600 } });
+    if (await sendPush(env, sub, { data: JSON.stringify({ title: "Ping", body, block }), options: { ttl: 3600 } })) anySent = true;
   }
   // Data-only, not a `notification` payload — the native app's own FirebaseMessagingService builds the
   // interactive, swap-in-place notification itself rather than letting Android auto-display a plain one.
   for (const token of state.fcmTokens) {
-    await sendFcmPush(env, token, { title: "Ping", body, block });
+    if (await sendFcmPush(env, token, { title: "Ping", body, block })) anySent = true;
   }
+  return anySent;
 }
 
 /**
@@ -83,8 +91,11 @@ export async function checkAndNotifyUser(env: Env, userId: string): Promise<void
 export async function sendTestPush(env: Env, userId: string, block: BlockId): Promise<{ ok: boolean; reason?: string }> {
   if (!vapidKeys(env)) return { ok: false, reason: "Push isn't configured on the server (missing VAPID secrets)" };
   const state = await getState(env, userId);
-  if (state.pushSubscriptions.length === 0) return { ok: false, reason: "No push subscription on this device yet" };
-  await sendBlockPush(env, state, block);
+  if (state.pushSubscriptions.length === 0 && state.fcmTokens.length === 0) {
+    return { ok: false, reason: "No push subscription on this device yet" };
+  }
+  const sent = await sendBlockPush(env, state, block);
+  if (!sent) return { ok: false, reason: "The push service rejected it — try disabling and re-enabling notifications on this device" };
   return { ok: true };
 }
 
