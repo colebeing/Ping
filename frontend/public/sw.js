@@ -76,18 +76,37 @@ self.addEventListener("notificationclick", (event) => {
   console.log("[ping] notificationclick", { action, notificationData: event.notification.data });
   event.notification.close();
 
-  if (action.startsWith("answer-")) {
-    const [, actionBlock, answer] = action.split("-");
-    console.log("[ping] quick-answer parsed", { actionBlock, answer });
-    event.waitUntil(answerFromNotification(actionBlock, answer));
-    return;
-  }
+  // TEMPORARY diagnostic for "clicking does nothing" — a second, visible
+  // notification proves this handler was actually reached (and with what
+  // values), without needing DevTools open at the right moment. Remove once
+  // that's confirmed one way or the other.
+  event.waitUntil(
+    self.registration.showNotification("Ping debug", {
+      body: `click reached SW. action="${action}" block="${block}"`,
+      tag: "ping-debug",
+    }),
+  );
 
-  // Route to the specific block this notification was for — not just
-  // whatever the app's own "current block" logic would pick — so tapping,
-  // say, the morning notification always opens the morning check-in even if
-  // the view has since moved on to evening.
-  event.waitUntil(focusOrOpenApp(block ? { type: "ping:go-to-block", block } : undefined));
+  event.waitUntil(
+    (async () => {
+      try {
+        if (action.startsWith("answer-")) {
+          const [, actionBlock, answer] = action.split("-");
+          console.log("[ping] quick-answer parsed", { actionBlock, answer });
+          await answerFromNotification(actionBlock, answer);
+          return;
+        }
+        // Route to the specific block this notification was for — not just
+        // whatever the app's own "current block" logic would pick — so tapping,
+        // say, the morning notification always opens the morning check-in even if
+        // the view has since moved on to evening.
+        await focusOrOpenApp(block ? { type: "ping:go-to-block", block } : undefined);
+      } catch (err) {
+        console.error("[ping] notificationclick handler threw", err);
+        await self.registration.showNotification("Ping debug", { body: `handler threw: ${err}`, tag: "ping-debug" });
+      }
+    })(),
+  );
 });
 
 async function answerFromNotification(block, answer) {
