@@ -51,19 +51,17 @@ self.addEventListener("push", (event) => {
     // which is exactly enough for yes/no. The 4-way follow-up categories
     // can't fit as actions, so those still need the app open — see below.
     //
-    // EXPERIMENT (round 3): both actions were reported as the same one on
-    // Android regardless of which was tapped — reproduced identically
-    // across three different setups (compound ids, bare ids, with/without
-    // tag+renotify, with/without per-action icons). Nothing about the
-    // actions' content has changed the result, which points at the two
-    // physical buttons dispatching to the same handler at the OS level
-    // rather than anything in this payload. Testing that directly: only
-    // one action this round. If this one correctly reports "yes", the bug
-    // is specifically about *multiple* simultaneous actions; if even a
-    // single lone action doesn't report correctly, it's something else
-    // entirely. Restore the "no" action once this data point is in.
+    // A single action reported correctly; two together always collapsed to
+    // the same one — consistent with a background NotificationListenerService
+    // (a candidate: Android Auto, which has to intercept and rebuild every
+    // notification's actions to project them into a car's UI) rewriting the
+    // PendingIntents and mishandling more than one. Restoring both actions
+    // here to test with that listener's access revoked.
     options.data = { block: payload.block };
-    options.actions = [{ action: "yes", title: "Yes" }];
+    options.actions = [
+      { action: "yes", title: "Yes" },
+      { action: "no", title: "No" },
+    ];
   }
 
   event.waitUntil(self.registration.showNotification(payload.title, options));
