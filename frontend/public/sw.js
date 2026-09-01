@@ -50,21 +50,20 @@ self.addEventListener("push", (event) => {
     // Two is the practical ceiling for notification actions across browsers,
     // which is exactly enough for yes/no. The 4-way follow-up categories
     // can't fit as actions, so those still need the app open — see below.
-    options.tag = `block-${payload.block}`;
-    // Without this, replacing an existing same-tag notification (e.g. a
-    // second "Test morning" press, or a real send landing on top of an
-    // undismissed earlier one) is a silent in-place update — on Android that
-    // can leave the action buttons bound to whatever the *first* notification
-    // for this tag declared instead of the new one. Forcing it to always
-    // count as a fresh alert avoids relying on Android to rebind them correctly.
-    options.renotify = true;
+    //
+    // EXPERIMENT: on Android, both actions were reported as the same one
+    // regardless of which was tapped — reproduced identically with two
+    // completely different action-id schemes, which rules out the id
+    // strings themselves as the cause. That points at something structural
+    // in how the two actions get built rather than what they're named, so
+    // this drops `tag`/`renotify` (no same-tag update path to collide
+    // through) and gives each action its own icon (maximally distinct
+    // properties, in case Chrome's Android translation dedupes on
+    // similarity). Data still carries `block` for routing either way.
     options.data = { block: payload.block };
-    // Bare "yes"/"no" rather than encoding the block into the action id too —
-    // block is already on notification.data, so this is one less thing for
-    // notificationclick to parse back out of a compound string.
     options.actions = [
-      { action: "yes", title: "Yes" },
-      { action: "no", title: "No" },
+      { action: "yes", title: "Yes", icon: "./icon.svg" },
+      { action: "no", title: "No", icon: "./icon.svg" },
     ];
   }
 
@@ -76,7 +75,7 @@ self.addEventListener("notificationclick", (event) => {
   const block = event.notification.data?.block;
   event.notification.close();
 
-  // TEMPORARY: confirms the bare "yes"/"no" action ids + renotify actually
+  // TEMPORARY: confirms whether dropping tag/renotify + per-action icons
   // fixed the Android mismap before this is stripped back out. Remove once
   // confirmed one way or the other.
   event.waitUntil(
