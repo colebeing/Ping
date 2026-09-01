@@ -14,10 +14,14 @@ function recentDates(today: string, count: number): string[] {
   return Array.from({ length: count }, (_, i) => new Date(base.getTime() - i * 86400000).toISOString().slice(0, 10));
 }
 
+function weekdayShort(date: string): string {
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
+}
+
 function dayLabel(date: string, today: string, yesterday: string): string {
-  if (date === today) return "Today";
-  if (date === yesterday) return "Yesterday";
-  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  if (date === today) return `Today · ${weekdayShort(date)}`;
+  if (date === yesterday) return `Yesterday · ${weekdayShort(date)}`;
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
 }
 
 /** Each of `blocks` as an independently fillable block — any can be answered first. */
