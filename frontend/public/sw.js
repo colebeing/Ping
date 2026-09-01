@@ -52,15 +52,16 @@ self.addEventListener("push", (event) => {
     // can't fit as actions, so those still need the app open — see below.
     //
     // A single action reported correctly; two together always collapsed to
-    // the same one — consistent with a background NotificationListenerService
-    // (a candidate: Android Auto, which has to intercept and rebuild every
-    // notification's actions to project them into a car's UI) rewriting the
-    // PendingIntents and mishandling more than one. Restoring both actions
-    // here to test with that listener's access revoked.
+    // "no" regardless of which was tapped, on this specific device, ruling
+    // out Android Auto's notification listener too. Testing array order
+    // directly now: "no" declared first, "yes" second. If it's genuinely
+    // "always fires whichever was declared last," both taps should now
+    // report "yes" instead. If both still report "no", it's not about
+    // position at all — something is specific to "no" itself.
     options.data = { block: payload.block };
     options.actions = [
-      { action: "yes", title: "Yes" },
       { action: "no", title: "No" },
+      { action: "yes", title: "Yes" },
     ];
   }
 
