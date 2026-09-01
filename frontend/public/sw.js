@@ -51,17 +51,16 @@ self.addEventListener("push", (event) => {
     // which is exactly enough for yes/no. The 4-way follow-up categories
     // can't fit as actions, so those still need the app open — see below.
     //
-    // A single action reported correctly; two together always collapsed to
-    // "no" regardless of which was tapped, on this specific device, ruling
-    // out Android Auto's notification listener too. Testing array order
-    // directly now: "no" declared first, "yes" second. If it's genuinely
-    // "always fires whichever was declared last," both taps should now
-    // report "yes" instead. If both still report "no", it's not about
-    // position at all — something is specific to "no" itself.
+    // Confirmed purely positional: swapping array order flipped which
+    // answer both taps reported, so it's "whichever is declared last,"
+    // independent of content. This round tests whether that's still true
+    // for short numeric-looking ids ("1"/"2") instead of words — action is
+    // a DOMString per spec either way, but Chrome's internal Android
+    // handling might still treat digit strings differently somewhere.
     options.data = { block: payload.block };
     options.actions = [
-      { action: "no", title: "No" },
-      { action: "yes", title: "Yes" },
+      { action: "1", title: "Yes" },
+      { action: "2", title: "No" },
     ];
   }
 
@@ -80,8 +79,8 @@ self.addEventListener("notificationclick", (event) => {
     self.registration.showNotification("Ping debug", { body: `notificationclick action="${action}" block="${block}"`, tag: "ping-debug" }),
   );
 
-  if (action === "yes" || action === "no") {
-    event.waitUntil(answerFromNotification(block, action));
+  if (action === "1" || action === "2") {
+    event.waitUntil(answerFromNotification(block, action === "1" ? "yes" : "no"));
     return;
   }
 
