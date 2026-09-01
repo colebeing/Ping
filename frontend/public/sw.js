@@ -51,20 +51,19 @@ self.addEventListener("push", (event) => {
     // which is exactly enough for yes/no. The 4-way follow-up categories
     // can't fit as actions, so those still need the app open — see below.
     //
-    // EXPERIMENT: on Android, both actions were reported as the same one
-    // regardless of which was tapped — reproduced identically with two
-    // completely different action-id schemes, which rules out the id
-    // strings themselves as the cause. That points at something structural
-    // in how the two actions get built rather than what they're named, so
-    // this drops `tag`/`renotify` (no same-tag update path to collide
-    // through) and gives each action its own icon (maximally distinct
-    // properties, in case Chrome's Android translation dedupes on
-    // similarity). Data still carries `block` for routing either way.
+    // EXPERIMENT (round 3): both actions were reported as the same one on
+    // Android regardless of which was tapped — reproduced identically
+    // across three different setups (compound ids, bare ids, with/without
+    // tag+renotify, with/without per-action icons). Nothing about the
+    // actions' content has changed the result, which points at the two
+    // physical buttons dispatching to the same handler at the OS level
+    // rather than anything in this payload. Testing that directly: only
+    // one action this round. If this one correctly reports "yes", the bug
+    // is specifically about *multiple* simultaneous actions; if even a
+    // single lone action doesn't report correctly, it's something else
+    // entirely. Restore the "no" action once this data point is in.
     options.data = { block: payload.block };
-    options.actions = [
-      { action: "yes", title: "Yes", icon: "./icon.svg" },
-      { action: "no", title: "No", icon: "./icon.svg" },
-    ];
+    options.actions = [{ action: "yes", title: "Yes" }];
   }
 
   event.waitUntil(self.registration.showNotification(payload.title, options));
