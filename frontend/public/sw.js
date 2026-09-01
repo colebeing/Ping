@@ -45,40 +45,41 @@ self.addEventListener("push", (event) => {
     }
   }
 
+  const options = { body: payload.body, icon: "./icon.svg", badge: "./icon.svg" };
   if (payload.block) {
-    event.waitUntil(showYesNoNotifications(payload));
-    return;
+    options.tag = `block-${payload.block}`;
+    options.data = { block: payload.block };
+    // One declared action, not two. On Android, Chrome collapses multiple
+    // actions on the same notification to whichever was declared last,
+    // regardless of which is tapped — confirmed via isolation testing
+    // (content, array order, and action count all ruled in/out) and
+    // confirmed Chrome-specific, not an OS bug (Firefox on the identical
+    // device/OS doesn't reproduce it) — filed upstream, not fixable here.
+    // Two separate single-action notifications also isn't it: Android
+    // bundles multiple simultaneous notifications from one app and shows
+    // bundle members collapsed, needing an extra per-card expand to see
+    // their action at all.
+    //
+    // Instead: tapping the notification body (not a declared action) is a
+    // completely different, always-distinct signal from the browser —
+    // reported as action === "" — untouched by the actions-collision bug
+    // since it isn't part of the actions array. Body tap answers "yes";
+    // the sole declared action answers "no". One notification, one real
+    // action, and both answers are still a single tap.
+    options.body = `${payload.body} (tap for Yes)`;
+    options.actions = [{ action: "no", title: "No" }];
   }
 
-  event.waitUntil(self.registration.showNotification(payload.title, { body: payload.body, icon: "./icon.svg", badge: "./icon.svg" }));
+  event.waitUntil(self.registration.showNotification(payload.title, options));
 });
-
-/**
- * Yes and No as two separate single-action notifications, not one
- * notification with two actions. On Android, Chrome collapses multiple
- * actions on the same notification to whichever was declared last,
- * regardless of which is tapped — confirmed via isolation testing (content,
- * array order, and action count all ruled in/out) and confirmed
- * Chrome-specific (Firefox on the identical device/OS doesn't have this
- * bug), so it's filed upstream rather than fixable here. A lone action
- * reports correctly, so this sidesteps it entirely at the cost of two tray
- * entries instead of one.
- */
-async function showYesNoNotifications(payload) {
-  const base = { body: payload.body, icon: "./icon.svg", badge: "./icon.svg", data: { block: payload.block } };
-  await Promise.all([
-    self.registration.showNotification(payload.title, { ...base, tag: `block-${payload.block}-yes`, actions: [{ action: "yes", title: "Yes" }] }),
-    self.registration.showNotification(payload.title, { ...base, tag: `block-${payload.block}-no`, actions: [{ action: "no", title: "No" }] }),
-  ]);
-}
 
 self.addEventListener("notificationclick", (event) => {
   const action = event.action;
   const block = event.notification.data?.block;
   event.notification.close();
 
-  if (action === "yes" || action === "no") {
-    event.waitUntil(answerFromNotification(block, action));
+  if (block && (action === "" || action === "no")) {
+    event.waitUntil(answerFromNotification(block, action === "no" ? "no" : "yes"));
     return;
   }
 
@@ -104,14 +105,6 @@ async function answerFromNotification(block, answer) {
   } catch (err) {
     console.error("quick-answer failed", err);
   }
-
-  // Yes/No are two separate notifications now (see showYesNoNotifications) —
-  // once one's been tapped, close the other so it can't be tapped afterward
-  // and overwrite the answer just recorded.
-  const siblingTag = `block-${block}-${answer === "yes" ? "no" : "yes"}`;
-  const siblings = await self.registration.getNotifications({ tag: siblingTag });
-  for (const n of siblings) n.close();
-
   // Whether or not the fetch succeeded (e.g. session expired), opening the
   // app is the right fallback — it'll show the real state, including login
   // if needed.
