@@ -76,7 +76,7 @@ self.addEventListener("push", (event) => {
     // already shows the app/origin in its own attribution line regardless
     // of what's in this field).
     title = payload.body;
-    body = "Yes or...?";
+    body = "Tap here for yes or below for no";
   }
 
   event.waitUntil(self.registration.showNotification(title, { ...options, body }));
