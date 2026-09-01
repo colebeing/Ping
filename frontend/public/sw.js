@@ -45,7 +45,10 @@ self.addEventListener("push", (event) => {
     }
   }
 
-  const options = { body: payload.body, icon: "./icon.svg", badge: "./icon.svg" };
+  const options = { icon: "./icon.svg", badge: "./icon.svg" };
+  let title = payload.title;
+  let body = payload.body;
+
   if (payload.block) {
     options.tag = `block-${payload.block}`;
     options.data = { block: payload.block };
@@ -66,11 +69,17 @@ self.addEventListener("push", (event) => {
     // since it isn't part of the actions array. Body tap answers "yes";
     // the sole declared action answers "no". One notification, one real
     // action, and both answers are still a single tap.
-    options.body = `${payload.body} (tap for Yes)`;
     options.actions = [{ action: "no", title: "No" }];
+
+    // The question is the part worth reading at a glance — feature it as
+    // the notification's title instead of the generic "Ping" (Android
+    // already shows the app/origin in its own attribution line regardless
+    // of what's in this field).
+    title = payload.body;
+    body = "Yes or...?";
   }
 
-  event.waitUntil(self.registration.showNotification(payload.title, options));
+  event.waitUntil(self.registration.showNotification(title, { ...options, body }));
 });
 
 self.addEventListener("notificationclick", (event) => {
