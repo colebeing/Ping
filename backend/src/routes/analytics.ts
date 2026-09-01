@@ -56,6 +56,10 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
     "1": { yes: 0, no: 0 },
     "2": { yes: 0, no: 0 },
     combined: { yes: 0, no: 0 },
+    q1: { yes: 0, no: 0 },
+    q2: { yes: 0, no: 0 },
+    q3: { yes: 0, no: 0 },
+    q4: { yes: 0, no: 0 },
   };
   const dailyCounts = new Map<string, number>();
   const users: AnalyticsUserSummary[] = [];

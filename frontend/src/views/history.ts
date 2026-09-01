@@ -1,7 +1,9 @@
-import { api, type Answer, type Category, type FollowupPrompt, type Frequency } from "../api";
+import { api, type Answer, type BlockId, type Category, type FollowupPrompt, type Frequency } from "../api";
 import { mountBlockCard, button, CATEGORY_LABEL } from "../blockCard";
 
 const DAYS_SHOWN = 14;
+const TWICE_BLOCKS: BlockId[] = ["1", "2"];
+const FOUR_BLOCKS: BlockId[] = ["q1", "q2", "q3", "q4"];
 
 function localDateStr(timezone: string, at: Date): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
@@ -18,24 +20,23 @@ function dayLabel(date: string, today: string, yesterday: string): string {
   return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
-/** Morning + Evening, as two independently fillable blocks — either can be answered first. */
-function renderTwoBlocks(container: HTMLElement, date: string): void {
+/** Each of `blocks` as an independently fillable block — any can be answered first. */
+function renderBlocks(container: HTMLElement, blocks: BlockId[], date: string): void {
   container.innerHTML = "";
-  const morningContainer = document.createElement("div");
-  container.appendChild(morningContainer);
-  const eveningContainer = document.createElement("div");
-  container.appendChild(eveningContainer);
-
-  void mountBlockCard(morningContainer, "1", date);
-  void mountBlockCard(eveningContainer, "2", date);
+  for (const block of blocks) {
+    const blockContainer = document.createElement("div");
+    container.appendChild(blockContainer);
+    void mountBlockCard(blockContainer, block, date);
+  }
 }
 
 /**
- * For a past day with nothing recorded on either block: one question instead
- * of two. Answering it records the same answer + category on both blocks
- * under the hood, so once done it reads identically to a normally-answered day.
+ * For a past day with nothing recorded on any of `blocks`: one question
+ * instead of several. Answering it records the same answer + category on
+ * every block under the hood, so once done it reads identically to a
+ * normally-answered day.
  */
-async function renderCollapsedDay(container: HTMLElement, date: string): Promise<void> {
+async function renderCollapsedDay(container: HTMLElement, date: string, blocks: BlockId[]): Promise<void> {
   container.innerHTML = `<div class="card">Loading…</div>`;
   try {
     let step: { kind: "question" } | { kind: "followup"; answer: Answer; prompt: FollowupPrompt } = {
@@ -74,16 +75,18 @@ async function renderCollapsedDay(container: HTMLElement, date: string): Promise
 
     const submitAnswer = async (answer: Answer) => {
       pendingAnswer = answer;
-      const res = await api.answer("1", answer, date);
+      const res = await api.answer(blocks[0], answer, date);
       step = { kind: "followup", answer, prompt: res.followup };
       paint();
     };
 
     const submitFollowup = async (category: Category) => {
-      await api.followup("1", category, date);
-      await api.answer("2", pendingAnswer, date);
-      await api.followup("2", category, date);
-      renderTwoBlocks(container, date);
+      await api.followup(blocks[0], category, date);
+      for (const block of blocks.slice(1)) {
+        await api.answer(block, pendingAnswer, date);
+        await api.followup(block, category, date);
+      }
+      renderBlocks(container, blocks, date);
     };
 
     paint();
@@ -111,17 +114,26 @@ async function renderDay(container: HTMLElement, date: string, isToday: boolean,
 
   const [morning, evening] = await Promise.all([api.getQuestion("1", date), api.getQuestion("2", date)]);
   if (morning.existingAnswer || evening.existingAnswer) {
-    renderTwoBlocks(container, date);
+    renderBlocks(container, TWICE_BLOCKS, date);
+    return;
+  }
+
+  const quadAnswers = await Promise.all(FOUR_BLOCKS.map((block) => api.getQuestion(block, date)));
+  if (quadAnswers.some((q) => q.existingAnswer)) {
+    renderBlocks(container, FOUR_BLOCKS, date);
     return;
   }
 
   // Fully blank — nothing to preserve, so use whichever mode is active now.
   if (currentFrequency === "once") {
     void mountBlockCard(container, "combined", date);
+  } else if (currentFrequency === "four") {
+    if (isToday) renderBlocks(container, FOUR_BLOCKS, date);
+    else void renderCollapsedDay(container, date, FOUR_BLOCKS);
   } else if (isToday) {
-    renderTwoBlocks(container, date);
+    renderBlocks(container, TWICE_BLOCKS, date);
   } else {
-    void renderCollapsedDay(container, date);
+    void renderCollapsedDay(container, date, TWICE_BLOCKS);
   }
 }
 

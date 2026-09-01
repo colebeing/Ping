@@ -3,9 +3,17 @@ import type { BlockId, Cadence, Env, PushSubscriptionJSON } from "./types";
 import { getState, saveState, todayLocal } from "./state";
 import { sendFcmPush } from "./fcm";
 
-/** Which block(s) are actually live for this user's current cadence, and what time each is due. "once" collapses to a single "combined" block using block1's time slot. */
+/** Which block(s) are actually live for this user's current cadence, and what time each is due. "once" collapses to a single "combined" block using block1's time slot; "four" expands to four independent blocks using block1-4. */
 function activeBlockTimes(cadence: Cadence): { block: BlockId; time: string }[] {
   if (cadence.frequency === "once") return [{ block: "combined", time: cadence.block1 }];
+  if (cadence.frequency === "four") {
+    return [
+      { block: "q1", time: cadence.block1 },
+      { block: "q2", time: cadence.block2 },
+      { block: "q3", time: cadence.block3 ?? cadence.block1 },
+      { block: "q4", time: cadence.block4 ?? cadence.block2 },
+    ];
+  }
   return [
     { block: "1", time: cadence.block1 },
     { block: "2", time: cadence.block2 },
@@ -39,6 +47,10 @@ const BLOCK_PROMPTS: Record<BlockId, string> = {
   "1": "Did today start how you wanted?",
   "2": "Did today end how you wanted?",
   combined: "Did today go how you wanted?",
+  q1: "Did everything go how you wanted?",
+  q2: "Did everything go how you wanted?",
+  q3: "Did everything go how you wanted?",
+  q4: "Did everything go how you wanted?",
 };
 
 function blockPushBody(state: Awaited<ReturnType<typeof getState>>, block: BlockId): string {

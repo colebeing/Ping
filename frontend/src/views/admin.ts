@@ -30,13 +30,19 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
       saveBtn.textContent = "Saving…";
       saveBtn.setAttribute("disabled", "true");
       try {
-        // Morning, Evening, and the once-daily question only ever differ by
-        // their WHEN slot — keep the other two mirrored to Morning's content
-        // on save, in case they'd drifted apart before this UI stopped allowing that.
+        // Morning, Evening, the once-daily question, and the four 4x-daily
+        // questions only ever differ by their WHEN slot (the four 4x-daily
+        // ones all share one WHEN between them) — keep everything else
+        // mirrored to Morning's content on save, in case it drifted apart
+        // before this UI stopped allowing that.
         const eveningWhen = config.blocks["2"].question.when;
         const combinedWhen = config.blocks.combined.question.when;
+        const quadWhen = config.blocks.q1.question.when;
         config.blocks["2"] = { ...JSON.parse(JSON.stringify(config.blocks["1"])), question: { ...config.blocks["1"].question, when: eveningWhen } };
         config.blocks.combined = { ...JSON.parse(JSON.stringify(config.blocks["1"])), question: { ...config.blocks["1"].question, when: combinedWhen } };
+        for (const block of ["q1", "q2", "q3", "q4"] as const) {
+          config.blocks[block] = { ...JSON.parse(JSON.stringify(config.blocks["1"])), question: { ...config.blocks["1"].question, when: quadWhen } };
+        }
 
         await api.saveAdminConfig(config);
         status.textContent = "Saved.";
@@ -64,7 +70,7 @@ function renderQuestionSection(config: AdminConfig): HTMLElement {
 
   const note = document.createElement("p");
   note.className = "muted";
-  note.textContent = "Morning, Evening, and the Once Daily question all ask the same thing and share the WHY follow-up — only each one's WHEN slot differs.";
+  note.textContent = "Morning, Evening, the Once Daily question, and the 4x Daily question all ask the same thing and share the WHY follow-up — only each one's WHEN slot differs (the four 4x Daily check-ins share one WHEN slot between them).";
   card.appendChild(note);
 
   // Morning's content is the shared source of truth; the other two keep their own WHEN only (mirrored on save).
@@ -76,6 +82,8 @@ function renderQuestionSection(config: AdminConfig): HTMLElement {
   card.appendChild(textInput(config.blocks["2"].question.when, (v) => (config.blocks["2"].question.when = v)));
   card.appendChild(fieldLabel('Once Daily WHEN slot (e.g. "today go")'));
   card.appendChild(textInput(config.blocks.combined.question.when, (v) => (config.blocks.combined.question.when = v)));
+  card.appendChild(fieldLabel('4x Daily WHEN slot — shared across all four check-ins (e.g. "everything go")'));
+  card.appendChild(textInput(config.blocks.q1.question.when, (v) => (config.blocks.q1.question.when = v)));
 
   card.appendChild(fieldLabel('HOW slot (e.g. "how you wanted")'));
   card.appendChild(textInput(content.question.how, (v) => (content.question.how = v)));

@@ -1,4 +1,4 @@
-import { api, ApiError } from "../api";
+import { api, ApiError, type BlockId } from "../api";
 import { enablePushNotifications } from "../push-setup";
 
 export async function renderSettings(root: HTMLElement, onLogout: () => void): Promise<void> {
@@ -36,7 +36,7 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
     cadenceHeading.style.margin = "0";
     cadenceHeading.textContent = "Check-in times";
     const frequencySelect = document.createElement("select");
-    for (const [value, label] of [["twice", "Twice Daily"], ["once", "Once Daily"]] as const) {
+    for (const [value, label] of [["twice", "Twice Daily"], ["once", "Once Daily"], ["four", "4x Daily"]] as const) {
       const opt = document.createElement("option");
       opt.value = value;
       opt.textContent = label;
@@ -63,31 +63,83 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
     block2Input.type = "time";
     block2Input.value = me.cadence.block2;
 
+    const block3Label = document.createElement("label");
+    block3Label.className = "muted";
+    block3Label.textContent = "Check-in 3";
+    const block3Input = document.createElement("input");
+    block3Input.type = "time";
+    block3Input.value = me.cadence.block3 ?? "12:00";
+
+    const block4Label = document.createElement("label");
+    block4Label.className = "muted";
+    block4Label.textContent = "Check-in 4";
+    const block4Input = document.createElement("input");
+    block4Input.type = "time";
+    block4Input.value = me.cadence.block4 ?? "16:00";
+
+    const cadenceStatus = document.createElement("p");
+    cadenceStatus.className = "muted";
+
     const updateLabelsForFrequency = () => {
-      const isOnce = frequencySelect.value === "once";
-      block1Label.textContent = isOnce ? "Check-in time" : "Morning block";
-      block2Label.style.display = isOnce ? "none" : "block";
-      block2Input.style.display = isOnce ? "none" : "block";
+      const freq = frequencySelect.value;
+      block1Label.textContent = freq === "once" ? "Check-in time" : freq === "four" ? "Check-in 1" : "Morning block";
+      block2Label.textContent = freq === "four" ? "Check-in 2" : "Evening block";
+      const showBlock2 = freq !== "once";
+      block2Label.style.display = showBlock2 ? "block" : "none";
+      block2Input.style.display = showBlock2 ? "block" : "none";
+      const showQuad = freq === "four";
+      block3Label.style.display = showQuad ? "block" : "none";
+      block3Input.style.display = showQuad ? "block" : "none";
+      block4Label.style.display = showQuad ? "block" : "none";
+      block4Input.style.display = showQuad ? "block" : "none";
     };
     frequencySelect.addEventListener("change", updateLabelsForFrequency);
     updateLabelsForFrequency();
+
+    const MIN_GAP_MINUTES = 60;
+    const minutesOf = (hhmm: string) => {
+      const [hh, mm] = hhmm.split(":").map(Number);
+      return (hh % 24) * 60 + (mm || 0);
+    };
+    const hasMinGapApart = (times: string[]) => {
+      for (let i = 0; i < times.length; i++) {
+        for (let j = i + 1; j < times.length; j++) {
+          const diff = Math.abs(minutesOf(times[i]) - minutesOf(times[j]));
+          if (Math.min(diff, 1440 - diff) < MIN_GAP_MINUTES) return false;
+        }
+      }
+      return true;
+    };
 
     const save = document.createElement("button");
     save.className = "btn btn-primary";
     save.textContent = "Save";
     save.addEventListener("click", async () => {
+      cadenceStatus.textContent = "";
+      if (frequencySelect.value === "four" && !hasMinGapApart([block1Input.value, block2Input.value, block3Input.value, block4Input.value])) {
+        cadenceStatus.textContent = "4x Daily check-in times must each be at least an hour apart.";
+        return;
+      }
       save.textContent = "Saving…";
-      await api.updateCadence({
-        block1: block1Input.value,
-        block2: block2Input.value,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        frequency: frequencySelect.value === "once" ? "once" : "twice",
-      });
-      save.textContent = "Saved";
+      try {
+        await api.updateCadence({
+          block1: block1Input.value,
+          block2: block2Input.value,
+          block3: block3Input.value,
+          block4: block4Input.value,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          frequency: frequencySelect.value === "once" || frequencySelect.value === "four" ? frequencySelect.value : "twice",
+        });
+        save.textContent = "Saved";
+      } catch (err) {
+        cadenceStatus.textContent = err instanceof ApiError ? err.message : "Couldn't save.";
+        save.textContent = "Save";
+        return;
+      }
       setTimeout(() => (save.textContent = "Save"), 1200);
     });
 
-    form.append(block1Label, block1Input, block2Label, block2Input, save);
+    form.append(block1Label, block1Input, block2Label, block2Input, block3Label, block3Input, block4Label, block4Input, save, cadenceStatus);
     cadenceCard.appendChild(form);
     root.appendChild(cadenceCard);
 
@@ -110,7 +162,7 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
     testRow.className = "btn-row";
     const testStatus = document.createElement("p");
     testStatus.className = "muted";
-    const testBtn = (label: string, block: "1" | "2" | "combined") => {
+    const testBtn = (label: string, block: BlockId) => {
       const btn = document.createElement("button");
       btn.className = "btn";
       btn.textContent = label;
@@ -127,6 +179,13 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
     };
     if (me.cadence.frequency === "once") {
       testRow.append(testBtn("Test check-in", "combined"));
+    } else if (me.cadence.frequency === "four") {
+      testRow.append(
+        testBtn("Test check-in 1", "q1"),
+        testBtn("Test check-in 2", "q2"),
+        testBtn("Test check-in 3", "q3"),
+        testBtn("Test check-in 4", "q4"),
+      );
     } else {
       testRow.append(testBtn("Test morning", "1"), testBtn("Test evening", "2"));
     }

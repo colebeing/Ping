@@ -24,6 +24,13 @@ export const DEFAULT_CONFIG: AppConfig = {
     // The once-daily question. Same WHAT/WHY content as block 1 (mirrored on
     // every admin save, same convention as block 2) — only its own WHEN slot differs.
     combined: { question: { when: "today go", how: "how you wanted" }, ...SHARED_FOLLOWUPS },
+    // The four four-times-daily questions. Unlike the blocks above, these
+    // share a single WHEN slot across all four (admin edits q1 only; q2-q4
+    // are mirrored wholesale on save, WHEN included) — so all four start identical.
+    q1: { question: { when: "everything go", how: "how you wanted" }, ...SHARED_FOLLOWUPS },
+    q2: { question: { when: "everything go", how: "how you wanted" }, ...SHARED_FOLLOWUPS },
+    q3: { question: { when: "everything go", how: "how you wanted" }, ...SHARED_FOLLOWUPS },
+    q4: { question: { when: "everything go", how: "how you wanted" }, ...SHARED_FOLLOWUPS },
   },
 };
 
@@ -32,6 +39,10 @@ export async function getConfig(env: Env): Promise<AppConfig> {
   if (!stored) return DEFAULT_CONFIG;
   // Backfill for config saved before the "combined" block existed.
   if (!stored.blocks.combined) stored.blocks.combined = DEFAULT_CONFIG.blocks.combined;
+  // Backfill for config saved before the four-times-daily blocks existed.
+  for (const block of ["q1", "q2", "q3", "q4"] as const) {
+    if (!stored.blocks[block]) stored.blocks[block] = DEFAULT_CONFIG.blocks[block];
+  }
   return stored;
 }
 

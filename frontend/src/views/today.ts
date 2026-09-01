@@ -16,13 +16,14 @@ const BLOCK_SWITCH_DELAY_MINUTES = 60;
  * fired yet — delayed by BLOCK_SWITCH_DELAY_MINUTES so there's room to
  * actually act on that notification before the view moves on.
  */
-export function currentBlock(cadence: Cadence): BlockId {
+/** Of a set of (block, cadence time) candidates, picks whichever one's own reminder time is coming up soonest. */
+function pickSoonestBlock(timezone: string, candidates: [BlockId, string][]): BlockId {
   const toMinutes = (hhmm: string) => {
     const [h, m] = hhmm.split(":").map(Number);
     return ((h % 24) * 60 + (m || 0) + 1440) % 1440;
   };
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: cadence.timezone,
+    timeZone: timezone,
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -32,12 +33,39 @@ export function currentBlock(cadence: Cadence): BlockId {
   const now = (hh * 60 + mm - BLOCK_SWITCH_DELAY_MINUTES + 1440) % 1440;
 
   const until = (target: number) => (target - now + 1440) % 1440;
-  return until(toMinutes(cadence.block1)) <= until(toMinutes(cadence.block2)) ? "1" : "2";
+  let best = candidates[0];
+  let bestUntil = until(toMinutes(best[1]));
+  for (const candidate of candidates.slice(1)) {
+    const candidateUntil = until(toMinutes(candidate[1]));
+    if (candidateUntil < bestUntil) {
+      best = candidate;
+      bestUntil = candidateUntil;
+    }
+  }
+  return best[0];
 }
 
-/** Which block "Today" is currently showing, accounting for once-daily cadence collapsing everything to "combined". */
+export function currentBlock(cadence: Cadence): BlockId {
+  return pickSoonestBlock(cadence.timezone, [
+    ["1", cadence.block1],
+    ["2", cadence.block2],
+  ]);
+}
+
+function currentQuadBlock(cadence: Cadence): BlockId {
+  return pickSoonestBlock(cadence.timezone, [
+    ["q1", cadence.block1],
+    ["q2", cadence.block2],
+    ["q3", cadence.block3 ?? cadence.block1],
+    ["q4", cadence.block4 ?? cadence.block2],
+  ]);
+}
+
+/** Which block "Today" is currently showing, accounting for once-daily cadence collapsing everything to "combined" and four-daily cadence expanding to four independent blocks. */
 export function currentBlockForCadence(cadence: Cadence): BlockId {
-  return cadence.frequency === "once" ? "combined" : currentBlock(cadence);
+  if (cadence.frequency === "once") return "combined";
+  if (cadence.frequency === "four") return currentQuadBlock(cadence);
+  return currentBlock(cadence);
 }
 
 export async function renderToday(root: HTMLElement): Promise<void> {

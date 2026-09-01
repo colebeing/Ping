@@ -76,9 +76,13 @@ async function getAccessToken(account: ServiceAccount): Promise<string> {
 }
 
 /**
- * Sends a data-only FCM message (no `notification` payload) so the app's own
- * FirebaseMessagingService fully controls how it's displayed — needed for
- * the multi-action, swap-in-place notification the native wrapper builds.
+ * Sends one FCM message carrying both a data payload and platform-specific display config — FCM
+ * applies only the block matching the target token's platform, so both can be set unconditionally
+ * on every send. Android: `data` only (no `notification` block) so its own FirebaseMessagingService
+ * fully controls the swap-in-place notification. iOS: a real APNs alert (`apns.payload.aps`) with a
+ * `category` for Yes/No actions, since content-available/background pushes there aren't reliably
+ * delivered once the app is suspended or force-quit — the app still replaces/rebuilds the
+ * notification itself at the later follow-up/confirmation stages, same as Android.
  */
 export async function sendFcmPush(env: Env, token: string, data: Record<string, string>): Promise<boolean> {
   const account = parseServiceAccount(env);
@@ -88,7 +92,23 @@ export async function sendFcmPush(env: Env, token: string, data: Record<string, 
     const res = await fetch(`https://fcm.googleapis.com/v1/projects/${account.project_id}/messages:send`, {
       method: "POST",
       headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ message: { token, data, android: { priority: "high" } } }),
+      body: JSON.stringify({
+        message: {
+          token,
+          data,
+          android: { priority: "high" },
+          apns: {
+            headers: { "apns-priority": "10" },
+            payload: {
+              aps: {
+                alert: { title: data.title ?? "Ping", body: data.body ?? "" },
+                sound: "default",
+                category: "PING_QUESTION",
+              },
+            },
+          },
+        },
+      }),
     });
     if (!res.ok) console.error("FCM send failed", res.status, await res.text());
     return res.ok;

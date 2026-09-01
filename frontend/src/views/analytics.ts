@@ -121,7 +121,7 @@ function renderAnswerBalance(data: AnalyticsResponse): HTMLElement {
   h.textContent = "Yes / No balance";
   card.appendChild(h);
 
-  for (const block of ["1", "2", "combined"] as BlockId[]) {
+  for (const block of ["1", "2", "combined", "q1", "q2", "q3", "q4"] as BlockId[]) {
     const { yes, no } = data.answerBalance[block];
     const total = yes + no;
     if (total === 0) continue; // e.g. no once-daily history yet

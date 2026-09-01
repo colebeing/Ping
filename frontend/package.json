@@ -7,8 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "cap:sync": "vite build && cap sync android",
-    "cap:open": "cap open android"
+    "cap:sync": "vite build && cap sync",
+    "cap:open:android": "cap open android",
+    "cap:open:ios": "cap open ios"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
@@ -23,6 +24,7 @@
   "dependencies": {
     "@capacitor/android": "^8.5.0",
     "@capacitor/core": "^8.5.0",
+    "@capacitor/ios": "^8.5.0",
     "@capacitor/push-notifications": "^8.1.2"
   }
 }

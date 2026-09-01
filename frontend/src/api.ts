@@ -1,12 +1,13 @@
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8787";
 
 export type Category = "friends" | "colleagues" | "family" | "me";
-/** "combined" is the once-daily question — a real third block with its own history, not a repurposed "1". */
-export type BlockId = "1" | "2" | "combined";
+/** "combined" is the once-daily question, and "q1"-"q4" are the four-times-daily questions — real blocks of their own with their own history, not repurposed "1"/"2". */
+export type BlockId = "1" | "2" | "combined" | "q1" | "q2" | "q3" | "q4";
+export const ALL_BLOCKS: BlockId[] = ["1", "2", "combined", "q1", "q2", "q3", "q4"];
 export function isBlockId(value: unknown): value is BlockId {
-  return value === "1" || value === "2" || value === "combined";
+  return typeof value === "string" && (ALL_BLOCKS as string[]).includes(value);
 }
-export type Frequency = "twice" | "once";
+export type Frequency = "twice" | "once" | "four";
 export type Answer = "yes" | "no";
 
 export interface FollowupPrompt {
@@ -36,6 +37,8 @@ export interface AnswerResponse {
 export interface Cadence {
   block1: string;
   block2: string;
+  block3?: string;
+  block4?: string;
   timezone: string;
   frequency: Frequency;
 }
