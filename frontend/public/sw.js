@@ -45,42 +45,40 @@ self.addEventListener("push", (event) => {
     }
   }
 
-  const options = { body: payload.body, icon: "./icon.svg", badge: "./icon.svg" };
   if (payload.block) {
-    // Two is the practical ceiling for notification actions across browsers,
-    // which is exactly enough for yes/no. The 4-way follow-up categories
-    // can't fit as actions, so those still need the app open — see below.
-    //
-    // Confirmed purely positional: swapping array order flipped which
-    // answer both taps reported, so it's "whichever is declared last,"
-    // independent of content. This round tests whether that's still true
-    // for short numeric-looking ids ("1"/"2") instead of words — action is
-    // a DOMString per spec either way, but Chrome's internal Android
-    // handling might still treat digit strings differently somewhere.
-    options.data = { block: payload.block };
-    options.actions = [
-      { action: "1", title: "Yes" },
-      { action: "2", title: "No" },
-    ];
+    event.waitUntil(showYesNoNotifications(payload));
+    return;
   }
 
-  event.waitUntil(self.registration.showNotification(payload.title, options));
+  event.waitUntil(self.registration.showNotification(payload.title, { body: payload.body, icon: "./icon.svg", badge: "./icon.svg" }));
 });
+
+/**
+ * Yes and No as two separate single-action notifications, not one
+ * notification with two actions. On Android, Chrome collapses multiple
+ * actions on the same notification to whichever was declared last,
+ * regardless of which is tapped — confirmed via isolation testing (content,
+ * array order, and action count all ruled in/out) and confirmed
+ * Chrome-specific (Firefox on the identical device/OS doesn't have this
+ * bug), so it's filed upstream rather than fixable here. A lone action
+ * reports correctly, so this sidesteps it entirely at the cost of two tray
+ * entries instead of one.
+ */
+async function showYesNoNotifications(payload) {
+  const base = { body: payload.body, icon: "./icon.svg", badge: "./icon.svg", data: { block: payload.block } };
+  await Promise.all([
+    self.registration.showNotification(payload.title, { ...base, tag: `block-${payload.block}-yes`, actions: [{ action: "yes", title: "Yes" }] }),
+    self.registration.showNotification(payload.title, { ...base, tag: `block-${payload.block}-no`, actions: [{ action: "no", title: "No" }] }),
+  ]);
+}
 
 self.addEventListener("notificationclick", (event) => {
   const action = event.action;
   const block = event.notification.data?.block;
   event.notification.close();
 
-  // TEMPORARY: confirms whether dropping tag/renotify + per-action icons
-  // fixed the Android mismap before this is stripped back out. Remove once
-  // confirmed one way or the other.
-  event.waitUntil(
-    self.registration.showNotification("Ping debug", { body: `notificationclick action="${action}" block="${block}"`, tag: "ping-debug" }),
-  );
-
-  if (action === "1" || action === "2") {
-    event.waitUntil(answerFromNotification(block, action === "1" ? "yes" : "no"));
+  if (action === "yes" || action === "no") {
+    event.waitUntil(answerFromNotification(block, action));
     return;
   }
 
@@ -106,6 +104,14 @@ async function answerFromNotification(block, answer) {
   } catch (err) {
     console.error("quick-answer failed", err);
   }
+
+  // Yes/No are two separate notifications now (see showYesNoNotifications) —
+  // once one's been tapped, close the other so it can't be tapped afterward
+  // and overwrite the answer just recorded.
+  const siblingTag = `block-${block}-${answer === "yes" ? "no" : "yes"}`;
+  const siblings = await self.registration.getNotifications({ tag: siblingTag });
+  for (const n of siblings) n.close();
+
   // Whether or not the fetch succeeded (e.g. session expired), opening the
   // app is the right fallback — it'll show the real state, including login
   // if needed.
