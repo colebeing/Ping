@@ -44,14 +44,12 @@ export async function renderHome(root: HTMLElement): Promise<void> {
     const current = currentBlockForCadence(me.cadence);
     const visible = visibleBlocksToday(me.cadence);
 
-    const hero = document.createElement("div");
-    hero.className = "today-hero";
-    root.appendChild(hero);
-    void mountBlockCard(hero, current, today);
-
+    // Chronological order (start of day through end of day), not
+    // current-first — the current block still gets hero styling, just
+    // wherever it actually falls in that order rather than always up top.
     for (const block of visible) {
-      if (block === current) continue;
       const container = document.createElement("div");
+      container.className = block === current ? "today-hero" : "";
       root.appendChild(container);
       void mountBlockCard(container, block, today);
     }
