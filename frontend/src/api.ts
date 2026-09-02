@@ -117,8 +117,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  signup: (email: string, password: string, inviteToken: string) =>
-    request<{ email: string }>("/api/signup", { method: "POST", body: JSON.stringify({ email, password, inviteToken }) }),
+  signup: (email: string, password: string) =>
+    request<{ email: string }>("/api/signup", { method: "POST", body: JSON.stringify({ email, password }) }),
   login: (email: string, password: string) =>
     request<{ email: string }>("/api/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   logout: () => request<{ ok: true }>("/api/logout", { method: "POST" }),
@@ -128,8 +128,6 @@ export const api = {
     request<{ ok: true }>("/api/password-reset/request", { method: "POST", body: JSON.stringify({ email }) }),
   confirmPasswordReset: (token: string, newPassword: string) =>
     request<{ ok: true }>("/api/password-reset/confirm", { method: "POST", body: JSON.stringify({ token, newPassword }) }),
-
-  sendInvite: (email: string) => request<{ ok: true }>("/api/invite", { method: "POST", body: JSON.stringify({ email }) }),
 
   getQuestion: (block: BlockId, date?: string) =>
     request<QuestionResponse>(`/api/question?block=${block}${date ? `&date=${date}` : ""}`),
@@ -152,8 +150,7 @@ export const api = {
   sendTestPush: (block: BlockId) =>
     request<{ ok: true }>("/api/push/test", { method: "POST", body: JSON.stringify({ block }) }),
 
-  googleSignInUrl: (inviteToken?: string | null) =>
-    `${API_BASE}/api/auth/google/start${inviteToken ? `?invite=${encodeURIComponent(inviteToken)}` : ""}`,
+  googleSignInUrl: () => `${API_BASE}/api/auth/google/start`,
 
   getAdminConfig: () => request<AdminConfig>("/api/admin/config"),
   saveAdminConfig: (config: AdminConfig) =>

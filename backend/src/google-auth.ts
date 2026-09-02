@@ -3,7 +3,6 @@ import type { Env } from "./types";
 const STATE_TTL_SECONDS = 10 * 60; // 10 minutes — plenty for the redirect round-trip
 
 interface OAuthState {
-  inviteToken?: string;
   expiresAt: number;
 }
 
@@ -15,9 +14,10 @@ export function callbackUrl(requestUrl: string): string {
   return `${new URL(requestUrl).origin}/api/auth/google/callback`;
 }
 
-export async function createOAuthState(env: Env, inviteToken: string | null): Promise<string> {
+/** The nonce itself is the CSRF protection for the OAuth redirect round-trip — no invite gating anymore, so there's nothing else to carry through it. */
+export async function createOAuthState(env: Env): Promise<string> {
   const nonce = crypto.randomUUID();
-  const record: OAuthState = { inviteToken: inviteToken ?? undefined, expiresAt: Date.now() + STATE_TTL_SECONDS * 1000 };
+  const record: OAuthState = { expiresAt: Date.now() + STATE_TTL_SECONDS * 1000 };
   await env.STATE_KV.put(`oauth-state:${nonce}`, JSON.stringify(record), { expirationTtl: STATE_TTL_SECONDS });
   return nonce;
 }

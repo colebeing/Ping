@@ -3,7 +3,6 @@ import { api, ApiError } from "../api";
 type Mode = "login" | "signup" | "forgot" | "forgot-sent" | "reset" | "reset-done";
 
 const OAUTH_ERROR_MESSAGES: Record<string, string> = {
-  "invite-required": "That Google account isn't on Ping yet — you need an invite link to sign up.",
   "google-auth-failed": "Google sign-in didn't work. Try again?",
   "google-auth-expired": "That sign-in attempt expired. Try again.",
   "google-email-unverified": "That Google account's email isn't verified.",
@@ -12,10 +11,9 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
 export function renderAuth(root: HTMLElement, onAuthed: () => void): void {
   const params = new URLSearchParams(window.location.search);
   const resetToken = params.get("reset");
-  const inviteToken = params.get("invite");
   let oauthError = params.get("error");
 
-  let mode: Mode = resetToken ? "reset" : inviteToken ? "signup" : "login";
+  let mode: Mode = resetToken ? "reset" : "login";
 
   const paint = () => {
     root.innerHTML = "";
@@ -62,13 +60,6 @@ export function renderAuth(root: HTMLElement, onAuthed: () => void): void {
   };
 
   function renderLoginOrSignup(form: HTMLElement, errorEl: HTMLElement) {
-    if (mode === "signup" && inviteToken) {
-      const note = document.createElement("p");
-      note.className = "muted";
-      note.textContent = "You've been invited — create your account below.";
-      form.appendChild(note);
-    }
-
     if (oauthError) {
       errorEl.textContent = OAUTH_ERROR_MESSAGES[oauthError] ?? "Something went wrong signing in with Google.";
       oauthError = null;
@@ -94,12 +85,7 @@ export function renderAuth(root: HTMLElement, onAuthed: () => void): void {
         if (mode === "login") {
           await api.login(email.value, password.value);
         } else {
-          if (!inviteToken) {
-            errorEl.textContent = "Signing up needs an invite link — ask someone already on Ping to invite you.";
-            submit.removeAttribute("disabled");
-            return;
-          }
-          await api.signup(email.value, password.value, inviteToken);
+          await api.signup(email.value, password.value);
         }
         onAuthed();
       } catch (err) {
@@ -112,7 +98,7 @@ export function renderAuth(root: HTMLElement, onAuthed: () => void): void {
     form.append(email, password, errorEl, submit);
 
     const google = button("Sign in with Google", "btn", () => {
-      window.location.href = api.googleSignInUrl(inviteToken);
+      window.location.href = api.googleSignInUrl();
     });
     form.appendChild(google);
 
@@ -124,14 +110,11 @@ export function renderAuth(root: HTMLElement, onAuthed: () => void): void {
       form.appendChild(forgot);
     }
 
-    // Only offer switching to signup if we actually have an invite to use.
-    if (inviteToken || mode === "signup") {
-      const toggle = button(mode === "login" ? "Have an invite? Sign up" : "Have an account? Log in", "btn", () => {
-        mode = mode === "login" ? "signup" : "login";
-        paint();
-      });
-      form.appendChild(toggle);
-    }
+    const toggle = button(mode === "login" ? "New here? Sign up" : "Have an account? Log in", "btn", () => {
+      mode = mode === "login" ? "signup" : "login";
+      paint();
+    });
+    form.appendChild(toggle);
   }
 
   function renderForgotForm(form: HTMLElement, errorEl: HTMLElement) {

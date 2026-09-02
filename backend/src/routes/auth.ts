@@ -13,28 +13,21 @@ import {
   consumePasswordResetToken,
   setPassword,
 } from "../auth";
-import { peekInvite, consumeInvite } from "../invites";
 import { sendPasswordResetEmail } from "../email";
 
 interface SignupBody {
   email: string;
   password: string;
-  inviteToken: string;
 }
 
 export async function handleSignup(request: Request, env: Env): Promise<Response> {
-  const { email, password, inviteToken } = await readJson<SignupBody>(request);
+  const { email, password } = await readJson<SignupBody>(request);
   if (!email || !password || password.length < 8) {
     return errorResponse("Email and a password of at least 8 characters are required", 400);
   }
-  if (!inviteToken) return errorResponse("An invite is required to sign up", 403);
-
-  const invite = await peekInvite(env, inviteToken, email);
-  if (!invite.ok) return errorResponse(invite.reason, 403);
 
   try {
     const user = await createUser(env, email, password);
-    await consumeInvite(env, inviteToken);
     const token = await createSession(env, user.id);
     return json({ email: user.email }, 201, { "Set-Cookie": sessionCookieHeader(token) });
   } catch (err) {

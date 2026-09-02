@@ -172,12 +172,6 @@ export interface PasswordResetToken {
   expiresAt: number; // epoch ms
 }
 
-export interface InviteToken {
-  email: string; // normalized — the invite may only be redeemed by this exact email
-  invitedBy: string;
-  expiresAt: number; // epoch ms
-}
-
 export interface Env {
   CONFIG_KV: KVNamespace;
   STATE_KV: KVNamespace;
@@ -190,7 +184,7 @@ export interface Env {
   RESEND_API_KEY?: string;
   /** e.g. "Ping <onboarding@resend.dev>" — defaults to Resend's shared test address if unset. */
   EMAIL_FROM?: string;
-  /** Frontend origin for building reset/invite links, e.g. "https://colebeing.github.io/Ping". */
+  /** Frontend origin for building password-reset links, e.g. "https://colebeing.github.io/Ping". */
   FRONTEND_URL?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;

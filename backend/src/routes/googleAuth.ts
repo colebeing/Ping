@@ -1,7 +1,6 @@
 import type { Env } from "../types";
 import { errorResponse } from "../http";
 import { getUser, createUserFromGoogle, createSession, sessionCookieHeader } from "../auth";
-import { peekInvite, consumeInvite } from "../invites";
 import {
   googleConfigured,
   callbackUrl,
@@ -18,8 +17,7 @@ function frontendUrl(env: Env): string {
 
 export async function handleGoogleStart(request: Request, env: Env): Promise<Response> {
   if (!googleConfigured(env)) return errorResponse("Google sign-in isn't configured on the server", 501);
-  const invite = new URL(request.url).searchParams.get("invite");
-  const state = await createOAuthState(env, invite);
+  const state = await createOAuthState(env);
   const redirectUri = callbackUrl(request.url);
   return Response.redirect(buildGoogleAuthUrl(env, redirectUri, state), 302);
 }
@@ -43,13 +41,7 @@ export async function handleGoogleCallback(request: Request, env: Env): Promise<
     if (!info.email_verified) return Response.redirect(`${front}/?error=google-email-unverified`, 302);
 
     let user = await getUser(env, info.email);
-    if (!user) {
-      if (!state.inviteToken) return Response.redirect(`${front}/?error=invite-required`, 302);
-      const invite = await peekInvite(env, state.inviteToken, info.email);
-      if (!invite.ok) return Response.redirect(`${front}/?error=invite-required`, 302);
-      user = await createUserFromGoogle(env, info.email);
-      await consumeInvite(env, state.inviteToken);
-    }
+    if (!user) user = await createUserFromGoogle(env, info.email);
 
     const sessionToken = await createSession(env, user.id);
     return new Response(null, {

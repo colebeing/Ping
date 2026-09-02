@@ -42,15 +42,15 @@ npx wrangler secret put ALLOWED_ORIGINS # your GitHub Pages URL, e.g. https://yo
 
 `ALLOWED_ORIGINS` can be a comma-separated list. If unset, the API reflects any origin — fine for local dev, not for production.
 
-For password reset and invite emails, sign up at [resend.com](https://resend.com), get an API key, then:
+For password reset emails, sign up at [resend.com](https://resend.com), get an API key, then:
 
 ```bash
 npx wrangler secret put RESEND_API_KEY
-npx wrangler secret put FRONTEND_URL   # e.g. https://you.github.io/repo — used to build reset/invite links
+npx wrangler secret put FRONTEND_URL   # e.g. https://you.github.io/repo — used to build reset links
 npx wrangler secret put EMAIL_FROM     # optional, defaults to Resend's shared "onboarding@resend.dev"
 ```
 
-Without a verified domain in Resend, `onboarding@resend.dev` can only deliver to the email your Resend account itself is registered under — invites to anyone else's inbox won't arrive until you verify a domain there. Password reset for your own account works either way.
+Without a verified domain in Resend, `onboarding@resend.dev` can only deliver to the email your Resend account itself is registered under — reset emails to anyone else's inbox won't arrive until you verify a domain there. Password reset for your own account works either way.
 
 For "Sign in with Google": in [Google Cloud Console](https://console.cloud.google.com/apis/credentials), create an OAuth 2.0 Client ID (Web application). Add this exact Authorized redirect URI:
 
@@ -65,7 +65,7 @@ npx wrangler secret put GOOGLE_CLIENT_ID
 npx wrangler secret put GOOGLE_CLIENT_SECRET
 ```
 
-Until both secrets are set, `/api/auth/google/start` returns 501 rather than breaking — verified. Google sign-in follows the same invite rule as password signup: logging into an *existing* account (matched by email) always works, creating a *new* one still needs a valid invite token.
+Until both secrets are set, `/api/auth/google/start` returns 501 rather than breaking — verified. Google sign-in works the same as password signup: logging into an *existing* account (matched by email) or creating a *new* one both just work, no invite needed for either.
 
 Run locally: `npm run dev`. Deploy: `npm run deploy`.
 
@@ -100,9 +100,9 @@ Only block 1 (morning) content is drafted; block 2 reuses it verbatim (only the 
 
 `src/config.ts`'s `DEFAULT_CONFIG` is only a fallback for if `CONFIG_KV` is ever empty (e.g. a fresh environment before the first seed) — it's hardcoded to match the sheet's current content but won't stay in sync automatically; the sheet is the source of truth.
 
-## Accounts, invites, and password reset
+## Accounts and password reset
 
-Signup requires a valid invite (`POST /api/signup` takes an `inviteToken`) — there's no open signup. Any logged-in user can invite someone via Settings → Invite someone (`POST /api/invite`), which emails a signup link good for 7 days, single-use. Password reset (`POST /api/password-reset/request` → emails a 1-hour link → `POST /api/password-reset/confirm`) doesn't reveal whether an email has an account, by design.
+Signup is open — `POST /api/signup` just takes an email and password, no invite required; anyone who finds the app can create an account. Password reset (`POST /api/password-reset/request` → emails a 1-hour link → `POST /api/password-reset/confirm`) doesn't reveal whether an email has an account, by design.
 
 ## Admin
 
@@ -118,9 +118,9 @@ Per the spec's "do not build until told go" and parked-idea sections: no calenda
 
 ## Known gaps worth knowing about before relying on this
 
-- No email verification on password-based signup (an invite implicitly vouches for the email, but nothing confirms the invitee actually controls that inbox). Google sign-in doesn't have this gap — Google's own `email_verified` is checked.
+- No email verification on password-based signup — nothing confirms whoever signs up actually controls that inbox. Google sign-in doesn't have this gap — Google's own `email_verified` is checked.
 - Password reset doesn't invalidate other existing sessions for the account — a stolen session token would survive a reset.
-- Invite/reset emails silently no-op if `RESEND_API_KEY` isn't set (reset always returns success either way, by design, to avoid leaking account existence — so a misconfigured key is easy to miss without checking Worker logs).
+- Reset emails silently no-op if `RESEND_API_KEY` isn't set (reset always returns success either way, by design, to avoid leaking account existence — so a misconfigured key is easy to miss without checking Worker logs).
 - No way to unsubscribe/remove a stale push subscription from a device you no longer use.
 - The app icon (`frontend/public/icon.svg`) is a placeholder; add real branding + a PNG version for better iOS home-screen support before shipping.
 - Only block 1's content is drafted in the sheet; block 2 is a verbatim reuse, not independently written.

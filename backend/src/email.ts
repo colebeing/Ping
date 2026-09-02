@@ -34,15 +34,3 @@ export async function sendPasswordResetEmail(env: Env, to: string, token: string
      <p>This link expires in 1 hour. If you didn't request this, you can ignore this email.</p>`,
   );
 }
-
-export async function sendInviteEmail(env: Env, to: string, invitedBy: string, token: string): Promise<boolean> {
-  const link = `${frontendUrl(env)}/?invite=${encodeURIComponent(token)}`;
-  return sendEmail(
-    env,
-    to,
-    `${invitedBy} invited you to Ping`,
-    `<p>${invitedBy} invited you to Ping — a quick twice-daily check-in on whether your day is going how you wanted.</p>
-     <p><a href="${link}">Accept the invite</a></p>
-     <p>This link expires in 7 days.</p>`,
-  );
-}
