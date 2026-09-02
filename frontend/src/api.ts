@@ -151,6 +151,8 @@ export const api = {
     request<{ ok: true }>("/api/push/test", { method: "POST", body: JSON.stringify({ block }) }),
 
   googleSignInUrl: () => `${API_BASE}/api/auth/google/start`,
+  loginWithGoogleIdToken: (idToken: string) =>
+    request<{ email: string }>("/api/auth/google/token", { method: "POST", body: JSON.stringify({ idToken }) }),
 
   getAdminConfig: () => request<AdminConfig>("/api/admin/config"),
   saveAdminConfig: (config: AdminConfig) =>

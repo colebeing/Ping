@@ -1,3 +1,4 @@
+import { Capacitor } from "@capacitor/core";
 import { api, ApiError } from "../api";
 
 type Mode = "login" | "signup" | "forgot" | "forgot-sent" | "reset" | "reset-done";
@@ -97,8 +98,29 @@ export function renderAuth(root: HTMLElement, onAuthed: () => void): void {
 
     form.append(email, password, errorEl, submit);
 
-    const google = button("Sign in with Google", "btn", () => {
-      window.location.href = api.googleSignInUrl();
+    const google = button("Sign in with Google", "btn", async () => {
+      // The web redirect flow (window.location.href to Google's consent page) doesn't work inside
+      // the native app's WebView — Google blocks completing sign-in in an embedded browser, so
+      // Android just kicks the flow out to a real browser with no way back into the app. Native
+      // Google Sign-In (the OS's own account picker, no browser at all) sidesteps that entirely.
+      if (!Capacitor.isNativePlatform()) {
+        window.location.href = api.googleSignInUrl();
+        return;
+      }
+      errorEl.textContent = "";
+      google.setAttribute("disabled", "true");
+      try {
+        const { FirebaseAuthentication } = await import("@capacitor-firebase/authentication");
+        const result = await FirebaseAuthentication.signInWithGoogle();
+        const idToken = result.credential?.idToken;
+        if (!idToken) throw new Error("Google didn't return a usable sign-in token");
+        await api.loginWithGoogleIdToken(idToken);
+        onAuthed();
+      } catch (err) {
+        console.error("[ping] native google sign-in failed", err);
+        errorEl.textContent = err instanceof ApiError ? err.message : "Google sign-in didn't work. Try again?";
+        google.removeAttribute("disabled");
+      }
     });
     form.appendChild(google);
 

@@ -74,3 +74,23 @@ export async function getGoogleUserInfo(accessToken: string): Promise<GoogleUser
   if (!res.ok) throw new Error(`Google userinfo failed: ${res.status} ${await res.text()}`);
   return res.json();
 }
+
+interface GoogleTokenInfo {
+  aud: string;
+  email: string;
+  email_verified: string; // Google's tokeninfo endpoint returns this as a string, not a boolean
+}
+
+/**
+ * Verifies a Google ID token (from the native app's Google Sign-In, not the redirect flow above) via
+ * Google's own tokeninfo endpoint rather than hand-rolling JWT signature verification — same
+ * call-Google's-own-verification-API style as getGoogleUserInfo. Confirms the signature, expiry, and
+ * that the token was actually issued for *our* client before trusting the email in it.
+ */
+export async function verifyGoogleIdToken(env: Env, idToken: string): Promise<GoogleUserInfo | null> {
+  const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
+  if (!res.ok) return null;
+  const info: GoogleTokenInfo = await res.json();
+  if (info.aud !== env.GOOGLE_CLIENT_ID) return null;
+  return { email: info.email, email_verified: info.email_verified === "true" };
+}
