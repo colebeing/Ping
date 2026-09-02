@@ -1,5 +1,6 @@
-import { api, ApiError, type BlockId } from "../api";
+import { api, ApiError } from "../api";
 import { enablePushNotifications } from "../push-setup";
+import { currentBlockForCadence } from "./today";
 
 export async function renderSettings(root: HTMLElement, onLogout: () => void): Promise<void> {
   root.innerHTML = `<h2>Settings</h2><div class="card">Loading…</div>`;
@@ -175,33 +176,19 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
     testRow.className = "btn-row";
     const testStatus = document.createElement("p");
     testStatus.className = "muted";
-    const testBtn = (label: string, block: BlockId) => {
-      const btn = document.createElement("button");
-      btn.className = "btn";
-      btn.textContent = label;
-      btn.addEventListener("click", async () => {
-        testStatus.textContent = "Sending…";
-        try {
-          await api.sendTestPush(block);
-          testStatus.textContent = "Sent — check your device.";
-        } catch (err) {
-          testStatus.textContent = err instanceof Error ? err.message : "Couldn't send test push.";
-        }
-      });
-      return btn;
-    };
-    if (me.cadence.frequency === "once") {
-      testRow.append(testBtn("Test check-in", "combined"));
-    } else if (me.cadence.frequency === "four") {
-      testRow.append(
-        testBtn("Test check-in 1", "q1"),
-        testBtn("Test check-in 2", "q2"),
-        testBtn("Test check-in 3", "q3"),
-        testBtn("Test check-in 4", "q4"),
-      );
-    } else {
-      testRow.append(testBtn("Test morning", "1"), testBtn("Test evening", "2"));
-    }
+    const testBtn = document.createElement("button");
+    testBtn.className = "btn";
+    testBtn.textContent = "Test notification";
+    testBtn.addEventListener("click", async () => {
+      testStatus.textContent = "Sending…";
+      try {
+        await api.sendTestPush(currentBlockForCadence(me.cadence));
+        testStatus.textContent = "Sent — check your device.";
+      } catch (err) {
+        testStatus.textContent = err instanceof Error ? err.message : "Couldn't send test push.";
+      }
+    });
+    testRow.append(testBtn);
     pushCard.appendChild(testRow);
     pushCard.appendChild(testStatus);
 
