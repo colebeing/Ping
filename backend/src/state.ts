@@ -5,6 +5,7 @@ export function defaultState(): UserState {
     pathCounts: {},
     categoryCounts: { friends: 0, colleagues: 0, family: 0, me: 0 },
     answers: [],
+    answerEdits: [],
     activeOverrides: {},
     retiredOverrides: [],
     pendingRecommendations: [],
@@ -12,6 +13,9 @@ export function defaultState(): UserState {
     pushSubscriptions: [],
     fcmTokens: [],
     lastNotified: {},
+    notificationEvents: [],
+    appOpenDates: [],
+    deviceRegistrations: [],
   };
 }
 
@@ -21,6 +25,10 @@ export async function getState(env: Env, userId: string): Promise<UserState> {
   // Backfills for state saved before a field existed.
   if (!stored.cadence.frequency) stored.cadence.frequency = "twice";
   if (!stored.fcmTokens) stored.fcmTokens = [];
+  if (!stored.answerEdits) stored.answerEdits = [];
+  if (!stored.notificationEvents) stored.notificationEvents = [];
+  if (!stored.appOpenDates) stored.appOpenDates = [];
+  if (!stored.deviceRegistrations) stored.deviceRegistrations = [];
   // The WHY follow-up's category set changed (friends/work/home/capacity ->
   // friends/colleagues/family/me) and WHAT was dropped entirely — old
   // path/category counts and answer categories are no longer meaningful

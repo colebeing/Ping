@@ -87,6 +87,11 @@ self.addEventListener("notificationclick", (event) => {
   const block = event.notification.data?.block;
   event.notification.close();
 
+  // Logged separately from whether this went on to record an answer, so
+  // delivery (did it arrive) and interaction (was it tapped) can be told
+  // apart from each other server-side.
+  if (block) event.waitUntil(reportNotificationClick(block));
+
   if (block && (action === "" || action === "no")) {
     event.waitUntil(answerFromNotification(block, action === "no" ? "no" : "yes"));
     return;
@@ -98,6 +103,19 @@ self.addEventListener("notificationclick", (event) => {
   // the view has since moved on to evening.
   event.waitUntil(focusOrOpenApp(block ? { type: "ping:go-to-block", block } : undefined));
 });
+
+async function reportNotificationClick(block) {
+  try {
+    await fetch(`${API_BASE}/api/push/clicked`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ block }),
+    });
+  } catch (err) {
+    console.error("click report failed", err);
+  }
+}
 
 async function answerFromNotification(block, answer) {
   try {

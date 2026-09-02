@@ -56,6 +56,12 @@ export interface AppConfig {
   blocks: Record<BlockId, BlockContent>;
 }
 
+/** One entry per admin config save — global (not per-user), capped to the most recent 50. */
+export interface ConfigAuditEntry {
+  editedBy: string; // userId
+  editedAt: string; // ISO
+}
+
 export interface TriggerConfig {
   /** Same exact path (block+answer+category) repeats this many times → branch trigger. */
   exactPathThreshold: number;
@@ -111,11 +117,35 @@ export interface AnswerRecord {
   timestamp: string; // ISO
 }
 
+/** Recorded when an existing answer/category is genuinely changed (not the "resume an in-progress card" no-op re-post) — answers[] only ever holds the current value, so this is the only trail of what it used to say. */
+export interface AnswerEditRecord {
+  date: string;
+  block: BlockId;
+  previousAnswer: Answer;
+  previousCategory?: Category;
+  editedAt: string; // ISO
+}
+
 export interface BranchEvent {
   kind: "exact-path" | "category-volume";
   pathKey?: string;
   category: Category;
   count: number;
+}
+
+/** One send/click outcome for a single device/channel — lets Analytics tell "sent but never delivered/tapped" apart from "never even sent". */
+export interface NotificationEvent {
+  block: BlockId;
+  kind: "sent" | "failed" | "clicked";
+  channel: "webpush" | "fcm";
+  timestamp: string; // ISO
+}
+
+/** Logged once per push subscription / FCM token registration — the one place OS/browser/app info ever reaches the backend, so platform-specific bugs are visible in aggregate rather than one bug report at a time. */
+export interface DeviceRegistration {
+  type: "webpush" | "fcm";
+  platform: string; // e.g. a User-Agent string, or "android"/"ios" for the native wrapper
+  registeredAt: string; // ISO
 }
 
 export interface PushSubscriptionJSON {
@@ -137,6 +167,8 @@ export interface UserState {
   pathCounts: Record<string, number>;
   categoryCounts: Record<Category, number>;
   answers: AnswerRecord[];
+  /** Append-only — never read by app logic, purely a trail for analytics. */
+  answerEdits: AnswerEditRecord[];
   activeOverrides: Partial<Record<BlockId, QuestionOverride>>;
   retiredOverrides: QuestionOverride[];
   pendingRecommendations: Recommendation[];
@@ -145,6 +177,12 @@ export interface UserState {
   /** FCM registration tokens for the native Android wrapper — separate from pushSubscriptions (Web Push). */
   fcmTokens: string[];
   lastNotified: Partial<Record<BlockId, string>>; // date string per block
+  /** Append-only send/click log across both push channels. */
+  notificationEvents: NotificationEvent[];
+  /** Distinct user-local dates the app was opened (every /api/me call), regardless of whether anything was answered — lets "opens but doesn't check in" be told apart from "doesn't open at all". */
+  appOpenDates: string[];
+  /** One entry per push subscription / FCM token registration. */
+  deviceRegistrations: DeviceRegistration[];
 }
 
 export interface UserRecord {

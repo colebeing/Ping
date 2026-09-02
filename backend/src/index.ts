@@ -6,10 +6,10 @@ import { handleMe } from "./routes/me";
 import { handleGetQuestion } from "./routes/question";
 import { handleAnswer, handleFollowup } from "./routes/answer";
 import { handleListRecommendations, handleAcceptRecommendation, handleUpdateCadence } from "./routes/recommendations";
-import { handleSubscribe, handleGetVapidPublicKey, handleTestPush, handleRegisterFcmToken } from "./routes/push";
-import { handleGetAdminConfig, handleSaveAdminConfig } from "./routes/admin";
+import { handleSubscribe, handleGetVapidPublicKey, handleTestPush, handleRegisterFcmToken, handleNotificationClicked } from "./routes/push";
+import { handleGetAdminConfig, handleSaveAdminConfig, handleGetConfigAuditLog } from "./routes/admin";
 import { handleGetAnalytics } from "./routes/analytics";
-import { handleGoogleStart, handleGoogleCallback } from "./routes/googleAuth";
+import { handleGoogleStart, handleGoogleCallback, handleGoogleTokenSignIn } from "./routes/googleAuth";
 import { PushScheduler } from "./scheduler";
 
 export { PushScheduler };
@@ -35,6 +35,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === "/api/password-reset/confirm" && method === "POST") return handleConfirmPasswordReset(request, env);
   if (pathname === "/api/auth/google/start" && method === "GET") return handleGoogleStart(request, env);
   if (pathname === "/api/auth/google/callback" && method === "GET") return handleGoogleCallback(request, env);
+  if (pathname === "/api/auth/google/token" && method === "POST") return handleGoogleTokenSignIn(request, env);
 
   // Everything below requires a session.
   const userId = await requireAuth(request, env);
@@ -49,6 +50,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === "/api/push/subscribe" && method === "POST") return handleSubscribe(request, env, userId);
   if (pathname === "/api/push/register-fcm" && method === "POST") return handleRegisterFcmToken(request, env, userId);
   if (pathname === "/api/push/test" && method === "POST") return handleTestPush(request, env, userId);
+  if (pathname === "/api/push/clicked" && method === "POST") return handleNotificationClicked(request, env, userId);
 
   const acceptMatch = pathname.match(/^\/api\/recommendations\/([^/]+)\/accept$/);
   if (acceptMatch && method === "POST") return handleAcceptRecommendation(request, env, userId, acceptMatch[1]);
@@ -56,7 +58,12 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === "/api/admin/config") {
     if (!(await isAdmin(env, userId))) return errorResponse("Admin access required", 403);
     if (method === "GET") return handleGetAdminConfig(request, env);
-    if (method === "PUT") return handleSaveAdminConfig(request, env);
+    if (method === "PUT") return handleSaveAdminConfig(request, env, userId);
+  }
+
+  if (pathname === "/api/admin/config/history") {
+    if (!(await isAdmin(env, userId))) return errorResponse("Admin access required", 403);
+    if (method === "GET") return handleGetConfigAuditLog(request, env);
   }
 
   if (pathname === "/api/admin/analytics") {

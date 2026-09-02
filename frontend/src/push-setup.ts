@@ -31,7 +31,7 @@ async function enableWebPush(): Promise<{ ok: boolean; reason?: string }> {
     userVisibleOnly: true,
     applicationServerKey: urlBase64ToUint8Array(publicKey),
   });
-  await api.subscribePush(subscription.toJSON());
+  await api.subscribePush(subscription.toJSON(), navigator.userAgent);
   return { ok: true };
 }
 
@@ -60,7 +60,7 @@ async function enableNativePush(): Promise<{ ok: boolean; reason?: string }> {
   const fcmToken = Capacitor.getPlatform() === "ios" ? (await PingPush.getFcmToken()).value : registrationToken;
   if (!fcmToken) return { ok: false, reason: "Couldn't get an FCM token from the device" };
 
-  const { deviceToken } = await api.registerFcmToken(fcmToken);
+  const { deviceToken } = await api.registerFcmToken(fcmToken, Capacitor.getPlatform());
   await PingAuth.storeDeviceToken({ value: deviceToken });
   return { ok: true };
 }

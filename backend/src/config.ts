@@ -1,4 +1,4 @@
-import type { AppConfig, BlockContent, Env, FollowupPrompt, Invitation, RecommendationCopy, TriggerConfig } from "./types";
+import type { AppConfig, BlockContent, ConfigAuditEntry, Env, FollowupPrompt, Invitation, RecommendationCopy, TriggerConfig } from "./types";
 
 // This is the fallback used only if CONFIG_KV is empty. The real source of
 // truth is the "Ping — Question Library" Google Sheet — see
@@ -115,10 +115,22 @@ export async function getFullAdminConfig(env: Env): Promise<FullAdminConfig> {
   return { blocks: config.blocks, triggers, recommendationCopy };
 }
 
-export async function saveFullAdminConfig(env: Env, full: FullAdminConfig): Promise<void> {
+const CONFIG_AUDIT_LOG_LIMIT = 50;
+
+export async function saveFullAdminConfig(env: Env, full: FullAdminConfig, editedBy: string): Promise<void> {
+  const log = await getConfigAuditLog(env);
+  log.push({ editedBy, editedAt: new Date().toISOString() });
+  while (log.length > CONFIG_AUDIT_LOG_LIMIT) log.shift();
+
   await Promise.all([
     env.CONFIG_KV.put("config", JSON.stringify({ blocks: full.blocks })),
     env.CONFIG_KV.put("config:triggers", JSON.stringify(full.triggers)),
     env.CONFIG_KV.put("config:recommendation-copy", JSON.stringify(full.recommendationCopy)),
+    env.CONFIG_KV.put("config:audit-log", JSON.stringify(log)),
   ]);
+}
+
+/** Who changed the admin config and when — global (not per-user), most recent last, capped to the last 50 saves. */
+export async function getConfigAuditLog(env: Env): Promise<ConfigAuditEntry[]> {
+  return (await env.CONFIG_KV.get<ConfigAuditEntry[]>("config:audit-log", "json")) ?? [];
 }

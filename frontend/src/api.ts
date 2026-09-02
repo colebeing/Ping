@@ -143,10 +143,10 @@ export const api = {
     request<{ cadence: Cadence }>("/api/cadence", { method: "POST", body: JSON.stringify(cadence) }),
 
   getVapidPublicKey: () => request<{ publicKey: string | null }>("/api/push/vapid-public-key"),
-  subscribePush: (subscription: PushSubscriptionJSON) =>
-    request<{ ok: true }>("/api/push/subscribe", { method: "POST", body: JSON.stringify(subscription) }),
-  registerFcmToken: (fcmToken: string) =>
-    request<{ ok: true; deviceToken: string }>("/api/push/register-fcm", { method: "POST", body: JSON.stringify({ fcmToken }) }),
+  subscribePush: (subscription: PushSubscriptionJSON, platform: string) =>
+    request<{ ok: true }>("/api/push/subscribe", { method: "POST", body: JSON.stringify({ subscription, platform }) }),
+  registerFcmToken: (fcmToken: string, platform: string) =>
+    request<{ ok: true; deviceToken: string }>("/api/push/register-fcm", { method: "POST", body: JSON.stringify({ fcmToken, platform }) }),
   sendTestPush: (block: BlockId) =>
     request<{ ok: true }>("/api/push/test", { method: "POST", body: JSON.stringify({ block }) }),
 

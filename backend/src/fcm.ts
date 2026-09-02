@@ -84,9 +84,11 @@ async function getAccessToken(account: ServiceAccount): Promise<string> {
  * delivered once the app is suspended or force-quit — the app still replaces/rebuilds the
  * notification itself at the later follow-up/confirmation stages, same as Android.
  */
-export async function sendFcmPush(env: Env, token: string, data: Record<string, string>): Promise<boolean> {
+export type SendOutcome = "sent" | "failed" | "gone";
+
+export async function sendFcmPush(env: Env, token: string, data: Record<string, string>): Promise<SendOutcome> {
   const account = parseServiceAccount(env);
-  if (!account) return false;
+  if (!account) return "failed";
   try {
     const accessToken = await getAccessToken(account);
     const res = await fetch(`https://fcm.googleapis.com/v1/projects/${account.project_id}/messages:send`, {
@@ -110,10 +112,14 @@ export async function sendFcmPush(env: Env, token: string, data: Record<string, 
         },
       }),
     });
-    if (!res.ok) console.error("FCM send failed", res.status, await res.text());
-    return res.ok;
+    if (res.ok) return "sent";
+    // 404 from FCM's HTTP v1 API means the token is unregistered/invalid —
+    // permanently dead, not a transient failure worth retrying forever.
+    if (res.status === 404) return "gone";
+    console.error("FCM send failed", res.status, await res.text());
+    return "failed";
   } catch (err) {
     console.error("FCM send failed", err);
-    return false;
+    return "failed";
   }
 }

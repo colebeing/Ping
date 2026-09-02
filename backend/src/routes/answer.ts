@@ -25,6 +25,12 @@ export async function handleAnswer(request: Request, env: Env, userId: string): 
     // Editing an existing answer (today or backfilling a past day): undo any prior follow-up count before overwriting.
     const prev = state.answers[existingIdx];
     if (prev.category) decrementFollowupEvent(state, prev.block, prev.answer, prev.category);
+    // Only a genuine change is an edit — resuming an in-progress card
+    // (blockCard's "resume" step) re-posts this same answer as a safe
+    // no-op, which shouldn't read as the user having changed their mind.
+    if (prev.answer !== body.answer) {
+      state.answerEdits.push({ date, block: body.block, previousAnswer: prev.answer, previousCategory: prev.category, editedAt: new Date().toISOString() });
+    }
   }
 
   const record: AnswerRecord = { date, block: body.block, answer: body.answer, timestamp: new Date().toISOString() };
@@ -59,7 +65,12 @@ export async function handleFollowup(request: Request, env: Env, userId: string)
   if (idx === -1) return errorResponse("Answer the block's yes/no question first", 409);
 
   const record = state.answers[idx];
-  if (record.category) decrementFollowupEvent(state, record.block, record.answer, record.category);
+  if (record.category) {
+    decrementFollowupEvent(state, record.block, record.answer, record.category);
+    if (record.category !== body.category) {
+      state.answerEdits.push({ date, block: body.block, previousAnswer: record.answer, previousCategory: record.category, editedAt: new Date().toISOString() });
+    }
+  }
   record.category = body.category;
 
   const [thresholds, copy] = await Promise.all([getTriggerConfig(env), getRecommendationCopy(env)]);

@@ -1,7 +1,7 @@
 import { buildPushPayload, type PushMessage, type PushSubscription as WebPushSubscription, type VapidKeys } from "@block65/webcrypto-web-push";
 import type { BlockId, Cadence, Env, PushSubscriptionJSON } from "./types";
 import { getState, saveState, todayLocal } from "./state";
-import { sendFcmPush } from "./fcm";
+import { sendFcmPush, type SendOutcome } from "./fcm";
 
 /** Which block(s) are actually live for this user's current cadence, and what time each is due. "once" collapses to a single "combined" block using block1's time slot; "four" expands to four independent blocks using block1-4. */
 function activeBlockTimes(cadence: Cadence): { block: BlockId; time: string }[] {
@@ -25,21 +25,21 @@ function vapidKeys(env: Env): VapidKeys | null {
   return { subject: env.VAPID_SUBJECT, publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY };
 }
 
-export async function sendPush(env: Env, subscription: PushSubscriptionJSON, message: PushMessage): Promise<boolean> {
+export async function sendPush(env: Env, subscription: PushSubscriptionJSON, message: PushMessage): Promise<SendOutcome> {
   const keys = vapidKeys(env);
-  if (!keys) return false;
+  if (!keys) return "failed";
   try {
     const payload = await buildPushPayload(message, subscription as WebPushSubscription, keys);
     const res = await fetch(subscription.endpoint, payload);
-    // A non-201 (e.g. 404/410 for a stale/expired subscription) isn't a
-    // thrown error — without this it fails completely silently, and callers
-    // that don't check the return value (sendTestPush did exactly this) end
-    // up reporting success for a push that was actually rejected.
-    if (res.status !== 201) console.error("push send rejected", res.status, subscription.endpoint);
-    return res.status === 201;
+    if (res.status === 201) return "sent";
+    // 404/410 means the push service considers this subscription permanently
+    // gone (expired/unsubscribed) — not a transient failure worth retrying.
+    if (res.status === 404 || res.status === 410) return "gone";
+    console.error("push send rejected", res.status, subscription.endpoint);
+    return "failed";
   } catch (err) {
     console.error("push send failed", err);
-    return false;
+    return "failed";
   }
 }
 
@@ -58,19 +58,47 @@ function blockPushBody(state: Awaited<ReturnType<typeof getState>>, block: Block
   return override ? `Did ${override.when} ${override.how}?` : BLOCK_PROMPTS[block];
 }
 
-/** Returns whether at least one of this user's devices actually accepted the push — silent failures (stale subscriptions, rejected FCM tokens) shouldn't read as success. */
+/**
+ * Sends to every device this user has registered, and mutates `state` in
+ * place: logs a NotificationEvent per attempt (for delivery-rate analytics)
+ * and drops any subscription/token the push service reports as permanently
+ * gone, so a long-dead device doesn't linger forever and doesn't mask real
+ * failures behind "at least one succeeded" logic.
+ *
+ * Returns whether at least one device actually accepted the push.
+ */
 async function sendBlockPush(env: Env, state: Awaited<ReturnType<typeof getState>>, block: BlockId): Promise<boolean> {
   const body = blockPushBody(state, block);
   let anySent = false;
+
+  const survivingSubs: PushSubscriptionJSON[] = [];
   for (const sub of state.pushSubscriptions) {
-    if (await sendPush(env, sub, { data: JSON.stringify({ title: "Ping", body, block }), options: { ttl: 3600 } })) anySent = true;
+    const outcome = await sendPush(env, sub, { data: JSON.stringify({ title: "Ping", body, block }), options: { ttl: 3600 } });
+    state.notificationEvents.push({ block, kind: outcome === "sent" ? "sent" : "failed", channel: "webpush", timestamp: new Date().toISOString() });
+    if (outcome === "sent") anySent = true;
+    if (outcome !== "gone") survivingSubs.push(sub);
   }
+  state.pushSubscriptions = survivingSubs;
+
   // Data-only, not a `notification` payload — the native app's own FirebaseMessagingService builds the
   // interactive, swap-in-place notification itself rather than letting Android auto-display a plain one.
+  const survivingTokens: string[] = [];
   for (const token of state.fcmTokens) {
-    if (await sendFcmPush(env, token, { title: "Ping", body, block })) anySent = true;
+    const outcome = await sendFcmPush(env, token, { title: "Ping", body, block });
+    state.notificationEvents.push({ block, kind: outcome === "sent" ? "sent" : "failed", channel: "fcm", timestamp: new Date().toISOString() });
+    if (outcome === "sent") anySent = true;
+    if (outcome !== "gone") survivingTokens.push(token);
   }
+  state.fcmTokens = survivingTokens;
+
   return anySent;
+}
+
+/** Called from the service worker's notificationclick — logs the tap itself, distinct from whether it went on to record an answer, so delivery and interaction can be measured separately. */
+export async function recordNotificationClicked(env: Env, userId: string, block: BlockId): Promise<void> {
+  const state = await getState(env, userId);
+  state.notificationEvents.push({ block, kind: "clicked", channel: "webpush", timestamp: new Date().toISOString() });
+  await saveState(env, userId, state);
 }
 
 /**
@@ -107,6 +135,7 @@ export async function sendTestPush(env: Env, userId: string, block: BlockId): Pr
     return { ok: false, reason: "No push subscription on this device yet" };
   }
   const sent = await sendBlockPush(env, state, block);
+  await saveState(env, userId, state);
   if (!sent) return { ok: false, reason: "The push service rejected it — try disabling and re-enabling notifications on this device" };
   return { ok: true };
 }
