@@ -1,5 +1,4 @@
-import { api, type BlockId, type Cadence } from "../api";
-import { mountBlockCard } from "../blockCard";
+import type { BlockId, Cadence } from "../api";
 
 // Grace period after a block's own cadence time before the next block takes
 // over as "current" — without this, the switch happens the instant the
@@ -61,29 +60,26 @@ function currentQuadBlock(cadence: Cadence): BlockId {
   ]);
 }
 
-/** Which block "Today" is currently showing, accounting for once-daily cadence collapsing everything to "combined" and four-daily cadence expanding to four independent blocks. */
+/** Which block is currently active, accounting for once-daily cadence collapsing everything to "combined" and four-daily cadence expanding to four independent blocks. */
 export function currentBlockForCadence(cadence: Cadence): BlockId {
   if (cadence.frequency === "once") return "combined";
   if (cadence.frequency === "four") return currentQuadBlock(cadence);
   return currentBlock(cadence);
 }
 
-export async function renderToday(root: HTMLElement): Promise<void> {
-  root.innerHTML = "";
-  const heading = document.createElement("h2");
-  heading.textContent = "Today";
-  root.appendChild(heading);
-
-  const card = document.createElement("div");
-  root.appendChild(card);
-
-  let block: BlockId = "1";
-  try {
-    const me = await api.me();
-    block = currentBlockForCadence(me.cadence);
-  } catch {
-    // fall through with block "1" — mountBlockCard's own error handling covers a real auth failure
+/** Every block today's cadence produces, in daily chronological order — used by Home to decide which of today's cards to show at all. */
+export function blocksForCadence(cadence: Cadence): [BlockId, string][] {
+  if (cadence.frequency === "once") return [["combined", cadence.block1]];
+  if (cadence.frequency === "four") {
+    return [
+      ["q1", cadence.block1],
+      ["q2", cadence.block2],
+      ["q3", cadence.block3 ?? cadence.block1],
+      ["q4", cadence.block4 ?? cadence.block2],
+    ];
   }
-
-  void mountBlockCard(card, block);
+  return [
+    ["1", cadence.block1],
+    ["2", cadence.block2],
+  ];
 }

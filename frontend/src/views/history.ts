@@ -1,11 +1,11 @@
-import { api, type Answer, type BlockId, type Category, type FollowupPrompt, type Frequency } from "../api";
+import { api, type Answer, type BlockId, type Cadence, type Category, type FollowupPrompt, type Frequency } from "../api";
 import { mountBlockCard, button, CATEGORY_LABEL } from "../blockCard";
 
 const DAYS_SHOWN = 14;
 const TWICE_BLOCKS: BlockId[] = ["1", "2"];
 const FOUR_BLOCKS: BlockId[] = ["q1", "q2", "q3", "q4"];
 
-function localDateStr(timezone: string, at: Date): string {
+export function localDateStr(timezone: string, at: Date): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
 }
 
@@ -106,21 +106,9 @@ async function renderCollapsedDay(container: HTMLElement, date: string, blocks: 
  * Twice Daily and others Once Daily as the setting changes over time. Only
  * a fully blank past day falls back to the current setting, since there's
  * nothing else to go on for it.
- *
- * Today is different: it's the live, actionable day, so it always reflects
- * the current setting immediately, even if an earlier check-in today was
- * answered under a frequency you've since switched away from — otherwise
- * switching frequency wouldn't visibly do anything until tomorrow.
  */
-async function renderDay(container: HTMLElement, date: string, isToday: boolean, currentFrequency: Frequency): Promise<void> {
+async function renderDay(container: HTMLElement, date: string, currentFrequency: Frequency): Promise<void> {
   container.innerHTML = `<div class="card">Loading…</div>`;
-
-  if (isToday) {
-    if (currentFrequency === "once") void mountBlockCard(container, "combined", date);
-    else if (currentFrequency === "four") renderBlocks(container, FOUR_BLOCKS, date);
-    else renderBlocks(container, TWICE_BLOCKS, date);
-    return;
-  }
 
   const combined = await api.getQuestion("combined", date);
   if (combined.existingAnswer) {
@@ -146,32 +134,24 @@ async function renderDay(container: HTMLElement, date: string, isToday: boolean,
   else void renderCollapsedDay(container, date, TWICE_BLOCKS);
 }
 
-export async function renderHistory(root: HTMLElement): Promise<void> {
-  root.innerHTML = `<h2>History</h2><div class="card">Loading…</div>`;
-  try {
-    const me = await api.me();
-    root.innerHTML = "";
+/**
+ * Renders the last DAYS_SHOWN-1 days *before* today, one per calendar day — today itself is
+ * Home's job (the live, actionable day gets its own hero treatment there), this is purely the
+ * backward-looking list Home reveals under its "Show history" toggle.
+ */
+export function renderHistoryList(root: HTMLElement, cadence: Cadence, today: string): void {
+  root.innerHTML = "";
+  const [, yesterday] = recentDates(today, 2);
 
-    const heading = document.createElement("h2");
-    heading.textContent = "History";
-    root.appendChild(heading);
+  for (const date of recentDates(today, DAYS_SHOWN).slice(1)) {
+    const dayHeading = document.createElement("p");
+    dayHeading.className = "muted";
+    dayHeading.style.margin = "18px 0 4px";
+    dayHeading.textContent = dayLabel(date, today, yesterday);
+    root.appendChild(dayHeading);
 
-    const today = localDateStr(me.cadence.timezone, new Date());
-    const [, yesterday] = recentDates(today, 2);
-
-    for (const date of recentDates(today, DAYS_SHOWN)) {
-      const dayHeading = document.createElement("p");
-      dayHeading.className = "muted";
-      dayHeading.style.margin = "18px 0 4px";
-      dayHeading.textContent = dayLabel(date, today, yesterday);
-      root.appendChild(dayHeading);
-
-      const dayContainer = document.createElement("div");
-      root.appendChild(dayContainer);
-      void renderDay(dayContainer, date, date === today, me.cadence.frequency);
-    }
-  } catch (err) {
-    root.innerHTML = `<div class="card error">Couldn't load history.</div>`;
-    console.error(err);
+    const dayContainer = document.createElement("div");
+    root.appendChild(dayContainer);
+    void renderDay(dayContainer, date, cadence.frequency);
   }
 }

@@ -28,7 +28,7 @@ body {
   max-width: 480px;
   margin: 0 auto;
   min-height: 100vh;
-  padding: 20px 16px 90px;
+  padding: calc(20px + env(safe-area-inset-top, 0px)) 16px calc(90px + env(safe-area-inset-bottom, 0px));
 }
 
 h1,
@@ -130,6 +130,10 @@ input[type="text"] {
   border-top: 1px solid var(--surface-2);
   max-width: 480px;
   margin: 0 auto;
+  /* On a browser tab, the OS chrome already reserves this space. In the native wrapper the
+     WebView renders truly edge-to-edge (viewport-fit=cover), so this bar sits right behind the
+     phone's own gesture nav / button bar unless it explicitly pads for it. */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .tabs button {
@@ -339,6 +343,81 @@ input[type="text"] {
   font-size: 12px;
   color: var(--text-dim);
   flex-shrink: 0;
+}
+
+/* The current block, on Home — sized and outlined to read as "this is the one that matters right
+   now" against the plain-card rest of today's already-answered blocks and (once expanded) history. */
+.today-hero .card {
+  border: 2px solid var(--accent);
+  border-radius: 20px;
+  padding: 26px 24px;
+  box-shadow:
+    0 0 0 1px rgba(110, 168, 254, 0.15),
+    0 18px 40px rgba(110, 168, 254, 0.12);
+}
+
+.today-hero .pill {
+  background: rgba(110, 168, 254, 0.16);
+  color: var(--accent);
+  font-size: 13px;
+  padding: 4px 11px;
+}
+
+.today-hero .block-question {
+  font-size: 22px;
+  font-weight: 650;
+}
+
+.today-hero .btn-row {
+  margin-top: 20px;
+  gap: 12px;
+}
+
+.today-hero .btn-row .btn {
+  padding: 16px 0;
+  font-size: 16px;
+  border-radius: 12px;
+}
+
+.today-hero .option-grid .btn {
+  padding: 14px;
+  font-size: 15px;
+}
+
+.today-hero .answer-badge {
+  font-size: 17px;
+  padding: 6px 20px;
+}
+
+.today-hero .followup-line {
+  font-size: 14px;
+  white-space: normal;
+}
+
+.history-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--surface-2);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 16px 0 4px;
+  margin-top: 6px;
+  cursor: pointer;
+}
+
+.history-toggle .chev {
+  font-size: 11px;
+  transition: transform 0.15s ease;
+}
+
+.history-toggle.expanded .chev {
+  transform: rotate(180deg);
 }
 
 .table-scroll {

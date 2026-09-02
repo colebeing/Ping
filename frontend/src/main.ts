@@ -1,8 +1,7 @@
 import "./style.css";
 import { api, isBlockId, type BlockId } from "./api";
 import { renderAuth } from "./views/auth";
-import { renderToday, currentBlockForCadence } from "./views/today";
-import { renderHistory } from "./views/history";
+import { renderHome } from "./views/home";
 import { renderSettings } from "./views/settings";
 import { renderAdmin } from "./views/admin";
 import { renderAnalytics } from "./views/analytics";
@@ -12,17 +11,18 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./sw.js").catch((err) => console.error("SW registration failed", err));
   });
   // Fired when a notification (its Yes/No action, or just tapping it) was
-  // handled in the background and the app was already open — jump to
-  // whichever tab actually reflects that block right now instead of leaving
-  // a stale "Yes/No" card showing, or landing on the wrong block's card.
+  // handled in the background and the app was already open — jump to Home,
+  // which always shows every one of today's blocks that's actually started
+  // (the tapped one included), instead of leaving a stale "Yes/No" card
+  // showing wherever the user happened to be.
   navigator.serviceWorker.addEventListener("message", (event) => {
     if (event.data?.type === "ping:go-to-block" && isBlockId(event.data.block)) void goToBlock?.(event.data.block);
   });
 }
 
-let goToBlock: ((block: BlockId) => Promise<void>) | null = null;
+let goToBlock: ((block: BlockId) => void) | null = null;
 
-type Tab = "today" | "history" | "settings" | "admin" | "analytics";
+type Tab = "home" | "settings" | "admin" | "analytics";
 
 const app = document.getElementById("app");
 if (!app) throw new Error("Missing #app root element");
@@ -54,8 +54,7 @@ function showApp(isAdmin: boolean): void {
   document.body.appendChild(tabs);
 
   const tabDefs: { id: Tab; label: string }[] = [
-    { id: "today", label: "Today" },
-    { id: "history", label: "History" },
+    { id: "home", label: "Home" },
     { id: "settings", label: "Settings" },
   ];
   if (isAdmin) tabDefs.push({ id: "analytics", label: "Analytics" }, { id: "admin", label: "Admin" });
@@ -64,31 +63,22 @@ function showApp(isAdmin: boolean): void {
   // Stay on the tab across a refresh by round-tripping it through the URL hash.
   const tabFromHash = (): Tab => {
     const h = location.hash.slice(1);
-    return (validTabs as string[]).includes(h) ? (h as Tab) : "today";
+    return (validTabs as string[]).includes(h) ? (h as Tab) : "home";
   };
 
   let active: Tab = tabFromHash();
 
-  // A notification is only for "Today" while it's still the block Today
-  // would show anyway — once the view has moved on to the other block (or
-  // rolled to a new day), sending the user to Today would show the wrong
-  // block, so land on History instead where that day's own card is correct.
-  goToBlock = async (block) => {
-    let target: Tab = "today";
-    try {
-      const me = await api.me();
-      if (currentBlockForCadence(me.cadence) !== block) target = "history";
-    } catch {
-      // fall through to Today — mountBlockCard's own error handling covers a real auth failure
-    }
-    active = target;
-    location.hash = target;
+  // Home always shows every one of today's blocks that's actually started,
+  // the tapped one included, so there's nowhere else a notification could
+  // need to route to.
+  goToBlock = (_block) => {
+    active = "home";
+    location.hash = "home";
     renderActive();
   };
 
   const renderActive = () => {
-    if (active === "today") void renderToday(content);
-    else if (active === "history") void renderHistory(content);
+    if (active === "home") void renderHome(content);
     else if (active === "admin") void renderAdmin(content);
     else if (active === "analytics") void renderAnalytics(content);
     else void renderSettings(content, () => {
