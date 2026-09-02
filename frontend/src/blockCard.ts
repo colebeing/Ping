@@ -4,10 +4,10 @@ export const BLOCK_LABEL: Record<BlockId, string> = {
   "1": "Morning",
   "2": "Evening",
   combined: "Today",
-  q1: "Check-in 1",
-  q2: "Check-in 2",
-  q3: "Check-in 3",
-  q4: "Check-in 4",
+  q1: "Start of day",
+  q2: "Morning",
+  q3: "Afternoon",
+  q4: "End of day",
 };
 export const CATEGORY_LABEL: Record<Category, string> = { friends: "Friends", colleagues: "Colleagues", family: "Family", me: "Me" };
 

@@ -66,14 +66,14 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
 
     const block3Label = document.createElement("label");
     block3Label.className = "muted";
-    block3Label.textContent = "Check-in 3";
+    block3Label.textContent = "Afternoon";
     const block3Input = document.createElement("input");
     block3Input.type = "time";
     block3Input.value = me.cadence.block3 ?? "14:00";
 
     const block4Label = document.createElement("label");
     block4Label.className = "muted";
-    block4Label.textContent = "Check-in 4";
+    block4Label.textContent = "End of day";
     const block4Input = document.createElement("input");
     block4Input.type = "time";
     block4Input.value = me.cadence.block4 ?? "18:00";
@@ -83,8 +83,8 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
 
     const updateLabelsForFrequency = () => {
       const freq = frequencySelect.value;
-      block1Label.textContent = freq === "once" ? "Check-in time" : freq === "four" ? "Check-in 1" : "Morning block";
-      block2Label.textContent = freq === "four" ? "Check-in 2" : "Evening block";
+      block1Label.textContent = freq === "once" ? "Check-in time" : freq === "four" ? "Start of day" : "Morning block";
+      block2Label.textContent = freq === "four" ? "Morning" : "Evening block";
       const showBlock2 = freq !== "once";
       block2Label.style.display = showBlock2 ? "block" : "none";
       block2Input.style.display = showBlock2 ? "block" : "none";

@@ -30,19 +30,28 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
       saveBtn.textContent = "Saving…";
       saveBtn.setAttribute("disabled", "true");
       try {
-        // Morning, Evening, the once-daily question, and the four 4x-daily
-        // questions only ever differ by their WHEN slot (the four 4x-daily
-        // ones all share one WHEN between them) — keep everything else
-        // mirrored to Morning's content on save, in case it drifted apart
-        // before this UI stopped allowing that.
+        // Every block only ever differs from block "1" by its own WHEN slot —
+        // keep HOW/WHY mirrored to "1" on save, in case they'd drifted apart
+        // before this UI stopped allowing that. Start of day (q1) and End of
+        // day (q4) mirror "1"'s and "2"'s WHEN exactly (no field of their
+        // own); Morning (q2) and Afternoon (q3) keep their own WHEN, captured
+        // before being overwritten below.
+        const mirrorFrom1 = (when: string) => ({
+          ...JSON.parse(JSON.stringify(config.blocks["1"])),
+          question: { ...config.blocks["1"].question, when },
+        });
+        const morningWhen = config.blocks["1"].question.when;
         const eveningWhen = config.blocks["2"].question.when;
         const combinedWhen = config.blocks.combined.question.when;
-        const quadWhen = config.blocks.q1.question.when;
-        config.blocks["2"] = { ...JSON.parse(JSON.stringify(config.blocks["1"])), question: { ...config.blocks["1"].question, when: eveningWhen } };
-        config.blocks.combined = { ...JSON.parse(JSON.stringify(config.blocks["1"])), question: { ...config.blocks["1"].question, when: combinedWhen } };
-        for (const block of ["q1", "q2", "q3", "q4"] as const) {
-          config.blocks[block] = { ...JSON.parse(JSON.stringify(config.blocks["1"])), question: { ...config.blocks["1"].question, when: quadWhen } };
-        }
+        const q2When = config.blocks.q2.question.when;
+        const q3When = config.blocks.q3.question.when;
+
+        config.blocks["2"] = mirrorFrom1(eveningWhen);
+        config.blocks.combined = mirrorFrom1(combinedWhen);
+        config.blocks.q1 = mirrorFrom1(morningWhen);
+        config.blocks.q2 = mirrorFrom1(q2When);
+        config.blocks.q3 = mirrorFrom1(q3When);
+        config.blocks.q4 = mirrorFrom1(eveningWhen);
 
         await api.saveAdminConfig(config);
         status.textContent = "Saved.";
@@ -70,20 +79,23 @@ function renderQuestionSection(config: AdminConfig): HTMLElement {
 
   const note = document.createElement("p");
   note.className = "muted";
-  note.textContent = "Morning, Evening, the Once Daily question, and the 4x Daily question all ask the same thing and share the WHY follow-up — only each one's WHEN slot differs (the four 4x Daily check-ins share one WHEN slot between them).";
+  note.textContent =
+    "Every question asks the same thing and shares the WHY follow-up — only each one's WHEN slot differs. 4x Daily's Start of day and End of day mirror Morning/Evening exactly; Morning and Afternoon below are their own slots, just for 4x Daily.";
   card.appendChild(note);
 
-  // Morning's content is the shared source of truth; the other two keep their own WHEN only (mirrored on save).
+  // Morning's content is the shared source of truth; every other block keeps its own WHEN only (mirrored on save).
   const content = config.blocks["1"];
 
-  card.appendChild(fieldLabel('Morning WHEN slot (e.g. "today start")'));
+  card.appendChild(fieldLabel('Morning WHEN slot (e.g. "today start") — also 4x Daily\'s Start of day'));
   card.appendChild(textInput(content.question.when, (v) => (content.question.when = v)));
-  card.appendChild(fieldLabel('Evening WHEN slot (e.g. "today end")'));
+  card.appendChild(fieldLabel('Evening WHEN slot (e.g. "today end") — also 4x Daily\'s End of day'));
   card.appendChild(textInput(config.blocks["2"].question.when, (v) => (config.blocks["2"].question.when = v)));
   card.appendChild(fieldLabel('Once Daily WHEN slot (e.g. "today go")'));
   card.appendChild(textInput(config.blocks.combined.question.when, (v) => (config.blocks.combined.question.when = v)));
-  card.appendChild(fieldLabel('4x Daily WHEN slot — shared across all four check-ins (e.g. "everything go")'));
-  card.appendChild(textInput(config.blocks.q1.question.when, (v) => (config.blocks.q1.question.when = v)));
+  card.appendChild(fieldLabel('4x Daily — Morning WHEN slot (e.g. "this morning go")'));
+  card.appendChild(textInput(config.blocks.q2.question.when, (v) => (config.blocks.q2.question.when = v)));
+  card.appendChild(fieldLabel('4x Daily — Afternoon WHEN slot (e.g. "this afternoon go")'));
+  card.appendChild(textInput(config.blocks.q3.question.when, (v) => (config.blocks.q3.question.when = v)));
 
   card.appendChild(fieldLabel('HOW slot (e.g. "how you wanted")'));
   card.appendChild(textInput(content.question.how, (v) => (content.question.how = v)));

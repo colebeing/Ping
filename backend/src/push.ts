@@ -47,10 +47,10 @@ const BLOCK_PROMPTS: Record<BlockId, string> = {
   "1": "Did today start how you wanted?",
   "2": "Did today end how you wanted?",
   combined: "Did today go how you wanted?",
-  q1: "Did everything go how you wanted?",
-  q2: "Did everything go how you wanted?",
-  q3: "Did everything go how you wanted?",
-  q4: "Did everything go how you wanted?",
+  q1: "Did today start how you wanted?",
+  q2: "Did this morning go how you wanted?",
+  q3: "Did this afternoon go how you wanted?",
+  q4: "Did today end how you wanted?",
 };
 
 function blockPushBody(state: Awaited<ReturnType<typeof getState>>, block: BlockId): string {
