@@ -24,10 +24,10 @@ export const DEFAULT_CONFIG: AppConfig = {
     // The once-daily question. Same WHAT/WHY content as block 1 (mirrored on
     // every admin save, same convention as block 2) — only its own WHEN slot differs.
     combined: { question: { when: "today go", how: "how you wanted" }, ...SHARED_FOLLOWUPS },
-    // The four four-times-daily questions, each with its own WHEN slot.
-    // Start of day/End of day mirror blocks "1"/"2"'s WHEN exactly (admin
-    // edits those, not separate fields); Morning/Afternoon are their own
-    // admin-editable slots, independent of "1"/"2"'s Morning/Evening.
+    // The four four-times-daily questions. Each has its own independent
+    // admin-editable WHEN slot (mirrored on save, same convention as
+    // "2"/"combined"), unrelated to "1"/"2"'s Morning/Evening WHEN even
+    // though Start of day/End of day happen to default to the same text.
     q1: { question: { when: "today start", how: "how you wanted" }, ...SHARED_FOLLOWUPS },
     q2: { question: { when: "this morning go", how: "how you wanted" }, ...SHARED_FOLLOWUPS },
     q3: { question: { when: "this afternoon go", how: "how you wanted" }, ...SHARED_FOLLOWUPS },
