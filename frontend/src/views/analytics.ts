@@ -107,9 +107,23 @@ function renderCategoryTotals(data: AnalyticsResponse): HTMLElement {
   h.textContent = "Category breakdown (all users)";
   card.appendChild(h);
 
-  const total = Math.max(1, ...Object.values(data.categoryTotals));
-  for (const cat of Object.keys(data.categoryTotals) as Category[]) {
-    card.appendChild(barRow(CATEGORY_LABEL[cat], data.categoryTotals[cat], total));
+  const categories = Object.keys(data.categoryTotals) as Category[];
+  // One shared scale across every category's yes/no bar, so volumes stay
+  // comparable both across categories and between a category's own yes vs no.
+  const max = Math.max(1, ...categories.flatMap((cat) => [data.categoryTotals[cat].yes, data.categoryTotals[cat].no]));
+
+  for (const cat of categories) {
+    const { yes, no } = data.categoryTotals[cat];
+    if (yes + no === 0) continue;
+
+    const label = document.createElement("p");
+    label.className = "muted";
+    label.style.margin = "10px 0 4px";
+    label.textContent = CATEGORY_LABEL[cat];
+    card.appendChild(label);
+
+    card.appendChild(barRow("Yes", yes, max));
+    card.appendChild(barRow("No", no, max, "no"));
   }
   return card;
 }

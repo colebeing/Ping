@@ -89,7 +89,7 @@ export interface AnalyticsUserSummary {
 
 export interface AnalyticsResponse {
   totals: { userCount: number; answerCount: number; activeUsers7d: number; activeUsers30d: number };
-  categoryTotals: Record<Category, number>;
+  categoryTotals: Record<Category, { yes: number; no: number }>;
   answerBalance: Record<BlockId, { yes: number; no: number }>;
   dailyActivity: { date: string; count: number }[];
   users: AnalyticsUserSummary[];

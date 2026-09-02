@@ -14,7 +14,7 @@ export interface AnalyticsUserSummary {
 
 export interface AnalyticsResponse {
   totals: { userCount: number; answerCount: number; activeUsers7d: number; activeUsers30d: number };
-  categoryTotals: Record<Category, number>;
+  categoryTotals: Record<Category, { yes: number; no: number }>;
   answerBalance: Record<BlockId, { yes: number; no: number }>;
   dailyActivity: { date: string; count: number }[];
   users: AnalyticsUserSummary[];
@@ -51,7 +51,12 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
   const cutoff7 = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
   const cutoff30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
 
-  const categoryTotals: Record<Category, number> = { friends: 0, colleagues: 0, family: 0, me: 0 };
+  const categoryTotals: Record<Category, { yes: number; no: number }> = {
+    friends: { yes: 0, no: 0 },
+    colleagues: { yes: 0, no: 0 },
+    family: { yes: 0, no: 0 },
+    me: { yes: 0, no: 0 },
+  };
   const answerBalance: Record<BlockId, { yes: number; no: number }> = {
     "1": { yes: 0, no: 0 },
     "2": { yes: 0, no: 0 },
@@ -77,8 +82,12 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
     for (const a of state.answers) {
       answerCount++;
       answerBalance[a.block][a.answer]++;
-      if (a.category) {
-        categoryTotals[a.category]++;
+      // Guard against stale category values from before a category rename —
+      // an old AnswerRecord (e.g. a pre-rename "work"/"home") isn't a key in
+      // these maps, and would otherwise throw and take down analytics for
+      // every user over one old record from any single account.
+      if (a.category && categoryTotals[a.category]) {
+        categoryTotals[a.category][a.answer]++;
         catCounts[a.category]++;
       }
       dailyCounts.set(a.date, (dailyCounts.get(a.date) ?? 0) + 1);
