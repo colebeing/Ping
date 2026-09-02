@@ -103,6 +103,7 @@ export function renderAuth(root: HTMLElement, onAuthed: () => void): void {
         }
         onAuthed();
       } catch (err) {
+        console.error("[ping] auth failed", err);
         errorEl.textContent = err instanceof ApiError ? err.message : "Something went wrong";
         submit.removeAttribute("disabled");
       }

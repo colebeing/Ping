@@ -5,10 +5,17 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.os.Build
+import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+
+// Matches the web app's --accent CSS variable — chosen there for contrast against its own dark
+// background, which happens to match most notification shades (light or dark, on this and other
+// OEM skins) far better than the ambient button styles' resolved colors did.
+private val BUTTON_TEXT_COLOR = Color.parseColor("#6ea8fe")
 
 /**
  * Registered in AndroidManifest.xml to receive all FCM messages instead of the
@@ -62,20 +69,36 @@ private fun actionIntent(context: Context, action: String, extras: Map<String, S
     return PendingIntent.getBroadcast(context, requestCode, intent, flags)
 }
 
+/**
+ * Custom-view Yes/No buttons rather than NotificationCompat.addAction() — a plain 2-action
+ * notification wasn't reliably showing its actions inline without an expand tap on this OEM skin,
+ * so this uses the same known-working pattern as the WHY follow-up below: the same compact row
+ * for both the collapsed and expanded slot, so both buttons are visible immediately.
+ */
 fun showQuestionNotification(context: Context, block: String, title: String, body: String) {
     ensureChannel(context)
     val yes = actionIntent(context, NotificationActionReceiver.ACTION_ANSWER, mapOf("block" to block, "answer" to "yes"))
     val no = actionIntent(context, NotificationActionReceiver.ACTION_ANSWER, mapOf("block" to block, "answer" to "no"))
 
+    fun buildButtonRow(): RemoteViews {
+        val view = RemoteViews(context.packageName, R.layout.notification_yesno_buttons)
+        view.setTextViewText(R.id.yesno_title, body)
+        view.setOnClickPendingIntent(R.id.yesno_btn_yes, yes)
+        view.setOnClickPendingIntent(R.id.yesno_btn_no, no)
+        view.setTextColor(R.id.yesno_btn_yes, BUTTON_TEXT_COLOR)
+        view.setTextColor(R.id.yesno_btn_no, BUTTON_TEXT_COLOR)
+        return view
+    }
+
     val notification = NotificationCompat.Builder(context, PingFirebaseMessagingService.CHANNEL_ID)
         .setSmallIcon(android.R.drawable.ic_dialog_info)
         .setContentTitle(title)
-        .setContentText(body)
+        .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+        .setCustomContentView(buildButtonRow())
+        .setCustomBigContentView(buildButtonRow())
         .setPriority(NotificationCompat.PRIORITY_HIGH)
         .setAutoCancel(false)
         .setOnlyAlertOnce(false)
-        .addAction(0, "Yes", yes)
-        .addAction(0, "No", no)
         .build()
 
     (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
@@ -84,30 +107,55 @@ fun showQuestionNotification(context: Context, block: String, title: String, bod
 
 /**
  * Swaps the same notification (yes/no already answered) in for the 4-category WHY follow-up.
+ *
+ * Uses a custom RemoteViews layout instead of NotificationCompat.addAction() — the standard
+ * action row only reliably renders about 3 buttons before the platform starts silently dropping
+ * the rest, which isn't enough for all 4 categories. The prompt text is drawn inside that same
+ * view (not via setContentTitle) since DecoratedCustomViewStyle's own title chrome wasn't
+ * reliably rendering above the custom content on device.
+ *
+ * The SAME compact single-row layout is used for both the collapsed and expanded view (built as
+ * two separate RemoteViews instances, since each slot needs its own), so all 4 buttons are visible
+ * immediately — nothing extra to reveal, no "expand for options" tap required.
+ *
  * `answer` and each button's own label are threaded into its PendingIntent's extras so the final
  * confirmation step can render "Logged: Yes — Family" without a second round trip to read them back
  * — /api/followup's response doesn't echo the answer or a display label, only trigger data.
  */
 fun showFollowupNotification(context: Context, block: String, answer: String, prompt: String, options: Map<String, String>) {
     ensureChannel(context)
-    val builder = NotificationCompat.Builder(context, PingFirebaseMessagingService.CHANNEL_ID)
+
+    // Same order every time (friends/colleagues/family/me) so the buttons don't shuffle between builds.
+    val categories = listOf("friends", "colleagues", "family", "me")
+    val buttonIds = listOf(R.id.followup_btn1, R.id.followup_btn2, R.id.followup_btn3, R.id.followup_btn4)
+
+    fun buildButtonRow(): RemoteViews {
+        val view = RemoteViews(context.packageName, R.layout.notification_followup_buttons)
+        view.setTextViewText(R.id.followup_title, prompt)
+        for ((category, buttonId) in categories.zip(buttonIds)) {
+            val label = options[category] ?: continue
+            val extras = mapOf("block" to block, "category" to category, "categoryLabel" to label, "answer" to answer)
+            val pending = actionIntent(context, NotificationActionReceiver.ACTION_FOLLOWUP, extras)
+            view.setTextViewText(buttonId, label)
+            view.setTextColor(buttonId, BUTTON_TEXT_COLOR)
+            view.setOnClickPendingIntent(buttonId, pending)
+        }
+        return view
+    }
+
+    val notification = NotificationCompat.Builder(context, PingFirebaseMessagingService.CHANNEL_ID)
         .setSmallIcon(android.R.drawable.ic_dialog_info)
         .setContentTitle(prompt)
-        .setContentText("Tap who it was")
+        .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+        .setCustomContentView(buildButtonRow())
+        .setCustomBigContentView(buildButtonRow())
         .setPriority(NotificationCompat.PRIORITY_HIGH)
         .setAutoCancel(false)
         .setOnlyAlertOnce(true)
-
-    // Same order every time (friends/colleagues/family/me) so the buttons don't shuffle between builds.
-    for (category in listOf("friends", "colleagues", "family", "me")) {
-        val label = options[category] ?: continue
-        val extras = mapOf("block" to block, "category" to category, "categoryLabel" to label, "answer" to answer)
-        val pending = actionIntent(context, NotificationActionReceiver.ACTION_FOLLOWUP, extras)
-        builder.addAction(0, label, pending)
-    }
+        .build()
 
     (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
-        .notify(PingFirebaseMessagingService.NOTIFICATION_ID, builder.build())
+        .notify(PingFirebaseMessagingService.NOTIFICATION_ID, notification)
 }
 
 /** Final state after the category is picked — no actions, auto-dismisses on its own. */
