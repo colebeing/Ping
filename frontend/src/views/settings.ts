@@ -68,14 +68,14 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
     block3Label.textContent = "Check-in 3";
     const block3Input = document.createElement("input");
     block3Input.type = "time";
-    block3Input.value = me.cadence.block3 ?? "12:00";
+    block3Input.value = me.cadence.block3 ?? "14:00";
 
     const block4Label = document.createElement("label");
     block4Label.className = "muted";
     block4Label.textContent = "Check-in 4";
     const block4Input = document.createElement("input");
     block4Input.type = "time";
-    block4Input.value = me.cadence.block4 ?? "16:00";
+    block4Input.value = me.cadence.block4 ?? "18:00";
 
     const cadenceStatus = document.createElement("p");
     cadenceStatus.className = "muted";
@@ -96,19 +96,25 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
     frequencySelect.addEventListener("change", updateLabelsForFrequency);
     updateLabelsForFrequency();
 
-    const MIN_GAP_MINUTES = 60;
+    const MIN_GAP_MINUTES = 120;
     const minutesOf = (hhmm: string) => {
       const [hh, mm] = hhmm.split(":").map(Number);
       return (hh % 24) * 60 + (mm || 0);
     };
-    const hasMinGapApart = (times: string[]) => {
-      for (let i = 0; i < times.length; i++) {
-        for (let j = i + 1; j < times.length; j++) {
-          const diff = Math.abs(minutesOf(times[i]) - minutesOf(times[j]));
-          if (Math.min(diff, 1440 - diff) < MIN_GAP_MINUTES) return false;
+    // Times must run in increasing order through the day, and every pair (including
+    // wrapping past midnight) must be at least MIN_GAP_MINUTES apart.
+    const checkInTimesError = (times: string[]): string | null => {
+      const minutes = times.map(minutesOf);
+      for (let i = 1; i < minutes.length; i++) {
+        if (minutes[i] <= minutes[i - 1]) return "Check-in times must be in order, earliest to latest.";
+      }
+      for (let i = 0; i < minutes.length; i++) {
+        for (let j = i + 1; j < minutes.length; j++) {
+          const diff = Math.abs(minutes[i] - minutes[j]);
+          if (Math.min(diff, 1440 - diff) < MIN_GAP_MINUTES) return "Check-in times must each be at least two hours apart.";
         }
       }
-      return true;
+      return null;
     };
 
     const save = document.createElement("button");
@@ -116,8 +122,15 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
     save.textContent = "Save";
     save.addEventListener("click", async () => {
       cadenceStatus.textContent = "";
-      if (frequencySelect.value === "four" && !hasMinGapApart([block1Input.value, block2Input.value, block3Input.value, block4Input.value])) {
-        cadenceStatus.textContent = "4x Daily check-in times must each be at least an hour apart.";
+      const times =
+        frequencySelect.value === "four"
+          ? [block1Input.value, block2Input.value, block3Input.value, block4Input.value]
+          : frequencySelect.value === "twice"
+            ? [block1Input.value, block2Input.value]
+            : [];
+      const timesError = times.length > 0 ? checkInTimesError(times) : null;
+      if (timesError) {
+        cadenceStatus.textContent = timesError;
         return;
       }
       save.textContent = "Saving…";

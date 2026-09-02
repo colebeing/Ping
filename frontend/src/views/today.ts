@@ -1,20 +1,20 @@
 import { api, type BlockId, type Cadence } from "../api";
 import { mountBlockCard } from "../blockCard";
 
-// Grace period after a block's own cadence time before the other block takes
+// Grace period after a block's own cadence time before the next block takes
 // over as "current" — without this, the switch happens the instant the
 // block's own scheduled time passes, so opening the app even a minute after
 // tapping that block's own notification could already show the next block.
-const BLOCK_SWITCH_DELAY_MINUTES = 60;
+// Two hours protects the full check-in window regardless of cadence.
+const BLOCK_SWITCH_DELAY_MINUTES = 120;
 
 /**
- * The current block is whichever check-in is coming up next — Morning owns
- * the stretch from the previous Evening reminder up to this Morning's
- * reminder, Evening owns the stretch from Morning's reminder up to Evening's.
- * Purely time-based (compares wall-clock time against cadence), so this
- * flips on schedule regardless of whether the push notification has actually
- * fired yet — delayed by BLOCK_SWITCH_DELAY_MINUTES so there's room to
- * actually act on that notification before the view moves on.
+ * A block owns the stretch of time from the end of the previous block's own
+ * window up through two hours after its own check-in time. Purely time-based
+ * (compares wall-clock time against cadence), so this flips on schedule
+ * regardless of whether the push notification has actually fired yet —
+ * delayed by BLOCK_SWITCH_DELAY_MINUTES so there's room to actually act on
+ * that notification before the view moves on.
  */
 /** Of a set of (block, cadence time) candidates, picks whichever one's own reminder time is coming up soonest. */
 function pickSoonestBlock(timezone: string, candidates: [BlockId, string][]): BlockId {

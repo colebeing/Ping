@@ -26,23 +26,30 @@ interface CadenceBody {
   frequency?: Frequency;
 }
 
-const MIN_GAP_MINUTES = 60;
+// Also the grace period today.ts protects after each check-in time before
+// the next block takes over as "current" — a block owns from the end of the
+// previous block's window through this many minutes after its own time, so
+// times closer together than this would leave no real window for one block.
+const MIN_GAP_MINUTES = 120;
 
 function minutesOf(hhmm: string): number {
   const [hh, mm] = hhmm.split(":").map(Number);
   return (hh % 24) * 60 + (mm || 0);
 }
 
-/** Every pair of times must be at least MIN_GAP_MINUTES apart, measured the short way around the 24h clock. */
-function hasMinGapApart(times: string[]): boolean {
+/** Times must run in increasing order through the day, and every pair (including wrapping past midnight) must be at least MIN_GAP_MINUTES apart. */
+function checkInTimesError(times: string[]): string | null {
   const minutes = times.map(minutesOf);
+  for (let i = 1; i < minutes.length; i++) {
+    if (minutes[i] <= minutes[i - 1]) return "Check-in times must be in order, earliest to latest";
+  }
   for (let i = 0; i < minutes.length; i++) {
     for (let j = i + 1; j < minutes.length; j++) {
       const diff = Math.abs(minutes[i] - minutes[j]);
-      if (Math.min(diff, 1440 - diff) < MIN_GAP_MINUTES) return false;
+      if (Math.min(diff, 1440 - diff) < MIN_GAP_MINUTES) return "Check-in times must each be at least two hours apart";
     }
   }
-  return true;
+  return null;
 }
 
 export async function handleUpdateCadence(request: Request, env: Env, userId: string): Promise<Response> {
@@ -56,13 +63,15 @@ export async function handleUpdateCadence(request: Request, env: Env, userId: st
   if (body.timezone) next.timezone = body.timezone;
   if (body.frequency === "once" || body.frequency === "twice" || body.frequency === "four") next.frequency = body.frequency;
 
-  if (next.frequency === "four") {
+  if (next.frequency === "twice") {
+    const err = checkInTimesError([next.block1, next.block2]);
+    if (err) return errorResponse(err, 400);
+  } else if (next.frequency === "four") {
     if (!next.block1 || !next.block2 || !next.block3 || !next.block4) {
       return errorResponse("4x Daily needs all four check-in times", 400);
     }
-    if (!hasMinGapApart([next.block1, next.block2, next.block3, next.block4])) {
-      return errorResponse("4x Daily check-in times must each be at least an hour apart", 400);
-    }
+    const err = checkInTimesError([next.block1, next.block2, next.block3, next.block4]);
+    if (err) return errorResponse(err, 400);
   }
 
   state.cadence = next;
