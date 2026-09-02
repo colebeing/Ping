@@ -10,6 +10,7 @@ buildscript {
     dependencies {
         classpath 'com.android.tools.build:gradle:9.3.2'
         classpath 'com.google.gms:google-services:4.5.0'
+        classpath 'com.google.firebase:firebase-appdistribution-gradle:5.1.1'
         // Only the app module (custom notification/FCM handling) is Kotlin — Capacitor's own
         // generated modules stay plain Java, this just makes Kotlin available where needed.
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"

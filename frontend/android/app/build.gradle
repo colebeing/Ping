@@ -1,6 +1,16 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
+// Must apply before the `android {}` block below — that's what registers the
+// `firebaseAppDistribution {}` DSL used inside buildTypes.debug, and Gradle
+// evaluates that block eagerly at this point in the file.
+def hasAppDistributionCreds = file('firebase-service-account.json').exists()
+if (hasAppDistributionCreds) {
+    apply plugin: 'com.google.firebase.appdistribution'
+} else {
+    logger.info("firebase-service-account.json not found, App Distribution plugin not applied. `appDistributionUploadDebug` won't be available")
+}
+
 android {
     namespace = "com.colebeing.ping"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -18,6 +28,18 @@ android {
         }
     }
     buildTypes {
+        debug {
+            if (hasAppDistributionCreds) {
+                firebaseAppDistribution {
+                    serviceCredentialsFile = "$projectDir/firebase-service-account.json"
+                    releaseNotes = "Debug build from ${new Date().format('yyyy-MM-dd HH:mm')}"
+                    // Requires a "testers" group to already exist in App Distribution (Firebase
+                    // Console → App Distribution → Testers & Groups → New group) — a build still
+                    // uploads fine without it, this step just gets silently skipped until then.
+                    groups = "testers"
+                }
+            }
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'

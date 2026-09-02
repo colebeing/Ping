@@ -64,6 +64,10 @@ captures/
 # Google Services (e.g. APIs or Firebase)
 # google-services.json
 
+# Firebase service account key — a real secret (private key), unlike google-services.json above.
+# Used by the App Distribution Gradle plugin for non-interactive uploads; never commit this.
+app/firebase-service-account.json
+
 # Freeline
 freeline.py
 freeline/
