@@ -101,14 +101,26 @@ async function renderCollapsedDay(container: HTMLElement, date: string, blocks: 
 }
 
 /**
- * Each day's mode is decided by whatever data it actually has, not by the
+ * Past days' mode is decided by whatever data they actually have, not by the
  * account's current setting — that's what lets some days in History be
  * Twice Daily and others Once Daily as the setting changes over time. Only
- * a fully blank day falls back to the current setting, since there's
+ * a fully blank past day falls back to the current setting, since there's
  * nothing else to go on for it.
+ *
+ * Today is different: it's the live, actionable day, so it always reflects
+ * the current setting immediately, even if an earlier check-in today was
+ * answered under a frequency you've since switched away from — otherwise
+ * switching frequency wouldn't visibly do anything until tomorrow.
  */
 async function renderDay(container: HTMLElement, date: string, isToday: boolean, currentFrequency: Frequency): Promise<void> {
   container.innerHTML = `<div class="card">Loading…</div>`;
+
+  if (isToday) {
+    if (currentFrequency === "once") void mountBlockCard(container, "combined", date);
+    else if (currentFrequency === "four") renderBlocks(container, FOUR_BLOCKS, date);
+    else renderBlocks(container, TWICE_BLOCKS, date);
+    return;
+  }
 
   const combined = await api.getQuestion("combined", date);
   if (combined.existingAnswer) {
@@ -128,17 +140,10 @@ async function renderDay(container: HTMLElement, date: string, isToday: boolean,
     return;
   }
 
-  // Fully blank — nothing to preserve, so use whichever mode is active now.
-  if (currentFrequency === "once") {
-    void mountBlockCard(container, "combined", date);
-  } else if (currentFrequency === "four") {
-    if (isToday) renderBlocks(container, FOUR_BLOCKS, date);
-    else void renderCollapsedDay(container, date, FOUR_BLOCKS);
-  } else if (isToday) {
-    renderBlocks(container, TWICE_BLOCKS, date);
-  } else {
-    void renderCollapsedDay(container, date, TWICE_BLOCKS);
-  }
+  // Fully blank past day — nothing to preserve, so use whichever mode is active now.
+  if (currentFrequency === "once") void mountBlockCard(container, "combined", date);
+  else if (currentFrequency === "four") void renderCollapsedDay(container, date, FOUR_BLOCKS);
+  else void renderCollapsedDay(container, date, TWICE_BLOCKS);
 }
 
 export async function renderHistory(root: HTMLElement): Promise<void> {

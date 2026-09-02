@@ -40,8 +40,16 @@ export async function getConfig(env: Env): Promise<AppConfig> {
   // Backfill for config saved before the "combined" block existed.
   if (!stored.blocks.combined) stored.blocks.combined = DEFAULT_CONFIG.blocks.combined;
   // Backfill for config saved before the four-times-daily blocks existed.
+  // Mirrors "1"'s current HOW/WHY (same as admin.ts does on every save) rather
+  // than the hardcoded default, so an account with customized WHY content
+  // doesn't see the generic default until its next Admin save.
   for (const block of ["q1", "q2", "q3", "q4"] as const) {
-    if (!stored.blocks[block]) stored.blocks[block] = DEFAULT_CONFIG.blocks[block];
+    if (!stored.blocks[block]) {
+      stored.blocks[block] = {
+        ...JSON.parse(JSON.stringify(stored.blocks["1"])),
+        question: { ...stored.blocks["1"].question, when: DEFAULT_CONFIG.blocks[block].question.when },
+      };
+    }
   }
   return stored;
 }
