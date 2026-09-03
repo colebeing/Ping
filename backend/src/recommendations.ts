@@ -30,32 +30,48 @@ export function detectStreaks(state: UserState, thresholds: TriggerConfig, copy:
     const lastEntry = entries[entries.length - 1];
     const runValence = lastEntry.answer;
     const lastCategory = lastEntry.category as Category;
-
-    let categoryRunLen = 1;
-    let prevDate = lastEntry.date;
-    for (let i = entries.length - 2; i >= 0; i--) {
-      const e = entries[i];
-      if (e.category === lastCategory && e.answer === runValence && isPrevCalendarDay(e.date, prevDate)) {
-        categoryRunLen++;
-        prevDate = e.date;
-      } else {
-        break;
-      }
-    }
-
-    let valenceRunLen = 1;
-    prevDate = lastEntry.date;
-    for (let i = entries.length - 2; i >= 0; i--) {
-      const e = entries[i];
-      if (e.answer === runValence && isPrevCalendarDay(e.date, prevDate)) {
-        valenceRunLen++;
-        prevDate = e.date;
-      } else {
-        break;
-      }
-    }
-
     const valence: "amplify" | "resolve" = runValence === "yes" ? "amplify" : "resolve";
+
+    // A declined streak's asOfDate is a floor: entries at or before it don't
+    // count toward a fresh run in this same valence direction, so a declined
+    // invitation needs genuinely new days (not the same streak continuing)
+    // before anything is proposed again for this block — whether that next
+    // proposal would've been the same per-category invitation, or a general
+    // one for the exact same underlying days reworded under different copy.
+    const declined = state.declinedStreaks[block];
+    const floor = declined && declined.valence === valence ? declined.asOfDate : undefined;
+
+    let categoryRunLen = 0;
+    if (!floor || lastEntry.date > floor) {
+      categoryRunLen = 1;
+      let prevDate = lastEntry.date;
+      for (let i = entries.length - 2; i >= 0; i--) {
+        const e = entries[i];
+        if (floor && e.date <= floor) break;
+        if (e.category === lastCategory && e.answer === runValence && isPrevCalendarDay(e.date, prevDate)) {
+          categoryRunLen++;
+          prevDate = e.date;
+        } else {
+          break;
+        }
+      }
+    }
+
+    let valenceRunLen = 0;
+    if (!floor || lastEntry.date > floor) {
+      valenceRunLen = 1;
+      let prevDate = lastEntry.date;
+      for (let i = entries.length - 2; i >= 0; i--) {
+        const e = entries[i];
+        if (floor && e.date <= floor) break;
+        if (e.answer === runValence && isPrevCalendarDay(e.date, prevDate)) {
+          valenceRunLen++;
+          prevDate = e.date;
+        } else {
+          break;
+        }
+      }
+    }
 
     let runCategory: Category | null = null;
     let invitation: Invitation;
@@ -78,6 +94,7 @@ export function detectStreaks(state: UserState, thresholds: TriggerConfig, copy:
       category: runCategory,
       valence,
       invitation,
+      asOfDate: lastEntry.date,
       createdAt: new Date().toISOString(),
     });
   }
@@ -100,6 +117,20 @@ export async function acceptRecommendation(env: Env, state: UserState, recommend
     category: rec.category,
     acceptedAt: new Date().toISOString(),
   };
+  // A stale decline marker for this block no longer means anything once a
+  // (possibly different) invitation has actually been accepted.
+  delete state.declinedStreaks[rec.block];
+  return true;
+}
+
+/** The user said no — dismiss it, and remember the exact streak declined so
+ * detectStreaks won't re-propose it while that same run continues. */
+export function declineRecommendation(state: UserState, recommendationId: string): boolean {
+  const idx = state.pendingRecommendations.findIndex((r) => r.id === recommendationId);
+  if (idx === -1) return false;
+  const rec = state.pendingRecommendations[idx];
+  state.pendingRecommendations.splice(idx, 1);
+  state.declinedStreaks[rec.block] = { category: rec.category, valence: rec.valence, asOfDate: rec.asOfDate };
   return true;
 }
 

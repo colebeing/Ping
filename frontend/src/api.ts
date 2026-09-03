@@ -26,6 +26,8 @@ export interface QuestionResponse {
     category?: Category;
     followup?: { prompt: string; optionLabel: string };
   } | null;
+  /** Only ever set for today's own card — recovers an invitation the user didn't resolve before reloading. */
+  pendingRecommendation: Recommendation | null;
 }
 
 export interface AnswerResponse {
@@ -76,6 +78,22 @@ export interface AdminConfig {
   blocks: Record<BlockId, BlockContent>;
   triggers: TriggerConfig;
   recommendationCopy: RecommendationCopy;
+}
+
+/** A live invitation to swap a block's HOW question, proposed after a streak. */
+export interface Recommendation {
+  id: string;
+  block: BlockId;
+  category: Category | null;
+  valence: "amplify" | "resolve";
+  invitation: Invitation;
+  asOfDate: string;
+  createdAt: string;
+}
+
+export interface FollowupResponse {
+  newRecommendations: Recommendation[];
+  pendingRecommendations: Recommendation[];
 }
 
 export interface AnalyticsUserSummary {
@@ -136,10 +154,13 @@ export const api = {
   answer: (block: BlockId, answer: Answer, date?: string) =>
     request<AnswerResponse>("/api/answer", { method: "POST", body: JSON.stringify({ block, answer, date }) }),
   followup: (block: BlockId, category: Category, date?: string) =>
-    request<{ ok: true }>("/api/followup", {
+    request<FollowupResponse>("/api/followup", {
       method: "POST",
       body: JSON.stringify({ block, category, date }),
     }),
+
+  acceptRecommendation: (id: string) => request<{ ok: true }>(`/api/recommendations/${id}/accept`, { method: "POST" }),
+  declineRecommendation: (id: string) => request<{ ok: true }>(`/api/recommendations/${id}/decline`, { method: "POST" }),
 
   updateCadence: (cadence: Partial<Cadence>) =>
     request<{ cadence: Cadence }>("/api/cadence", { method: "POST", body: JSON.stringify(cadence) }),

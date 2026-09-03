@@ -5,7 +5,7 @@ import { handleSignup, handleLogin, handleLogout, handleRequestPasswordReset, ha
 import { handleMe } from "./routes/me";
 import { handleGetQuestion } from "./routes/question";
 import { handleAnswer, handleFollowup } from "./routes/answer";
-import { handleListRecommendations, handleAcceptRecommendation, handleUpdateCadence } from "./routes/recommendations";
+import { handleListRecommendations, handleAcceptRecommendation, handleDeclineRecommendation, handleUpdateCadence } from "./routes/recommendations";
 import { handleSubscribe, handleGetVapidPublicKey, handleTestPush, handleRegisterFcmToken, handleNotificationClicked } from "./routes/push";
 import { handleGetAdminConfig, handleSaveAdminConfig, handleGetConfigAuditLog } from "./routes/admin";
 import { handleGetAnalytics } from "./routes/analytics";
@@ -54,6 +54,9 @@ async function route(request: Request, env: Env): Promise<Response> {
 
   const acceptMatch = pathname.match(/^\/api\/recommendations\/([^/]+)\/accept$/);
   if (acceptMatch && method === "POST") return handleAcceptRecommendation(request, env, userId, acceptMatch[1]);
+
+  const declineMatch = pathname.match(/^\/api\/recommendations\/([^/]+)\/decline$/);
+  if (declineMatch && method === "POST") return handleDeclineRecommendation(request, env, userId, declineMatch[1]);
 
   if (pathname === "/api/admin/config") {
     if (!(await isAdmin(env, userId))) return errorResponse("Admin access required", 403);

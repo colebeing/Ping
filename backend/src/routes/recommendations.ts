@@ -1,7 +1,7 @@
 import type { Env, Frequency } from "../types";
 import { errorResponse, json, readJson } from "../http";
 import { getState, saveState } from "../state";
-import { acceptRecommendation } from "../recommendations";
+import { acceptRecommendation, declineRecommendation } from "../recommendations";
 import { scheduleUserPush } from "../scheduler";
 
 export async function handleListRecommendations(_request: Request, env: Env, userId: string): Promise<Response> {
@@ -15,6 +15,14 @@ export async function handleAcceptRecommendation(_request: Request, env: Env, us
   if (!ok) return errorResponse("Recommendation not found", 404);
   await saveState(env, userId, state);
   return json({ ok: true, active: state.activeOverrides });
+}
+
+export async function handleDeclineRecommendation(_request: Request, env: Env, userId: string, id: string): Promise<Response> {
+  const state = await getState(env, userId);
+  const ok = declineRecommendation(state, id);
+  if (!ok) return errorResponse("Recommendation not found", 404);
+  await saveState(env, userId, state);
+  return json({ ok: true });
 }
 
 interface CadenceBody {
