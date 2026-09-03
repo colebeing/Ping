@@ -125,22 +125,36 @@ function renderQuestionSection(config: AdminConfig): HTMLElement {
 }
 
 function renderFollowupEditor(prompt: FollowupPrompt, title: string): HTMLElement {
-  const wrap = document.createElement("div");
-  wrap.style.marginTop = "16px";
-  wrap.style.paddingTop = "12px";
-  wrap.style.borderTop = "1px solid var(--surface-2)";
-
-  const label = document.createElement("p");
-  label.className = "muted";
-  label.textContent = title;
-  wrap.appendChild(label);
-
-  wrap.appendChild(textInput(prompt.prompt, (v) => (prompt.prompt = v), "Question text"));
+  const body = document.createElement("div");
+  body.appendChild(textInput(prompt.prompt, (v) => (prompt.prompt = v), "Question text"));
 
   for (const cat of Object.keys(prompt.options) as Category[]) {
-    wrap.appendChild(textInput(prompt.options[cat], (v) => (prompt.options[cat] = v), CATEGORY_LABEL[cat]));
+    body.appendChild(textInput(prompt.options[cat], (v) => (prompt.options[cat] = v), CATEGORY_LABEL[cat]));
   }
 
+  return accordion(title, body);
+}
+
+/** A collapsed-by-default toggle around `body` — nesting one accordion's body inside another (invitation > follow-up) is what makes these "layered". */
+function accordion(title: string, body: HTMLElement): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "accordion";
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "accordion-toggle";
+  toggle.innerHTML = `<span>${title}</span><span class="chev">▾</span>`;
+
+  body.classList.add("accordion-body");
+  body.hidden = true;
+
+  toggle.addEventListener("click", () => {
+    const expanded = body.hidden;
+    body.hidden = !expanded;
+    toggle.classList.toggle("expanded", expanded);
+  });
+
+  wrap.append(toggle, body);
   return wrap;
 }
 
@@ -201,24 +215,14 @@ function renderRecommendationCopySection(config: AdminConfig): HTMLElement {
 }
 
 function renderInvitationEditor(invitation: Invitation, title: string): HTMLElement {
-  const wrap = document.createElement("div");
-  wrap.style.marginTop = "10px";
-  wrap.style.paddingTop = "10px";
-  wrap.style.paddingLeft = "12px";
-  wrap.style.borderLeft = "3px solid var(--surface-2)";
-
-  const label = document.createElement("p");
-  label.className = "muted";
-  label.textContent = title;
-  wrap.appendChild(label);
-
-  wrap.appendChild(textInput(invitation.how, (v) => (invitation.how = v), 'HOW slot (e.g. "how you wanted")'));
+  const body = document.createElement("div");
+  body.appendChild(textInput(invitation.how, (v) => (invitation.how = v), 'HOW slot (e.g. "how you wanted")'));
 
   for (const answer of ["yes", "no"] as const) {
-    wrap.appendChild(renderFollowupEditor(invitation[answer], answer === "yes" ? "Yes → WHY" : "No → WHY"));
+    body.appendChild(renderFollowupEditor(invitation[answer], answer === "yes" ? "Yes → WHY" : "No → WHY"));
   }
 
-  return wrap;
+  return accordion(title, body);
 }
 
 function fieldLabel(text: string): HTMLElement {

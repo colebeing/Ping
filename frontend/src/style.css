@@ -433,6 +433,52 @@ select {
   transform: rotate(180deg);
 }
 
+/* Collapsed-by-default form sections in Admin — nesting one inside another's body (invitation >
+   follow-up) is what makes them "layered"; the nested variant below reads as visually subordinate. */
+.accordion {
+  margin-top: 10px;
+}
+
+.accordion-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: var(--surface-2);
+  border: none;
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 12px 14px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.accordion-toggle .chev {
+  font-size: 11px;
+  color: var(--text-dim);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.accordion-toggle.expanded .chev {
+  transform: rotate(180deg);
+}
+
+.accordion-body {
+  padding: 12px 4px 0;
+}
+
+.accordion-body .accordion .accordion-toggle {
+  background: none;
+  border: 1px solid var(--surface-2);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 9px 12px;
+}
+
 .table-scroll {
   overflow-x: auto;
 }
