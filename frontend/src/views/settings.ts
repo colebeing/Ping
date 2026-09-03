@@ -73,7 +73,7 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
 
     const block4Label = document.createElement("label");
     block4Label.className = "muted";
-    block4Label.textContent = "End of day";
+    block4Label.textContent = "Evening";
     const block4Input = document.createElement("input");
     block4Input.type = "time";
     block4Input.value = me.cadence.block4 ?? "18:00";
@@ -83,8 +83,8 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
 
     const updateLabelsForFrequency = () => {
       const freq = frequencySelect.value;
-      block1Label.textContent = freq === "once" ? "Check-in time" : freq === "four" ? "Start of day" : "Morning block";
-      block2Label.textContent = freq === "four" ? "Morning" : "Evening block";
+      block1Label.textContent = freq === "once" ? "Check-in time" : freq === "four" ? "Morning" : "Morning block";
+      block2Label.textContent = freq === "four" ? "Midday" : "Evening block";
       const showBlock2 = freq !== "once";
       block2Label.style.display = showBlock2 ? "block" : "none";
       block2Input.style.display = showBlock2 ? "block" : "none";
@@ -172,25 +172,27 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
     });
     pushCard.appendChild(enableBtn);
 
-    const testRow = document.createElement("div");
-    testRow.className = "btn-row";
-    const testStatus = document.createElement("p");
-    testStatus.className = "muted";
-    const testBtn = document.createElement("button");
-    testBtn.className = "btn";
-    testBtn.textContent = "Test notification";
-    testBtn.addEventListener("click", async () => {
-      testStatus.textContent = "Sending…";
-      try {
-        await api.sendTestPush(currentBlockForCadence(me.cadence));
-        testStatus.textContent = "Sent — check your device.";
-      } catch (err) {
-        testStatus.textContent = err instanceof Error ? err.message : "Couldn't send test push.";
-      }
-    });
-    testRow.append(testBtn);
-    pushCard.appendChild(testRow);
-    pushCard.appendChild(testStatus);
+    if (me.isAdmin) {
+      const testRow = document.createElement("div");
+      testRow.className = "btn-row";
+      const testStatus = document.createElement("p");
+      testStatus.className = "muted";
+      const testBtn = document.createElement("button");
+      testBtn.className = "btn";
+      testBtn.textContent = "Test notification";
+      testBtn.addEventListener("click", async () => {
+        testStatus.textContent = "Sending…";
+        try {
+          await api.sendTestPush(currentBlockForCadence(me.cadence));
+          testStatus.textContent = "Sent — check your device.";
+        } catch (err) {
+          testStatus.textContent = err instanceof Error ? err.message : "Couldn't send test push.";
+        }
+      });
+      testRow.append(testBtn);
+      pushCard.appendChild(testRow);
+      pushCard.appendChild(testStatus);
+    }
 
     root.appendChild(pushCard);
   } catch (err) {

@@ -1,20 +1,32 @@
-import { api, type Answer, type BlockId, type Category, type FollowupPrompt } from "./api";
+import { api, type Answer, type BlockId, type Category, type FollowupPrompt, type Recommendation } from "./api";
 
 export const BLOCK_LABEL: Record<BlockId, string> = {
   "1": "Morning",
   "2": "Evening",
   combined: "Today",
-  q1: "Start of day",
-  q2: "Morning",
+  q1: "Morning",
+  q2: "Midday",
   q3: "Afternoon",
-  q4: "End of day",
+  q4: "Evening",
 };
 export const CATEGORY_LABEL: Record<Category, string> = { friends: "Friends", colleagues: "Colleagues", family: "Family", me: "Me" };
+
+interface DoneStep {
+  kind: "done";
+  answer: Answer;
+  category: Category;
+  followupPrompt: string;
+  optionLabel: string;
+}
 
 type Step =
   | { kind: "question" }
   | { kind: "followup"; answer: Answer; prompt: FollowupPrompt }
-  | { kind: "done"; answer: Answer; category: Category; followupPrompt: string; optionLabel: string };
+  // A bonus third tap after the normal check-in + follow-up, only shown when
+  // a streak just crossed threshold: the invitation's own question, answered
+  // Yes to swap the block's HOW going forward or No to keep things as-is.
+  | { kind: "recommendation"; recommendation: Recommendation; next: DoneStep }
+  | DoneStep;
 
 /**
  * The live, interactive yes/no + follow-up card for one block, for a given
@@ -98,6 +110,30 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
           grid.appendChild(button(step.prompt.options[cat], "btn", () => submitFollowup(step as Extract<Step, { kind: "followup" }>, cat)));
         }
         card.appendChild(grid);
+      } else if (step.kind === "recommendation") {
+        const wrap = document.createElement("div");
+        wrap.className = "recommendation-prompt";
+
+        const badge = document.createElement("span");
+        badge.className = "pill recommendation-badge";
+        badge.textContent = "Noticed a pattern";
+        wrap.appendChild(badge);
+
+        const proposed = document.createElement("p");
+        proposed.className = "followup-prompt";
+        proposed.textContent = `Did ${q.when} ${step.recommendation.invitation.how}?`;
+        wrap.appendChild(proposed);
+
+        const row = document.createElement("div");
+        row.className = "btn-row";
+        const current = step as Extract<Step, { kind: "recommendation" }>;
+        row.append(
+          button("Yes, make this my question", "btn btn-primary", () => resolveRecommendation(current, true)),
+          button("No, keep mine", "btn", () => resolveRecommendation(current, false)),
+        );
+        wrap.appendChild(row);
+
+        card.appendChild(wrap);
       } else {
         const answerRow = document.createElement("div");
         answerRow.className = "answer-row";
@@ -132,16 +168,25 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
     };
 
     const submitFollowup = async (current: Extract<Step, { kind: "followup" }>, category: Category) => {
-      await api.followup(block, category, date);
-      step = {
+      const res = await api.followup(block, category, date);
+      const doneStep: DoneStep = {
         kind: "done",
         answer: current.answer,
         category,
         followupPrompt: current.prompt.prompt,
         optionLabel: current.prompt.options[category],
       };
+      const recommendation = res.newRecommendations.find((r) => r.block === block);
+      step = recommendation ? { kind: "recommendation", recommendation, next: doneStep } : doneStep;
       paint();
       onDone?.();
+    };
+
+    const resolveRecommendation = async (current: Extract<Step, { kind: "recommendation" }>, accept: boolean) => {
+      if (accept) await api.acceptRecommendation(current.recommendation.id);
+      else await api.declineRecommendation(current.recommendation.id);
+      step = current.next;
+      paint();
     };
 
     paint();

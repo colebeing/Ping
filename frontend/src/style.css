@@ -98,7 +98,8 @@ input[type="email"],
 input[type="password"],
 input[type="time"],
 input[type="number"],
-input[type="text"] {
+input[type="text"],
+select {
   width: 100%;
   padding: 12px;
   border-radius: 10px;
@@ -245,6 +246,18 @@ input[type="text"] {
 
 .followup-line .followup-q {
   color: var(--text-dim);
+}
+
+.recommendation-prompt {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--accent);
+}
+
+.recommendation-badge {
+  background: rgba(110, 168, 254, 0.16);
+  color: var(--accent);
+  margin-bottom: 8px;
 }
 
 .banner {
