@@ -1,4 +1,4 @@
-import { api, type AnalyticsResponse, type BlockId, type Category } from "../api";
+import { api, type AnalyticsResponse, type AnalyticsUserSummary, type BlockId, type Category } from "../api";
 import { BLOCK_LABEL, CATEGORY_LABEL } from "../blockCard";
 
 export async function renderAnalytics(root: HTMLElement): Promise<void> {
@@ -12,6 +12,7 @@ export async function renderAnalytics(root: HTMLElement): Promise<void> {
     root.appendChild(heading);
 
     root.appendChild(renderTotals(data));
+    root.appendChild(renderNotificationHealth(data));
     root.appendChild(renderDailyActivity(data));
     root.appendChild(renderCategoryTotals(data));
     root.appendChild(renderAnswerBalance(data));
@@ -45,6 +46,36 @@ function renderTotals(data: AnalyticsResponse): HTMLElement {
     statTile(data.totals.activeUsers30d, "Active, last 30 days"),
   );
   return grid;
+}
+
+function renderNotificationHealth(data: AnalyticsResponse): HTMLElement {
+  const card = document.createElement("div");
+  card.className = "card";
+  const h = document.createElement("h3");
+  h.textContent = "Notification delivery (last 30 days)";
+  card.appendChild(h);
+
+  const { sent30d, failed30d } = data.notificationTotals;
+  const total = sent30d + failed30d;
+  if (total === 0) {
+    const p = document.createElement("p");
+    p.className = "muted";
+    p.textContent = "No send attempts in the last 30 days.";
+    card.appendChild(p);
+    return card;
+  }
+
+  const rate = Math.round((sent30d / total) * 100);
+  card.appendChild(barRow("Sent", sent30d, total));
+  card.appendChild(barRow("Failed", failed30d, total, "no"));
+
+  const caption = document.createElement("p");
+  caption.className = "muted";
+  caption.style.margin = "8px 0 0";
+  caption.textContent = `${rate}% delivery rate across ${total} send attempt${total === 1 ? "" : "s"}.`;
+  card.appendChild(caption);
+
+  return card;
 }
 
 function renderDailyActivity(data: AnalyticsResponse): HTMLElement {
@@ -167,7 +198,7 @@ function renderUsersTable(data: AnalyticsResponse): HTMLElement {
 
   const thead = document.createElement("thead");
   thead.innerHTML =
-    "<tr><th>Email</th><th>Joined</th><th>Check-ins</th><th>Last active</th><th>Streak</th><th>Top category</th></tr>";
+    "<tr><th>Email</th><th>Joined</th><th>Check-ins</th><th>Last active</th><th>Streak</th><th>Top category</th><th>Last notification</th></tr>";
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
@@ -177,7 +208,7 @@ function renderUsersTable(data: AnalyticsResponse): HTMLElement {
     const topCategory = user.topCategory ? CATEGORY_LABEL[user.topCategory] : "—";
     tr.innerHTML = `<td>${escapeHtml(user.email)}</td><td>${joined}</td><td>${user.totalAnswers}</td><td>${
       user.lastActive ?? "—"
-    }</td><td>${user.activeDayStreak}</td><td>${topCategory}</td>`;
+    }</td><td>${user.activeDayStreak}</td><td>${topCategory}</td><td>${lastNotificationCell(user.lastNotification)}</td>`;
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
@@ -185,6 +216,14 @@ function renderUsersTable(data: AnalyticsResponse): HTMLElement {
   wrap.appendChild(table);
   card.appendChild(wrap);
   return card;
+}
+
+function lastNotificationCell(last: AnalyticsUserSummary["lastNotification"]): string {
+  if (!last) return "—";
+  const when = last.timestamp.slice(0, 10);
+  const label = `${BLOCK_LABEL[last.block]} · ${last.channel}`;
+  if (last.outcome === "failed") return `<span class="notif-failed">✗ Failed</span> — ${escapeHtml(label)}, ${when}`;
+  return `<span class="notif-sent">✓ Sent</span> — ${escapeHtml(label)}, ${when}`;
 }
 
 function escapeHtml(text: string): string {

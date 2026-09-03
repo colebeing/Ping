@@ -58,40 +58,70 @@ function blockPushBody(state: Awaited<ReturnType<typeof getState>>, block: Block
   return override ? `Did ${override.when} ${override.how}?` : BLOCK_PROMPTS[block];
 }
 
-/**
- * Sends to every device this user has registered, and mutates `state` in
- * place: logs a NotificationEvent per attempt (for delivery-rate analytics)
- * and drops any subscription/token the push service reports as permanently
- * gone, so a long-dead device doesn't linger forever and doesn't mask real
- * failures behind "at least one succeeded" logic.
- *
- * Returns whether at least one device actually accepted the push.
- */
-async function sendBlockPush(env: Env, state: Awaited<ReturnType<typeof getState>>, block: BlockId): Promise<boolean> {
-  const body = blockPushBody(state, block);
-  let anySent = false;
+interface PushOutcome {
+  anySent: boolean;
+  webpush: { sub: PushSubscriptionJSON; outcome: SendOutcome }[];
+  fcm: { token: string; outcome: SendOutcome }[];
+}
 
-  const survivingSubs: PushSubscriptionJSON[] = [];
-  for (const sub of state.pushSubscriptions) {
+/**
+ * Sends to every device passed in. Deliberately takes plain snapshots (not a mutable `state`
+ * reference) and returns outcomes rather than saving anything itself — each send is a network round
+ * trip, so holding a `state` object mutable across all of them and saving afterward left a long
+ * window where a concurrent request (e.g. the app registering a device) could read state, save its
+ * own change, and then get silently overwritten when this function's stale copy saved last. See
+ * applyPushOutcome, which re-reads fresh state right before the (much shorter) save.
+ */
+async function sendBlockPush(
+  env: Env,
+  body: string,
+  block: BlockId,
+  subs: PushSubscriptionJSON[],
+  tokens: string[],
+): Promise<PushOutcome> {
+  const webpush: { sub: PushSubscriptionJSON; outcome: SendOutcome }[] = [];
+  for (const sub of subs) {
     const outcome = await sendPush(env, sub, { data: JSON.stringify({ title: "Ping", body, block }), options: { ttl: 3600 } });
-    state.notificationEvents.push({ block, kind: outcome === "sent" ? "sent" : "failed", channel: "webpush", timestamp: new Date().toISOString() });
-    if (outcome === "sent") anySent = true;
-    if (outcome !== "gone") survivingSubs.push(sub);
+    webpush.push({ sub, outcome });
   }
-  state.pushSubscriptions = survivingSubs;
 
   // Data-only, not a `notification` payload — the native app's own FirebaseMessagingService builds the
   // interactive, swap-in-place notification itself rather than letting Android auto-display a plain one.
-  const survivingTokens: string[] = [];
-  for (const token of state.fcmTokens) {
+  const fcm: { token: string; outcome: SendOutcome }[] = [];
+  for (const token of tokens) {
     const outcome = await sendFcmPush(env, token, { title: "Ping", body, block });
-    state.notificationEvents.push({ block, kind: outcome === "sent" ? "sent" : "failed", channel: "fcm", timestamp: new Date().toISOString() });
-    if (outcome === "sent") anySent = true;
-    if (outcome !== "gone") survivingTokens.push(token);
+    fcm.push({ token, outcome });
   }
-  state.fcmTokens = survivingTokens;
 
-  return anySent;
+  const anySent = webpush.some((w) => w.outcome === "sent") || fcm.some((f) => f.outcome === "sent");
+  return { anySent, webpush, fcm };
+}
+
+/**
+ * Applies a sendBlockPush result against freshly-read state: prunes any subscription/token the push
+ * service reported as permanently gone, logs a NotificationEvent per attempt, and — only when
+ * `markNotifiedIfSent` and at least one device actually accepted the push — marks the block notified
+ * for today. Marking on a genuine failure would hide it from analytics forever (nothing else ever
+ * flips it back), which is worse than leaving lastNotified alone.
+ */
+async function applyPushOutcome(env: Env, userId: string, block: BlockId, result: PushOutcome, markNotifiedIfSent: boolean): Promise<void> {
+  const state = await getState(env, userId);
+
+  const goneEndpoints = new Set(result.webpush.filter((w) => w.outcome === "gone").map((w) => w.sub.endpoint));
+  state.pushSubscriptions = state.pushSubscriptions.filter((s) => !goneEndpoints.has(s.endpoint));
+  for (const { outcome } of result.webpush) {
+    state.notificationEvents.push({ block, kind: outcome === "sent" ? "sent" : "failed", channel: "webpush", timestamp: new Date().toISOString() });
+  }
+
+  const goneTokens = new Set(result.fcm.filter((f) => f.outcome === "gone").map((f) => f.token));
+  state.fcmTokens = state.fcmTokens.filter((t) => !goneTokens.has(t));
+  for (const { outcome } of result.fcm) {
+    state.notificationEvents.push({ block, kind: outcome === "sent" ? "sent" : "failed", channel: "fcm", timestamp: new Date().toISOString() });
+  }
+
+  if (markNotifiedIfSent && result.anySent) state.lastNotified[block] = todayLocal(state.cadence.timezone);
+
+  await saveState(env, userId, state);
 }
 
 /** Called from the service worker's notificationclick — logs the tap itself, distinct from whether it went on to record an answer, so delivery and interaction can be measured separately. */
@@ -110,40 +140,38 @@ export async function checkAndNotifyUser(env: Env, userId: string): Promise<void
   if (!vapidKeys(env)) return; // no secrets configured yet — no-op until deployed
 
   const state = await getState(env, userId);
-  if (state.pushSubscriptions.length === 0) return;
+  if (state.pushSubscriptions.length === 0 && state.fcmTokens.length === 0) return;
 
   const today = todayLocal(state.cadence.timezone);
-  let changed = false;
 
   for (const { block, time } of activeBlockTimes(state.cadence)) {
     if (state.lastNotified[block] === today) continue;
     if (!isDueNow(time, state.cadence.timezone)) continue;
 
-    await sendBlockPush(env, state, block);
-    state.lastNotified[block] = today;
-    changed = true;
+    const body = blockPushBody(state, block);
+    const result = await sendBlockPush(env, body, block, state.pushSubscriptions, state.fcmTokens);
+    await applyPushOutcome(env, userId, block, result, /* markNotifiedIfSent */ true);
   }
-
-  if (changed) await saveState(env, userId, state);
 }
 
-/** On-demand send for testing — ignores cadence/lastNotified entirely. */
+/** On-demand send for testing — ignores cadence/lastNotified entirely, and never marks the block notified. */
 export async function sendTestPush(env: Env, userId: string, block: BlockId): Promise<{ ok: boolean; reason?: string }> {
   if (!vapidKeys(env)) return { ok: false, reason: "Push isn't configured on the server (missing VAPID secrets)" };
   const state = await getState(env, userId);
   if (state.pushSubscriptions.length === 0 && state.fcmTokens.length === 0) {
     return { ok: false, reason: "No push subscription on this device yet" };
   }
-  const sent = await sendBlockPush(env, state, block);
-  await saveState(env, userId, state);
-  if (!sent) return { ok: false, reason: "The push service rejected it — try disabling and re-enabling notifications on this device" };
+  const body = blockPushBody(state, block);
+  const result = await sendBlockPush(env, body, block, state.pushSubscriptions, state.fcmTokens);
+  await applyPushOutcome(env, userId, block, result, /* markNotifiedIfSent */ false);
+  if (!result.anySent) return { ok: false, reason: "The push service rejected it — try disabling and re-enabling notifications on this device" };
   return { ok: true };
 }
 
-/** Epoch ms of the soonest upcoming block cadence for this user, or null if they have no push subscriptions. */
+/** Epoch ms of the soonest upcoming block cadence for this user, or null if they have no push subscriptions of any channel. */
 export async function computeNextAlarmTime(env: Env, userId: string): Promise<number | null> {
   const state = await getState(env, userId);
-  if (state.pushSubscriptions.length === 0) return null;
+  if (state.pushSubscriptions.length === 0 && state.fcmTokens.length === 0) return null;
 
   const now = new Date();
   const times = activeBlockTimes(state.cadence).map(({ time }) => nextOccurrence(time, state.cadence.timezone, now));

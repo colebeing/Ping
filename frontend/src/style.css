@@ -442,3 +442,13 @@ input[type="text"] {
   color: var(--text-dim);
   font-weight: 500;
 }
+
+.notif-sent {
+  color: var(--good);
+  font-weight: 600;
+}
+
+.notif-failed {
+  color: #e07a7a;
+  font-weight: 600;
+}

@@ -1,4 +1,4 @@
-import type { AnswerRecord, BlockId, Category, Env, UserRecord } from "../types";
+import type { AnswerRecord, BlockId, Category, Env, NotificationEvent, UserRecord } from "../types";
 import { CATEGORIES } from "../types";
 import { json } from "../http";
 import { getState } from "../state";
@@ -10,6 +10,8 @@ export interface AnalyticsUserSummary {
   lastActive: string | null;
   activeDayStreak: number;
   topCategory: Category | null;
+  /** Most recent send attempt (sent or failed — "clicked" isn't a delivery outcome), so a silently-failing device shows up here instead of only being discoverable by reading raw state. */
+  lastNotification: { block: BlockId; channel: NotificationEvent["channel"]; outcome: "sent" | "failed"; timestamp: string } | null;
 }
 
 export interface AnalyticsResponse {
@@ -17,6 +19,8 @@ export interface AnalyticsResponse {
   categoryTotals: Record<Category, { yes: number; no: number }>;
   answerBalance: Record<BlockId, { yes: number; no: number }>;
   dailyActivity: { date: string; count: number }[];
+  /** Send attempts (not clicks) across all users in the last 30 days — a delivery-health signal independent of any one user's history. */
+  notificationTotals: { sent30d: number; failed30d: number };
   users: AnalyticsUserSummary[];
 }
 
@@ -71,6 +75,9 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
   let answerCount = 0;
   let activeUsers7d = 0;
   let activeUsers30d = 0;
+  let sent30d = 0;
+  let failed30d = 0;
+  const cutoff30Iso = new Date(Date.now() - 30 * 86400000).toISOString();
 
   for (const userId of userIds) {
     const [user, state] = await Promise.all([env.STATE_KV.get<UserRecord>(`user:${userId}`, "json"), getState(env, userId)]);
@@ -78,6 +85,18 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
 
     let lastActive: string | null = null;
     const catCounts: Record<Category, number> = { friends: 0, colleagues: 0, family: 0, me: 0 };
+
+    let lastNotification: AnalyticsUserSummary["lastNotification"] = null;
+    for (const event of state.notificationEvents) {
+      if (event.kind === "clicked") continue;
+      if (event.timestamp >= cutoff30Iso) {
+        if (event.kind === "sent") sent30d++;
+        else failed30d++;
+      }
+      if (!lastNotification || event.timestamp > lastNotification.timestamp) {
+        lastNotification = { block: event.block, channel: event.channel, outcome: event.kind, timestamp: event.timestamp };
+      }
+    }
 
     for (const a of state.answers) {
       answerCount++;
@@ -113,6 +132,7 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
       lastActive,
       activeDayStreak: activeDayStreak(state.answers, todayStr),
       topCategory,
+      lastNotification,
     });
   }
 
@@ -128,6 +148,7 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
     categoryTotals,
     answerBalance,
     dailyActivity,
+    notificationTotals: { sent30d, failed30d },
     users,
   };
   return json(response);

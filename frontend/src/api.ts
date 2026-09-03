@@ -85,6 +85,7 @@ export interface AnalyticsUserSummary {
   lastActive: string | null;
   activeDayStreak: number;
   topCategory: Category | null;
+  lastNotification: { block: BlockId; channel: "webpush" | "fcm"; outcome: "sent" | "failed"; timestamp: string } | null;
 }
 
 export interface AnalyticsResponse {
@@ -92,6 +93,7 @@ export interface AnalyticsResponse {
   categoryTotals: Record<Category, { yes: number; no: number }>;
   answerBalance: Record<BlockId, { yes: number; no: number }>;
   dailyActivity: { date: string; count: number }[];
+  notificationTotals: { sent30d: number; failed30d: number };
   users: AnalyticsUserSummary[];
 }
 
