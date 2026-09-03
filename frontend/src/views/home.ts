@@ -2,7 +2,7 @@ import { api, type BlockId, type Cadence } from "../api";
 import { mountBlockCard } from "../blockCard";
 import { blocksForCadence, currentBlockForCadence } from "./today";
 import { localDateStr, renderHistoryList } from "./history";
-import { GEAR_ICON_SVG } from "../icons";
+import { SETTINGS_ICON_SVG } from "../icons";
 
 /** Has this block's own scheduled moment already happened today, in the account's timezone? Used
  * to decide which of today's blocks besides the current one are worth showing at all — a block
@@ -44,7 +44,7 @@ export async function renderHome(root: HTMLElement, onSettings: () => void): Pro
     const settingsBtn = document.createElement("button");
     settingsBtn.className = "header-icon-btn";
     settingsBtn.setAttribute("aria-label", "Settings");
-    settingsBtn.innerHTML = GEAR_ICON_SVG;
+    settingsBtn.innerHTML = SETTINGS_ICON_SVG;
     settingsBtn.addEventListener("click", onSettings);
     header.append(heading, settingsBtn);
     root.appendChild(header);

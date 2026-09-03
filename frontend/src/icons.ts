@@ -1,10 +1,12 @@
 /** Monochrome line icons (stroke=currentColor) for header nav — deliberately plain/utilitarian
- * rather than colorful, since gear/home are wayfinding chrome, not something to draw the eye. */
+ * rather than colorful, since settings/home are wayfinding chrome, not something to draw the eye. */
 
-export const GEAR_ICON_SVG =
+export const SETTINGS_ICON_SVG =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
-  '<circle cx="12" cy="12" r="3.2"/>' +
-  '<path d="M12 2.5v3M12 18.5v3M21.5 12h-3M5.5 12h-3M18.6 5.4l-2.1 2.1M7.5 16.5l-2.1 2.1M18.6 18.6l-2.1-2.1M7.5 7.5 5.4 5.4"/>' +
+  '<path d="M4 6h6M14 6h6M4 12h10M18 12h2M4 18h6M14 18h6"/>' +
+  '<circle cx="10" cy="6" r="2"/>' +
+  '<circle cx="14" cy="12" r="2"/>' +
+  '<circle cx="10" cy="18" r="2"/>' +
   "</svg>";
 
 export const HOME_ICON_SVG =
