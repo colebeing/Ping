@@ -106,7 +106,19 @@ export interface Recommendation {
   category: Category | null;
   valence: "amplify" | "resolve";
   invitation: Invitation;
+  /** Date of the most recent answer counted into the streak that produced this — the floor a fresh streak must clear after a decline, see DeclinedStreak. */
+  asOfDate: string;
   createdAt: string; // ISO date
+}
+
+/** Marks "the user already said no to this exact streak" so detectStreaks doesn't re-propose it
+ * every single day the pattern continues. Only entries strictly after asOfDate count toward a
+ * fresh run for this block+category+valence — the user's own framing: decline a streak of 2
+ * family answers, and it needs 2 *new* family answers before it can ask again. */
+export interface DeclinedStreak {
+  category: Category | null;
+  valence: "amplify" | "resolve";
+  asOfDate: string;
 }
 
 export interface AnswerRecord {
@@ -172,6 +184,7 @@ export interface UserState {
   activeOverrides: Partial<Record<BlockId, QuestionOverride>>;
   retiredOverrides: QuestionOverride[];
   pendingRecommendations: Recommendation[];
+  declinedStreaks: Partial<Record<BlockId, DeclinedStreak>>;
   cadence: Cadence;
   pushSubscriptions: PushSubscriptionJSON[];
   /** FCM registration tokens for the native Android wrapper — separate from pushSubscriptions (Web Push). */

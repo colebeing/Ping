@@ -51,13 +51,17 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
       const res = await api.answer(block, q.existingAnswer.answer, date);
       step = { kind: "followup", answer: q.existingAnswer.answer, prompt: res.followup };
     } else {
-      step = {
+      const doneStep: DoneStep = {
         kind: "done",
         answer: q.existingAnswer.answer,
         category: q.existingAnswer.category,
         followupPrompt: q.existingAnswer.followup?.prompt ?? "",
         optionLabel: q.existingAnswer.followup?.optionLabel ?? CATEGORY_LABEL[q.existingAnswer.category],
       };
+      // Recovers an invitation that fired but wasn't resolved before a reload
+      // (closed the app, refreshed) — otherwise it only ever showed up once,
+      // transiently, right after the follow-up call that created it.
+      step = q.pendingRecommendation ? { kind: "recommendation", recommendation: q.pendingRecommendation, next: doneStep } : doneStep;
       onDone?.();
     }
 

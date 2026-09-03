@@ -33,6 +33,12 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
     followup = { prompt: content.prompt, optionLabel: content.options[existingAnswer.category] };
   }
 
+  // Only surfaced for today's own card — a pending invitation is a "just
+  // happened" moment, not something that should resurface while browsing
+  // History. Lets the client recover it after a reload, since it otherwise
+  // only shows up transiently right after the followup call that created it.
+  const pendingRecommendation = date === today ? (state.pendingRecommendations.find((r) => r.block === block) ?? null) : null;
+
   return json({
     block,
     date,
@@ -41,5 +47,6 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
     text: `Did ${whenText} ${how}?`,
     overridden: Boolean(override),
     existingAnswer: existingAnswer ? { ...existingAnswer, followup } : null,
+    pendingRecommendation,
   });
 }

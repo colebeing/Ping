@@ -9,6 +9,7 @@ export function defaultState(): UserState {
     activeOverrides: {},
     retiredOverrides: [],
     pendingRecommendations: [],
+    declinedStreaks: {},
     cadence: { block1: "11:00", block2: "23:00", timezone: "UTC", frequency: "twice" },
     pushSubscriptions: [],
     fcmTokens: [],
@@ -25,6 +26,7 @@ export async function getState(env: Env, userId: string): Promise<UserState> {
   // Backfills for state saved before a field existed.
   if (!stored.cadence.frequency) stored.cadence.frequency = "twice";
   if (!stored.fcmTokens) stored.fcmTokens = [];
+  if (!stored.declinedStreaks) stored.declinedStreaks = {};
   if (!stored.answerEdits) stored.answerEdits = [];
   if (!stored.notificationEvents) stored.notificationEvents = [];
   if (!stored.appOpenDates) stored.appOpenDates = [];
