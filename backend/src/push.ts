@@ -147,6 +147,9 @@ export async function checkAndNotifyUser(env: Env, userId: string): Promise<void
   for (const { block, time } of activeBlockTimes(state.cadence)) {
     if (state.lastNotified[block] === today) continue;
     if (!isDueNow(time, state.cadence.timezone)) continue;
+    // Already answered (e.g. filled in early via the app) — nothing left to
+    // interrupt for, so sending would just be noise.
+    if (state.answers.some((a) => a.date === today && a.block === block)) continue;
 
     const body = blockPushBody(state, block);
     const result = await sendBlockPush(env, body, block, state.pushSubscriptions, state.fcmTokens);
