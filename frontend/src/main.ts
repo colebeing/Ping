@@ -49,16 +49,26 @@ function showApp(isAdmin: boolean): void {
   const content = document.createElement("div");
   app!.appendChild(content);
 
-  const tabs = document.createElement("nav");
-  tabs.className = "tabs";
-  document.body.appendChild(tabs);
+  // Settings isn't worth a permanent footer tab for the average user — it's reached via the gear
+  // icon on Home instead. Admins still get a footer, but it's just their own Home/Analytics/Admin
+  // switcher; they reach Settings the same gear-icon way as everyone else.
+  let tabs: HTMLElement | null = null;
+  if (isAdmin) {
+    tabs = document.createElement("nav");
+    tabs.className = "tabs";
+    document.body.appendChild(tabs);
+  } else {
+    document.body.classList.add("no-tabs");
+  }
 
-  const tabDefs: { id: Tab; label: string }[] = [
-    { id: "home", label: "Home" },
-    { id: "settings", label: "Settings" },
-  ];
-  if (isAdmin) tabDefs.push({ id: "analytics", label: "Analytics" }, { id: "admin", label: "Admin" });
-  const validTabs = tabDefs.map((d) => d.id);
+  const tabDefs: { id: Tab; label: string }[] = isAdmin
+    ? [
+        { id: "home", label: "Home" },
+        { id: "analytics", label: "Analytics" },
+        { id: "admin", label: "Admin" },
+      ]
+    : [];
+  const validTabs: Tab[] = ["home", "settings", ...tabDefs.filter((d) => d.id !== "home").map((d) => d.id)];
 
   // Stay on the tab across a refresh by round-tripping it through the URL hash.
   const tabFromHash = (): Tab => {
@@ -68,25 +78,36 @@ function showApp(isAdmin: boolean): void {
 
   let active: Tab = tabFromHash();
 
-  // Home always shows every one of today's blocks that's actually started,
-  // the tapped one included, so there's nowhere else a notification could
-  // need to route to.
-  goToBlock = (_block) => {
+  const goHome = () => {
     active = "home";
     location.hash = "home";
     renderActive();
   };
+  const goSettings = () => {
+    active = "settings";
+    location.hash = "settings";
+    renderActive();
+  };
+
+  // Home always shows every one of today's blocks that's actually started,
+  // the tapped one included, so there's nowhere else a notification could
+  // need to route to.
+  goToBlock = (_block) => goHome();
 
   const renderActive = () => {
-    if (active === "home") void renderHome(content);
+    if (active === "home") void renderHome(content, goSettings);
     else if (active === "admin") void renderAdmin(content);
     else if (active === "analytics") void renderAnalytics(content);
-    else void renderSettings(content, () => {
-      tabs.remove();
-      showAuth();
-    });
-    for (const btn of Array.from(tabs.children) as HTMLButtonElement[]) {
-      btn.classList.toggle("active", btn.dataset.tab === active);
+    else
+      void renderSettings(content, goHome, () => {
+        tabs?.remove();
+        document.body.classList.remove("no-tabs");
+        showAuth();
+      });
+    if (tabs) {
+      for (const btn of Array.from(tabs.children) as HTMLButtonElement[]) {
+        btn.classList.toggle("active", btn.dataset.tab === active);
+      }
     }
   };
 
@@ -117,7 +138,7 @@ function showApp(isAdmin: boolean): void {
       location.hash = def.id;
       renderActive();
     });
-    tabs.appendChild(btn);
+    tabs!.appendChild(btn);
   }
 
   renderActive();

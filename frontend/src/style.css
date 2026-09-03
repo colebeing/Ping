@@ -465,3 +465,69 @@ select {
   color: #e07a7a;
   font-weight: 600;
 }
+
+.view-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.view-header h2 {
+  flex: 1;
+  margin: 0;
+}
+
+.header-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  border-radius: 10px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.header-icon-btn:active {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.header-icon-btn svg {
+  width: 22px;
+  height: 22px;
+}
+
+.header-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  margin-left: -6px;
+  padding: 8px 6px;
+  color: var(--text-dim);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.header-back:active {
+  color: var(--text);
+}
+
+.header-back svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* Non-admins get no footer tab bar (settings moved to the header gear), so the
+   bottom padding #app normally reserves for it would just be dead space. */
+body.no-tabs #app {
+  padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+}

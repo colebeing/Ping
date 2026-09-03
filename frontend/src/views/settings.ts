@@ -2,16 +2,33 @@ import { Capacitor } from "@capacitor/core";
 import { api, ApiError } from "../api";
 import { enablePushNotifications } from "../push-setup";
 import { currentBlockForCadence } from "./today";
+import { CHEVRON_LEFT_SVG, HOME_ICON_SVG } from "../icons";
 
-export async function renderSettings(root: HTMLElement, onLogout: () => void): Promise<void> {
+export async function renderSettings(root: HTMLElement, onHome: () => void, onLogout: () => void): Promise<void> {
   root.innerHTML = `<h2>Settings</h2><div class="card">Loading…</div>`;
   try {
     const me = await api.me();
     root.innerHTML = "";
 
+    const header = document.createElement("div");
+    header.className = "view-header";
+
+    const back = document.createElement("button");
+    back.className = "header-back";
+    back.innerHTML = `${CHEVRON_LEFT_SVG}<span>Back</span>`;
+    back.addEventListener("click", onHome);
+
     const heading = document.createElement("h2");
     heading.textContent = "Settings";
-    root.appendChild(heading);
+
+    const homeBtn = document.createElement("button");
+    homeBtn.className = "header-icon-btn";
+    homeBtn.setAttribute("aria-label", "Home");
+    homeBtn.innerHTML = HOME_ICON_SVG;
+    homeBtn.addEventListener("click", onHome);
+
+    header.append(back, heading, homeBtn);
+    root.appendChild(header);
 
     const account = document.createElement("div");
     account.className = "card";
