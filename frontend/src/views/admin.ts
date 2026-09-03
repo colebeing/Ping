@@ -99,10 +99,10 @@ function renderQuestionSection(config: AdminConfig): HTMLElement {
     if (cadenceSelect.value === "once") {
       whenField('Once Daily WHEN slot (e.g. "today go")', "combined");
     } else if (cadenceSelect.value === "four") {
-      whenField('Start of day WHEN slot (e.g. "today start")', "q1");
-      whenField('Morning WHEN slot (e.g. "this morning go")', "q2");
+      whenField('Morning WHEN slot (e.g. "today start")', "q1");
+      whenField('Midday WHEN slot (e.g. "this morning go")', "q2");
       whenField('Afternoon WHEN slot (e.g. "this afternoon go")', "q3");
-      whenField('End of day WHEN slot (e.g. "today end")', "q4");
+      whenField('Evening WHEN slot (e.g. "today end")', "q4");
     } else {
       whenField('Morning WHEN slot (e.g. "today start")', "1");
       whenField('Evening WHEN slot (e.g. "today end")', "2");
