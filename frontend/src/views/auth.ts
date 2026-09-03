@@ -118,7 +118,11 @@ export function renderAuth(root: HTMLElement, onAuthed: () => void): void {
         onAuthed();
       } catch (err) {
         console.error("[ping] native google sign-in failed", err);
-        errorEl.textContent = err instanceof ApiError ? err.message : "Google sign-in didn't work. Try again?";
+        // Surface whatever the plugin/backend actually said instead of a static
+        // fallback — a silent generic message is what made this class of bug
+        // (e.g. a stale native session after logout) hard to diagnose from a report alone.
+        const detail = err instanceof ApiError ? err.message : err instanceof Error ? err.message : null;
+        errorEl.textContent = detail ? `Google sign-in didn't work: ${detail}` : "Google sign-in didn't work. Try again?";
         google.removeAttribute("disabled");
       }
     });

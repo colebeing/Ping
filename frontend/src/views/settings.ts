@@ -1,3 +1,4 @@
+import { Capacitor } from "@capacitor/core";
 import { api, ApiError } from "../api";
 import { enablePushNotifications } from "../push-setup";
 import { currentBlockForCadence } from "./today";
@@ -19,6 +20,17 @@ export async function renderSettings(root: HTMLElement, onLogout: () => void): P
     logout.className = "btn";
     logout.textContent = "Log out";
     logout.addEventListener("click", async () => {
+      // Ping's own session is separate from the native Google account picker's cached
+      // session — without this, the next "Sign in with Google" tap hits an already
+      // signed-in Firebase Auth state and fails instead of prompting fresh.
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const { FirebaseAuthentication } = await import("@capacitor-firebase/authentication");
+          await FirebaseAuthentication.signOut();
+        } catch (err) {
+          console.error("[ping] firebase sign-out failed", err);
+        }
+      }
       await api.logout();
       onLogout();
     });
