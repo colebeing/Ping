@@ -1,0 +1,64 @@
+name: iOS build check
+
+# Compiles the Capacitor iOS wrapper (frontend/ios) on a macOS runner. This is a compile-only
+# sanity check, not a real release build: no code signing, no GoogleService-Info.plist, no Apple
+# Developer account involved — it exists to catch Swift/Xcode-project mistakes (this project is
+# edited without access to a Mac) before they reach anyone with an actual device to test on.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/ios/**"
+      - "frontend/src/**"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "frontend/capacitor.config.ts"
+      - ".github/workflows/ios-build-check.yml"
+  pull_request:
+    paths:
+      - "frontend/ios/**"
+      - "frontend/src/**"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "frontend/capacitor.config.ts"
+      - ".github/workflows/ios-build-check.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build web assets
+        working-directory: frontend
+        run: npm run build
+        env:
+          VITE_API_BASE: https://ping-backend.colebeing.workers.dev
+
+      - name: Sync Capacitor iOS platform
+        working-directory: frontend
+        run: npx cap sync ios
+
+      - name: Resolve Swift Package dependencies
+        working-directory: frontend/ios/App
+        run: xcodebuild -resolvePackageDependencies -project App.xcodeproj
+
+      - name: Build (no signing)
+        working-directory: frontend/ios/App
+        run: |
+          xcodebuild build \
+            -project App.xcodeproj \
+            -target App \
+            -sdk iphonesimulator \
+            -destination "generic/platform=iOS Simulator" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
