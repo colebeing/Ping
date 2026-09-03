@@ -50,7 +50,15 @@ jobs:
 
       - name: Resolve Swift Package dependencies
         working-directory: frontend/ios/App
-        run: xcodebuild -resolvePackageDependencies -project App.xcodeproj
+        run: xcodebuild -resolvePackageDependencies -project App.xcodeproj -derivedDataPath .build
+
+      # Known upstream bug (firebase/firebase-ios-sdk#16156): nanopb (a transitive Firebase
+      # dependency) ships a Bazel `BUILD` file at its repo root, which collides with Xcode's own
+      # `build/` output directory on macOS's default case-insensitive filesystem. Confirmed
+      # workaround from that issue: rename every checked-out `BUILD` file before compiling.
+      - name: Work around nanopb BUILD/build filename collision
+        working-directory: frontend/ios/App
+        run: find .build/SourcePackages/checkouts -name "BUILD" -not -type d -exec mv {} {}.bazel \;
 
       - name: Build (no signing)
         working-directory: frontend/ios/App
@@ -60,5 +68,6 @@ jobs:
             -target App \
             -sdk iphonesimulator \
             -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath .build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
