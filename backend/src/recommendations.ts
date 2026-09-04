@@ -1,4 +1,4 @@
-import { ALL_BLOCKS, type Category, type Env, type Invitation, type RecommendationNudge, type RecommendationCopy, type TriggerConfig, type UserState } from "./types";
+import { LIVE_BLOCKS, type Category, type Env, type Invitation, type RecommendationNudge, type RecommendationCopy, type TriggerConfig, type UserState } from "./types";
 import { getConfig } from "./config";
 
 function daysBetween(a: string, b: string): number {
@@ -23,7 +23,7 @@ function isPrevCalendarDay(earlier: string, later: string): boolean {
 export function detectStreaks(state: UserState, thresholds: TriggerConfig, copy: RecommendationCopy): RecommendationNudge[] {
   const newRecs: RecommendationNudge[] = [];
 
-  for (const block of ALL_BLOCKS) {
+  for (const block of LIVE_BLOCKS) {
     const entries = state.answers.filter((a) => a.block === block && a.category).sort((a, b) => a.date.localeCompare(b.date));
     if (entries.length === 0) continue;
 
@@ -139,7 +139,7 @@ export function declineRecommendation(state: UserState, recommendationId: string
 
 /** Lazily retires a promoted question once its boundary has held for thresholds.retireAfterDays with no "no" answer since acceptance. */
 export function checkRetirement(state: UserState, todayStr: string, thresholds: TriggerConfig): void {
-  for (const block of ALL_BLOCKS) {
+  for (const block of LIVE_BLOCKS) {
     const override = state.activeOverrides[block];
     if (!override) continue;
     const acceptedDate = override.acceptedAt.slice(0, 10);

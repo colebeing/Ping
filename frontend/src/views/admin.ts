@@ -13,7 +13,7 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
 
     const intro = document.createElement("p");
     intro.className = "muted";
-    intro.textContent = "Edits apply immediately on save — no redeploy needed. Question content here is also editable via the Google Sheet + npm run seed-from-sheet; whichever you use last wins.";
+    intro.textContent = "Edits apply immediately on save — no redeploy needed. This is the canonical place to edit question content.";
     root.appendChild(intro);
 
     root.appendChild(renderQuestionSection(config));
@@ -30,22 +30,21 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
       saveBtn.textContent = "Saving…";
       saveBtn.setAttribute("disabled", "true");
       try {
-        // Every block only ever differs from block "1" by its own WHEN slot —
-        // keep HOW/WHY mirrored to "1" on save, in case they'd drifted apart
-        // before this UI stopped allowing that. Every other block's WHEN is
-        // its own, independent slot — capture them all before any get
-        // overwritten below, since q1's own WHEN would otherwise already be
-        // gone by the time q1 itself is rebuilt.
-        const mirrorFrom1 = (when: string) => ({
-          ...JSON.parse(JSON.stringify(config.blocks["1"])),
-          question: { ...config.blocks["1"].question, when },
+        // Every live block only ever differs from q1 by its own WHEN slot — keep HOW/WHY mirrored
+        // to q1 on save. "1"/"2"/"combined" are frozen legacy blocks (from the old cadence modes)
+        // and are deliberately left untouched here, not mirrored into. Each of q2-q4's own WHEN is
+        // its own, independent slot — capture them all before any get overwritten below, since q1's
+        // own WHEN would otherwise already be gone by the time q1 itself is rebuilt.
+        const mirrorFromQ1 = (when: string) => ({
+          ...JSON.parse(JSON.stringify(config.blocks.q1)),
+          question: { ...config.blocks.q1.question, when },
         });
-        const OTHER_BLOCKS = ["2", "combined", "q1", "q2", "q3", "q4"] as const;
+        const OTHER_BLOCKS = ["q2", "q3", "q4"] as const;
         const whens = Object.fromEntries(OTHER_BLOCKS.map((block) => [block, config.blocks[block].question.when])) as Record<
           (typeof OTHER_BLOCKS)[number],
           string
         >;
-        for (const block of OTHER_BLOCKS) config.blocks[block] = mirrorFrom1(whens[block]);
+        for (const block of OTHER_BLOCKS) config.blocks[block] = mirrorFromQ1(whens[block]);
 
         await api.saveAdminConfig(config);
         status.textContent = "Saved.";
@@ -74,17 +73,8 @@ function renderQuestionSection(config: AdminConfig): HTMLElement {
   const note = document.createElement("p");
   note.className = "muted";
   note.textContent =
-    "Every question asks the same thing and shares the WHY follow-up below — only each one's WHEN slot differs, and every block's WHEN slot is independent. Pick a cadence to edit its WHEN slot(s).";
+    "Every question asks the same thing and shares the WHY follow-up below — only each one's WHEN slot differs, and every block's WHEN slot is independent.";
   card.appendChild(note);
-
-  const cadenceSelect = document.createElement("select");
-  for (const [value, label] of [["twice", "Twice Daily"], ["once", "Once Daily"], ["four", "4x Daily"]] as const) {
-    const opt = document.createElement("option");
-    opt.value = value;
-    opt.textContent = label;
-    cadenceSelect.appendChild(opt);
-  }
-  card.appendChild(cadenceSelect);
 
   const whenFields = document.createElement("div");
   card.appendChild(whenFields);
@@ -94,25 +84,13 @@ function renderQuestionSection(config: AdminConfig): HTMLElement {
     whenFields.appendChild(textInput(config.blocks[block].question.when, (v) => (config.blocks[block].question.when = v)));
   };
 
-  const renderWhenFields = () => {
-    whenFields.innerHTML = "";
-    if (cadenceSelect.value === "once") {
-      whenField('Once Daily WHEN slot (e.g. "today go")', "combined");
-    } else if (cadenceSelect.value === "four") {
-      whenField('Morning WHEN slot (e.g. "today start")', "q1");
-      whenField('Midday WHEN slot (e.g. "this morning go")', "q2");
-      whenField('Afternoon WHEN slot (e.g. "this afternoon go")', "q3");
-      whenField('Evening WHEN slot (e.g. "today end")', "q4");
-    } else {
-      whenField('Morning WHEN slot (e.g. "today start")', "1");
-      whenField('Evening WHEN slot (e.g. "today end")', "2");
-    }
-  };
-  cadenceSelect.addEventListener("change", renderWhenFields);
-  renderWhenFields();
+  whenField('Morning WHEN slot (e.g. "today start")', "q1");
+  whenField('Midday WHEN slot (e.g. "this morning go")', "q2");
+  whenField('Afternoon WHEN slot (e.g. "this afternoon go")', "q3");
+  whenField('Evening WHEN slot (e.g. "today end")', "q4");
 
-  // Morning's content is the shared source of truth for HOW/WHY, mirrored to every other block on save.
-  const content = config.blocks["1"];
+  // q1's content is the shared source of truth for HOW/WHY, mirrored to q2-q4 on save.
+  const content = config.blocks.q1;
 
   card.appendChild(fieldLabel('HOW slot (e.g. "how you wanted")'));
   card.appendChild(textInput(content.question.how, (v) => (content.question.how = v)));

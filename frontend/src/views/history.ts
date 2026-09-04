@@ -1,9 +1,8 @@
-import { api, type Answer, type BlockId, type Cadence, type Category, type FollowupPrompt, type Frequency } from "../api";
+import { api, LIVE_BLOCKS, type Answer, type BlockId, type Cadence, type Category, type FollowupPrompt, type LiveBlockId } from "../api";
 import { mountBlockCard, button, CATEGORY_LABEL } from "../blockCard";
 
 const DAYS_SHOWN = 14;
 const TWICE_BLOCKS: BlockId[] = ["1", "2"];
-const FOUR_BLOCKS: BlockId[] = ["q1", "q2", "q3", "q4"];
 
 export function localDateStr(timezone: string, at: Date): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
@@ -107,7 +106,7 @@ async function renderCollapsedDay(container: HTMLElement, date: string, blocks: 
  * a fully blank past day falls back to the current setting, since there's
  * nothing else to go on for it.
  */
-async function renderDay(container: HTMLElement, date: string, currentFrequency: Frequency): Promise<void> {
+async function renderDay(container: HTMLElement, date: string, cadence: Cadence): Promise<void> {
   container.innerHTML = `<div class="card">Loading…</div>`;
 
   const combined = await api.getQuestion("combined", date);
@@ -122,16 +121,22 @@ async function renderDay(container: HTMLElement, date: string, currentFrequency:
     return;
   }
 
-  const quadAnswers = await Promise.all(FOUR_BLOCKS.map((block) => api.getQuestion(block, date)));
-  if (quadAnswers.some((q) => q.existingAnswer)) {
-    renderBlocks(container, FOUR_BLOCKS, date);
+  const quadAnswers = await Promise.all(LIVE_BLOCKS.map((block) => api.getQuestion(block, date)));
+  const answeredQuad = LIVE_BLOCKS.filter((_, i) => quadAnswers[i].existingAnswer);
+  if (answeredQuad.length > 0) {
+    // Show every block that was actually answered this day, plus any block still live on the
+    // current cadence — a block permanently skipped since then, and never answered on this
+    // specific day, shouldn't sit here forever as an open, unanswered prompt.
+    const stillLive = LIVE_BLOCKS.filter((b) => !cadence.skippedBlocks.includes(b));
+    const toShow = LIVE_BLOCKS.filter((b) => answeredQuad.includes(b) || stillLive.includes(b));
+    renderBlocks(container, toShow, date);
     return;
   }
 
-  // Fully blank past day — nothing to preserve, so use whichever mode is active now.
-  if (currentFrequency === "once") void mountBlockCard(container, "combined", date);
-  else if (currentFrequency === "four") void renderCollapsedDay(container, date, FOUR_BLOCKS);
-  else void renderCollapsedDay(container, date, TWICE_BLOCKS);
+  // Fully blank past day — nothing to preserve, so use whichever blocks are live now.
+  const liveNow: LiveBlockId[] = LIVE_BLOCKS.filter((b) => !cadence.skippedBlocks.includes(b));
+  if (liveNow.length === 1) void mountBlockCard(container, liveNow[0], date);
+  else void renderCollapsedDay(container, date, liveNow);
 }
 
 /**
@@ -152,6 +157,6 @@ export function renderHistoryList(root: HTMLElement, cadence: Cadence, today: st
 
     const dayContainer = document.createElement("div");
     root.appendChild(dayContainer);
-    void renderDay(dayContainer, date, cadence.frequency);
+    void renderDay(dayContainer, date, cadence);
   }
 }

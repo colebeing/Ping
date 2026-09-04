@@ -1,4 +1,4 @@
-import type { Env, Frequency } from "../types";
+import { LIVE_BLOCKS, isLiveBlockId, type Env, type LiveBlockId } from "../types";
 import { errorResponse, json, readJson } from "../http";
 import { getState, saveState } from "../state";
 import { acceptRecommendation, declineRecommendation } from "../recommendations";
@@ -27,12 +27,9 @@ export async function handleDeclineRecommendation(_request: Request, env: Env, u
 }
 
 interface CadenceBody {
-  block1?: string;
-  block2?: string;
-  block3?: string;
-  block4?: string;
+  times?: Partial<Record<LiveBlockId, string>>;
+  skippedBlocks?: LiveBlockId[];
   timezone?: string;
-  frequency?: Frequency;
 }
 
 // Also the grace period today.ts protects after each check-in time before
@@ -63,25 +60,35 @@ function checkInTimesError(times: string[]): string | null {
 
 export async function handleUpdateCadence(request: Request, env: Env, userId: string): Promise<Response> {
   const body = await readJson<CadenceBody>(request);
-  const state = await getState(env, userId);
-  const next = { ...state.cadence };
-  if (body.block1) next.block1 = body.block1;
-  if (body.block2) next.block2 = body.block2;
-  if (body.block3) next.block3 = body.block3;
-  if (body.block4) next.block4 = body.block4;
-  if (body.timezone) next.timezone = body.timezone;
-  if (body.frequency === "once" || body.frequency === "twice" || body.frequency === "four") next.frequency = body.frequency;
 
-  if (next.frequency === "twice") {
-    const err = checkInTimesError([next.block1, next.block2]);
-    if (err) return errorResponse(err, 400);
-  } else if (next.frequency === "four") {
-    if (!next.block1 || !next.block2 || !next.block3 || !next.block4) {
-      return errorResponse("4x Daily needs all four check-in times", 400);
-    }
-    const err = checkInTimesError([next.block1, next.block2, next.block3, next.block4]);
-    if (err) return errorResponse(err, 400);
+  // A stale cached frontend bundle (this repo has no backend auto-deploy, so the two aren't
+  // guaranteed atomic) would still be sending the old block1/frequency shape — reject it clearly
+  // rather than silently no-op-succeeding by destructuring fields that no longer exist.
+  const legacyShape = body as unknown as { block1?: unknown; frequency?: unknown };
+  if (legacyShape.block1 !== undefined || legacyShape.frequency !== undefined) {
+    return errorResponse("Cadence format has changed — please refresh the app", 400);
   }
+  if (body.times === undefined && body.skippedBlocks === undefined && body.timezone === undefined) {
+    return errorResponse("Nothing to update", 400);
+  }
+
+  const state = await getState(env, userId);
+  const next = { ...state.cadence, times: { ...state.cadence.times, ...body.times } };
+  if (body.timezone) next.timezone = body.timezone;
+
+  if (body.skippedBlocks !== undefined) {
+    if (!Array.isArray(body.skippedBlocks) || !body.skippedBlocks.every((b) => isLiveBlockId(b))) {
+      return errorResponse("skippedBlocks must be an array of q1, q2, q3, q4", 400);
+    }
+    if (body.skippedBlocks.length >= LIVE_BLOCKS.length) {
+      return errorResponse("At least one check-in must stay on", 400);
+    }
+    next.skippedBlocks = body.skippedBlocks;
+  }
+
+  const activeTimes = LIVE_BLOCKS.filter((b) => !next.skippedBlocks.includes(b)).map((b) => next.times[b]);
+  const err = checkInTimesError(activeTimes);
+  if (err) return errorResponse(err, 400);
 
   state.cadence = next;
   await saveState(env, userId, state);

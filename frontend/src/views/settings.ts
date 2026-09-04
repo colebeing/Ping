@@ -1,9 +1,10 @@
 import { Capacitor } from "@capacitor/core";
-import { api, ApiError } from "../api";
+import { api, ApiError, LIVE_BLOCKS, type LiveBlockId } from "../api";
 import { enablePushNotifications } from "../push-setup";
 import { currentBlockForCadence } from "./today";
 import { CHEVRON_LEFT_SVG, HOME_ICON_SVG } from "../icons";
 import { getNativeGoogleIdToken } from "../googleSignIn";
+import { BLOCK_LABEL } from "../blockCard";
 
 /** Shared by the Log out button and the claim card's "Sign in" link — both need the exact same
  * teardown (Ping's own session, plus the native Google account picker's separately-cached Firebase
@@ -77,74 +78,48 @@ export async function renderSettings(root: HTMLElement, onHome: () => void, onLo
     const cadenceCard = document.createElement("div");
     cadenceCard.className = "card";
 
-    const cadenceHeader = document.createElement("div");
-    cadenceHeader.style.display = "flex";
-    cadenceHeader.style.alignItems = "center";
-    cadenceHeader.style.justifyContent = "space-between";
-    cadenceHeader.style.gap = "10px";
     const cadenceHeading = document.createElement("h3");
-    cadenceHeading.style.margin = "0";
     cadenceHeading.textContent = "Check-in times";
-    const frequencySelect = document.createElement("select");
-    for (const [value, label] of [["twice", "Twice Daily"], ["once", "Once Daily"], ["four", "4x Daily"]] as const) {
-      const opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = label;
-      frequencySelect.appendChild(opt);
-    }
-    frequencySelect.value = me.cadence.frequency;
-    cadenceHeader.append(cadenceHeading, frequencySelect);
-    cadenceCard.appendChild(cadenceHeader);
+    cadenceCard.appendChild(cadenceHeading);
 
     const form = document.createElement("div");
-    form.className = "form";
     form.style.marginTop = "10px";
 
-    const block1Label = document.createElement("label");
-    block1Label.className = "muted";
-    const block1Input = document.createElement("input");
-    block1Input.type = "time";
-    block1Input.value = me.cadence.block1;
+    const timeInputs = {} as Record<LiveBlockId, HTMLInputElement>;
+    const skipChecks = {} as Record<LiveBlockId, HTMLInputElement>;
 
-    const block2Label = document.createElement("label");
-    block2Label.className = "muted";
-    block2Label.textContent = "Evening block";
-    const block2Input = document.createElement("input");
-    block2Input.type = "time";
-    block2Input.value = me.cadence.block2;
+    for (const block of LIVE_BLOCKS) {
+      const row = document.createElement("div");
+      row.style.display = "flex";
+      row.style.alignItems = "center";
+      row.style.gap = "10px";
+      row.style.marginBottom = "10px";
 
-    const block3Label = document.createElement("label");
-    block3Label.className = "muted";
-    block3Label.textContent = "Afternoon";
-    const block3Input = document.createElement("input");
-    block3Input.type = "time";
-    block3Input.value = me.cadence.block3 ?? "14:00";
+      const check = document.createElement("input");
+      check.type = "checkbox";
+      check.checked = !me.cadence.skippedBlocks.includes(block);
+      skipChecks[block] = check;
 
-    const block4Label = document.createElement("label");
-    block4Label.className = "muted";
-    block4Label.textContent = "Evening";
-    const block4Input = document.createElement("input");
-    block4Input.type = "time";
-    block4Input.value = me.cadence.block4 ?? "18:00";
+      const label = document.createElement("label");
+      label.className = "muted";
+      label.textContent = BLOCK_LABEL[block];
+      label.style.minWidth = "70px";
+
+      const time = document.createElement("input");
+      time.type = "time";
+      time.value = me.cadence.times[block];
+      time.style.marginBottom = "0";
+      time.disabled = !check.checked;
+      timeInputs[block] = time;
+
+      check.addEventListener("change", () => (time.disabled = !check.checked));
+
+      row.append(check, label, time);
+      form.appendChild(row);
+    }
 
     const cadenceStatus = document.createElement("p");
     cadenceStatus.className = "muted";
-
-    const updateLabelsForFrequency = () => {
-      const freq = frequencySelect.value;
-      block1Label.textContent = freq === "once" ? "Check-in time" : freq === "four" ? "Morning" : "Morning block";
-      block2Label.textContent = freq === "four" ? "Midday" : "Evening block";
-      const showBlock2 = freq !== "once";
-      block2Label.style.display = showBlock2 ? "block" : "none";
-      block2Input.style.display = showBlock2 ? "block" : "none";
-      const showQuad = freq === "four";
-      block3Label.style.display = showQuad ? "block" : "none";
-      block3Input.style.display = showQuad ? "block" : "none";
-      block4Label.style.display = showQuad ? "block" : "none";
-      block4Input.style.display = showQuad ? "block" : "none";
-    };
-    frequencySelect.addEventListener("change", updateLabelsForFrequency);
-    updateLabelsForFrequency();
 
     const MIN_GAP_MINUTES = 120;
     const minutesOf = (hhmm: string) => {
@@ -152,7 +127,8 @@ export async function renderSettings(root: HTMLElement, onHome: () => void, onLo
       return (hh % 24) * 60 + (mm || 0);
     };
     // Times must run in increasing order through the day, and every pair (including
-    // wrapping past midnight) must be at least MIN_GAP_MINUTES apart.
+    // wrapping past midnight) must be at least MIN_GAP_MINUTES apart. Only checked among
+    // the blocks currently enabled — a skipped block's stored time is inert.
     const checkInTimesError = (times: string[]): string | null => {
       const minutes = times.map(minutesOf);
       for (let i = 1; i < minutes.length; i++) {
@@ -172,26 +148,24 @@ export async function renderSettings(root: HTMLElement, onHome: () => void, onLo
     save.textContent = "Save";
     save.addEventListener("click", async () => {
       cadenceStatus.textContent = "";
-      const times =
-        frequencySelect.value === "four"
-          ? [block1Input.value, block2Input.value, block3Input.value, block4Input.value]
-          : frequencySelect.value === "twice"
-            ? [block1Input.value, block2Input.value]
-            : [];
-      const timesError = times.length > 0 ? checkInTimesError(times) : null;
+      const skippedBlocks = LIVE_BLOCKS.filter((b) => !skipChecks[b].checked);
+      if (skippedBlocks.length === LIVE_BLOCKS.length) {
+        cadenceStatus.textContent = "At least one check-in must stay on.";
+        return;
+      }
+      const activeTimes = LIVE_BLOCKS.filter((b) => !skippedBlocks.includes(b)).map((b) => timeInputs[b].value);
+      const timesError = checkInTimesError(activeTimes);
       if (timesError) {
         cadenceStatus.textContent = timesError;
         return;
       }
       save.textContent = "Saving…";
       try {
+        const times = Object.fromEntries(LIVE_BLOCKS.map((b) => [b, timeInputs[b].value])) as Record<LiveBlockId, string>;
         await api.updateCadence({
-          block1: block1Input.value,
-          block2: block2Input.value,
-          block3: block3Input.value,
-          block4: block4Input.value,
+          times,
+          skippedBlocks,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          frequency: frequencySelect.value === "once" || frequencySelect.value === "four" ? frequencySelect.value : "twice",
         });
         save.textContent = "Saved";
       } catch (err) {
@@ -202,7 +176,7 @@ export async function renderSettings(root: HTMLElement, onHome: () => void, onLo
       setTimeout(() => (save.textContent = "Save"), 1200);
     });
 
-    form.append(block1Label, block1Input, block2Label, block2Input, block3Label, block3Input, block4Label, block4Input, save, cadenceStatus);
+    form.append(save, cadenceStatus);
     cadenceCard.appendChild(form);
     root.appendChild(cadenceCard);
 

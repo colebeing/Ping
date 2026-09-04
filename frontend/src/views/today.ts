@@ -1,4 +1,4 @@
-import type { BlockId, Cadence } from "../api";
+import { LIVE_BLOCKS, type Cadence, type LiveBlockId } from "../api";
 
 // Grace period after a block's own cadence time before the next block takes
 // over as "current" — without this, the switch happens the instant the
@@ -16,7 +16,7 @@ const BLOCK_SWITCH_DELAY_MINUTES = 120;
  * that notification before the view moves on.
  */
 /** Of a set of (block, cadence time) candidates, picks whichever one's own reminder time is coming up soonest. */
-function pickSoonestBlock(timezone: string, candidates: [BlockId, string][]): BlockId {
+function pickSoonestBlock(timezone: string, candidates: [LiveBlockId, string][]): LiveBlockId {
   const toMinutes = (hhmm: string) => {
     const [h, m] = hhmm.split(":").map(Number);
     return ((h % 24) * 60 + (m || 0) + 1440) % 1440;
@@ -44,42 +44,13 @@ function pickSoonestBlock(timezone: string, candidates: [BlockId, string][]): Bl
   return best[0];
 }
 
-export function currentBlock(cadence: Cadence): BlockId {
-  return pickSoonestBlock(cadence.timezone, [
-    ["1", cadence.block1],
-    ["2", cadence.block2],
-  ]);
+/** Every block currently live for this cadence (not skipped), in daily chronological order — used by
+ * Home to decide which of today's cards to show at all, and as the candidate set for "current". */
+export function blocksForCadence(cadence: Cadence): [LiveBlockId, string][] {
+  return LIVE_BLOCKS.filter((b) => !cadence.skippedBlocks.includes(b)).map((b) => [b, cadence.times[b]]);
 }
 
-function currentQuadBlock(cadence: Cadence): BlockId {
-  return pickSoonestBlock(cadence.timezone, [
-    ["q1", cadence.block1],
-    ["q2", cadence.block2],
-    ["q3", cadence.block3 ?? cadence.block1],
-    ["q4", cadence.block4 ?? cadence.block2],
-  ]);
-}
-
-/** Which block is currently active, accounting for once-daily cadence collapsing everything to "combined" and four-daily cadence expanding to four independent blocks. */
-export function currentBlockForCadence(cadence: Cadence): BlockId {
-  if (cadence.frequency === "once") return "combined";
-  if (cadence.frequency === "four") return currentQuadBlock(cadence);
-  return currentBlock(cadence);
-}
-
-/** Every block today's cadence produces, in daily chronological order — used by Home to decide which of today's cards to show at all. */
-export function blocksForCadence(cadence: Cadence): [BlockId, string][] {
-  if (cadence.frequency === "once") return [["combined", cadence.block1]];
-  if (cadence.frequency === "four") {
-    return [
-      ["q1", cadence.block1],
-      ["q2", cadence.block2],
-      ["q3", cadence.block3 ?? cadence.block1],
-      ["q4", cadence.block4 ?? cadence.block2],
-    ];
-  }
-  return [
-    ["1", cadence.block1],
-    ["2", cadence.block2],
-  ];
+/** Which live block is currently active. */
+export function currentBlockForCadence(cadence: Cadence): LiveBlockId {
+  return pickSoonestBlock(cadence.timezone, blocksForCadence(cadence));
 }

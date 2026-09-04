@@ -1,23 +1,11 @@
 import { buildPushPayload, type PushMessage, type PushSubscription as WebPushSubscription, type VapidKeys } from "@block65/webcrypto-web-push";
-import type { BlockId, Cadence, Env, PushSubscriptionJSON } from "./types";
+import { LIVE_BLOCKS, type BlockId, type Cadence, type Env, type LiveBlockId, type PushSubscriptionJSON } from "./types";
 import { getState, saveState, todayLocal } from "./state";
 import { sendFcmPush, type SendOutcome } from "./fcm";
 
-/** Which block(s) are actually live for this user's current cadence, and what time each is due. "once" collapses to a single "combined" block using block1's time slot; "four" expands to four independent blocks using block1-4. */
-function activeBlockTimes(cadence: Cadence): { block: BlockId; time: string }[] {
-  if (cadence.frequency === "once") return [{ block: "combined", time: cadence.block1 }];
-  if (cadence.frequency === "four") {
-    return [
-      { block: "q1", time: cadence.block1 },
-      { block: "q2", time: cadence.block2 },
-      { block: "q3", time: cadence.block3 ?? cadence.block1 },
-      { block: "q4", time: cadence.block4 ?? cadence.block2 },
-    ];
-  }
-  return [
-    { block: "1", time: cadence.block1 },
-    { block: "2", time: cadence.block2 },
-  ];
+/** Which of q1-q4 are actually live for this user right now (not skipped), and what time each is due. */
+function activeBlockTimes(cadence: Cadence): { block: LiveBlockId; time: string }[] {
+  return LIVE_BLOCKS.filter((b) => !cadence.skippedBlocks.includes(b)).map((b) => ({ block: b, time: cadence.times[b] }));
 }
 
 function vapidKeys(env: Env): VapidKeys | null {

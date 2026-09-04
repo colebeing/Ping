@@ -1,13 +1,21 @@
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8787";
 
 export type Category = "friends" | "colleagues" | "family" | "me";
-/** "combined" is the once-daily question, and "q1"-"q4" are the four-times-daily questions — real blocks of their own with their own history, not repurposed "1"/"2". */
-export type BlockId = "1" | "2" | "combined" | "q1" | "q2" | "q3" | "q4";
-export const ALL_BLOCKS: BlockId[] = ["1", "2", "combined", "q1", "q2", "q3", "q4"];
+
+/** The only four blocks live going forward — fixed morning/midday/afternoon/evening identities. */
+export type LiveBlockId = "q1" | "q2" | "q3" | "q4";
+export const LIVE_BLOCKS: LiveBlockId[] = ["q1", "q2", "q3", "q4"];
+export function isLiveBlockId(value: unknown): value is LiveBlockId {
+  return typeof value === "string" && (LIVE_BLOCKS as string[]).includes(value);
+}
+
+/** "1"/"2"/"combined" are frozen legacy ids from the old twice-/once-daily cadence modes — never
+ * written to again, kept only so History can still read old answered days recorded under them. */
+export type BlockId = LiveBlockId | "1" | "2" | "combined";
+export const ALL_BLOCKS: BlockId[] = ["1", "2", "combined", ...LIVE_BLOCKS];
 export function isBlockId(value: unknown): value is BlockId {
   return typeof value === "string" && (ALL_BLOCKS as string[]).includes(value);
 }
-export type Frequency = "twice" | "once" | "four";
 export type Answer = "yes" | "no";
 
 export interface FollowupPrompt {
@@ -37,12 +45,11 @@ export interface AnswerResponse {
 }
 
 export interface Cadence {
-  block1: string;
-  block2: string;
-  block3?: string;
-  block4?: string;
+  /** "HH:MM" 24h, user-local — one per canonical slot, always all four present even when skipped. */
+  times: Record<LiveBlockId, string>;
+  /** Which of q1-q4 the user has turned off — never all four. */
+  skippedBlocks: LiveBlockId[];
   timezone: string;
-  frequency: Frequency;
 }
 
 export interface BlockContent {

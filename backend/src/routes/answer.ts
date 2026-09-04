@@ -1,4 +1,4 @@
-import { CATEGORIES, isBlockId, type Answer, type AnswerRecord, type BlockId, type Category, type Env, type Nudge, type UserRecord, type UserState } from "../types";
+import { CATEGORIES, isLiveBlockId, type Answer, type AnswerRecord, type BlockId, type Category, type Env, type Nudge, type UserRecord, type UserState } from "../types";
 import { errorResponse, json, readJson } from "../http";
 import { getState, saveState, resolveDate, hasPushEnabled } from "../state";
 import { getConfig, getTriggerConfig, getRecommendationCopy } from "../config";
@@ -37,8 +37,8 @@ interface AnswerBody {
 
 export async function handleAnswer(request: Request, env: Env, userId: string): Promise<Response> {
   const body = await readJson<AnswerBody>(request);
-  if (!isBlockId(body.block) || (body.answer !== "yes" && body.answer !== "no")) {
-    return errorResponse("block must be 1, 2, or combined, and answer must be 'yes' or 'no'", 400);
+  if (!isLiveBlockId(body.block) || (body.answer !== "yes" && body.answer !== "no")) {
+    return errorResponse("block must be q1, q2, q3, or q4, and answer must be 'yes' or 'no'", 400);
   }
 
   const state = await getState(env, userId);
@@ -76,8 +76,8 @@ interface FollowupBody {
 
 export async function handleFollowup(request: Request, env: Env, userId: string): Promise<Response> {
   const body = await readJson<FollowupBody>(request);
-  if (!isBlockId(body.block)) {
-    return errorResponse("block must be 1, 2, or combined", 400);
+  if (!isLiveBlockId(body.block)) {
+    return errorResponse("block must be q1, q2, q3, or q4", 400);
   }
   if (!CATEGORIES.includes(body.category)) {
     return errorResponse("invalid category", 400);

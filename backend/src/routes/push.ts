@@ -58,7 +58,7 @@ export async function handleRegisterFcmToken(request: Request, env: Env, userId:
 
 export async function handleTestPush(request: Request, env: Env, userId: string): Promise<Response> {
   const body = await readJson<{ block?: BlockId }>(request);
-  const block: BlockId = isBlockId(body.block) ? body.block : "1";
+  const block: BlockId = isBlockId(body.block) ? body.block : "q1";
   const result = await sendTestPush(env, userId, block);
   if (!result.ok) return errorResponse(result.reason ?? "Couldn't send test push", 400);
   return json({ ok: true });

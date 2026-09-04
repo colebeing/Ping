@@ -20,15 +20,21 @@ export const DOMAIN_NEED_MAP: Record<Category, NeedQuadrant[]> = {
   me: ["be", "become", "believe", "belong"],
 };
 
-/** "combined" is the single once-daily question, and "q1"-"q4" are the four-times-daily questions — real blocks of their own, not blocks "1"/"2" repurposed, so each keeps its own history/streaks/escalation independent of whichever other blocks it isn't currently replacing. */
-export type BlockId = "1" | "2" | "combined" | "q1" | "q2" | "q3" | "q4";
-export const TWICE_DAILY_BLOCKS: BlockId[] = ["1", "2"];
-export const FOUR_DAILY_BLOCKS: BlockId[] = ["q1", "q2", "q3", "q4"];
-export const ALL_BLOCKS: BlockId[] = ["1", "2", "combined", "q1", "q2", "q3", "q4"];
+/** The only four blocks live going forward — fixed morning/midday/afternoon/evening identities. */
+export type LiveBlockId = "q1" | "q2" | "q3" | "q4";
+export const LIVE_BLOCKS: LiveBlockId[] = ["q1", "q2", "q3", "q4"];
+export function isLiveBlockId(value: unknown): value is LiveBlockId {
+  return typeof value === "string" && (LIVE_BLOCKS as string[]).includes(value);
+}
+
+/** "1"/"2"/"combined" are frozen legacy ids from the old twice-/once-daily cadence modes — never
+ * written to again (see isLiveBlockId, which write paths check instead), kept only so AnswerRecord/
+ * admin config history already recorded under them keeps reading correctly. */
+export type BlockId = LiveBlockId | "1" | "2" | "combined";
+export const ALL_BLOCKS: BlockId[] = ["1", "2", "combined", ...LIVE_BLOCKS];
 export function isBlockId(value: unknown): value is BlockId {
   return typeof value === "string" && (ALL_BLOCKS as string[]).includes(value);
 }
-export type Frequency = "twice" | "once" | "four";
 export type Answer = "yes" | "no";
 
 export interface QuestionTemplate {
@@ -193,12 +199,12 @@ export interface PushSubscriptionJSON {
 }
 
 export interface Cadence {
-  block1: string; // "HH:MM" 24h, user-local — also "the" check-in time when frequency is "once"
-  block2: string;
-  block3?: string; // only meaningful when frequency is "four"
-  block4?: string;
+  /** "HH:MM" 24h, user-local — one per canonical slot, always all four present even when skipped
+   * (so re-enabling a skipped block remembers its last time instead of resetting to a default). */
+  times: Record<LiveBlockId, string>;
+  /** Which of q1-q4 the user has turned off — never all four; at least one live block is required. */
+  skippedBlocks: LiveBlockId[];
   timezone: string; // IANA tz name
-  frequency: Frequency;
 }
 
 export interface UserState {

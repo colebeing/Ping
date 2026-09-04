@@ -1,4 +1,9 @@
-import type { Env, UserState } from "./types";
+import type { Env, LiveBlockId, UserState } from "./types";
+
+// Four hours apart, clearing MIN_GAP_MINUTES's 2-hour spacing rule with room to spare. Shared between
+// a brand-new account and the legacy-cadence migration below (for whichever slots a migrating user
+// wasn't already using).
+const DEFAULT_TIMES: Record<LiveBlockId, string> = { q1: "08:00", q2: "12:00", q3: "16:00", q4: "20:00" };
 
 export function defaultState(): UserState {
   return {
@@ -11,7 +16,7 @@ export function defaultState(): UserState {
     pendingNudges: [],
     declinedStreaks: {},
     totalFollowupsAnswered: 0,
-    cadence: { block1: "11:00", block2: "23:00", timezone: "UTC", frequency: "twice" },
+    cadence: { times: { ...DEFAULT_TIMES }, skippedBlocks: [], timezone: "UTC" },
     pushSubscriptions: [],
     fcmTokens: [],
     lastNotified: {},
@@ -30,7 +35,36 @@ export async function getState(env: Env, userId: string): Promise<UserState> {
   const stored = await env.STATE_KV.get<UserState>(`state:${userId}`, "json");
   if (!stored) return defaultState();
   // Backfills for state saved before a field existed.
-  if (!stored.cadence.frequency) stored.cadence.frequency = "twice";
+  // Old three-frequency-mode cadence -> always-four-blocks-with-skips. Times a user was actually
+  // using carry over exactly (same notification schedule going forward); slots they weren't using
+  // get the standard defaults, inert since skipped. Escalation/streak bookkeeping tied to the old
+  // block ids ("1"/"2"/"combined") is deliberately NOT migrated here — it just goes dormant, unlike
+  // these user-authored times, which are worth preserving. A fresh object literal, not a mutation of
+  // the old one, so the removed frequency/block1-4 keys don't silently survive and get re-persisted.
+  if (!stored.cadence.times) {
+    const old = stored.cadence as unknown as {
+      frequency?: "once" | "twice" | "four";
+      block1?: string;
+      block2?: string;
+      block3?: string;
+      block4?: string;
+      timezone: string;
+    };
+    const frequency = old.frequency ?? "twice"; // pre-frequency-field data defaulted to twice-daily
+    let times: Record<LiveBlockId, string>;
+    let skippedBlocks: LiveBlockId[];
+    if (frequency === "four") {
+      times = { q1: old.block1 ?? DEFAULT_TIMES.q1, q2: old.block2 ?? DEFAULT_TIMES.q2, q3: old.block3 ?? DEFAULT_TIMES.q3, q4: old.block4 ?? DEFAULT_TIMES.q4 };
+      skippedBlocks = [];
+    } else if (frequency === "once") {
+      times = { q1: old.block1 ?? DEFAULT_TIMES.q1, q2: DEFAULT_TIMES.q2, q3: DEFAULT_TIMES.q3, q4: DEFAULT_TIMES.q4 };
+      skippedBlocks = ["q2", "q3", "q4"];
+    } else {
+      times = { q1: old.block1 ?? DEFAULT_TIMES.q1, q2: DEFAULT_TIMES.q2, q3: DEFAULT_TIMES.q3, q4: old.block2 ?? DEFAULT_TIMES.q4 };
+      skippedBlocks = ["q2", "q3"];
+    }
+    stored.cadence = { times, skippedBlocks, timezone: old.timezone };
+  }
   if (!stored.fcmTokens) stored.fcmTokens = [];
   if (!stored.declinedStreaks) stored.declinedStreaks = {};
   if (!stored.answerEdits) stored.answerEdits = [];

@@ -1,9 +1,9 @@
 import type { AppConfig, BlockContent, ConfigAuditEntry, Env, FollowupPrompt, Invitation, RecommendationCopy, TriggerConfig } from "./types";
 
-// This is the fallback used only if CONFIG_KV is empty. The real source of
-// truth is the "Ping — Question Library" Google Sheet — see
-// scripts/pull-sheet-content.ts, which converts it into config-seed.json for
-// `npm run seed`. Edit content in the sheet, not here.
+// This is the fallback used only if CONFIG_KV is empty. The Admin UI is the canonical place to edit
+// live content going forward — scripts/pull-sheet-content.ts (a Google Sheet pull, still in the repo)
+// only ever drafted content for the now-frozen legacy "1"/"2" blocks and isn't part of the current
+// content workflow.
 function prompt(text: string, options: Record<string, string>): FollowupPrompt {
   return { prompt: text, options: options as FollowupPrompt["options"] };
 }
@@ -40,10 +40,11 @@ export async function getConfig(env: Env): Promise<AppConfig> {
   if (!stored) return DEFAULT_CONFIG;
   // Backfill for config saved before the "combined" block existed.
   if (!stored.blocks.combined) stored.blocks.combined = DEFAULT_CONFIG.blocks.combined;
-  // Backfill for config saved before the four-times-daily blocks existed.
-  // Mirrors "1"'s current HOW/WHY (same as admin.ts does on every save) rather
-  // than the hardcoded default, so an account with customized WHY content
-  // doesn't see the generic default until its next Admin save.
+  // Backfill for config saved before the four-times-daily blocks existed — effectively dead for any
+  // environment that's had an Admin save since q1-q4 shipped (they're always populated after that).
+  // Mirrors "1"'s current HOW/WHY (admin.ts's own mirror source has since moved to "q1") rather than
+  // the hardcoded default, so an account with customized WHY content doesn't see the generic default
+  // until its next Admin save.
   for (const block of ["q1", "q2", "q3", "q4"] as const) {
     if (!stored.blocks[block]) {
       stored.blocks[block] = {
