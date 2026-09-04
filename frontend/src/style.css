@@ -121,6 +121,27 @@ select {
   font-size: 14px;
 }
 
+/* A plain text link, not a button chip — for secondary auth actions (switch to email, forgot
+   password) that should read as quieter than the primary Google/Sign in buttons above them. */
+.link-btn {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 4px 0;
+  margin: 10px 0 0;
+  color: var(--accent);
+  font-size: 13px;
+  text-align: center;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.link-btn:active {
+  opacity: 0.7;
+}
+
 .tabs {
   position: fixed;
   bottom: 0;

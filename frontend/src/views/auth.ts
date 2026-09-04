@@ -2,7 +2,7 @@ import { Capacitor } from "@capacitor/core";
 import { api, ApiError } from "../api";
 import { getNativeGoogleIdToken } from "../googleSignIn";
 
-type Mode = "login" | "signup" | "forgot" | "forgot-sent" | "reset" | "reset-done";
+type Mode = "start" | "forgot" | "forgot-sent" | "reset" | "reset-done";
 
 const OAUTH_ERROR_MESSAGES: Record<string, string> = {
   "google-auth-failed": "Google sign-in didn't work. Try again?",
@@ -15,7 +15,16 @@ export function renderAuth(root: HTMLElement, onAuthed: () => void): void {
   const resetToken = params.get("reset");
   let oauthError = params.get("error");
 
-  let mode: Mode = resetToken ? "reset" : "login";
+  let mode: Mode = resetToken ? "reset" : "start";
+  // Email sign-in is deliberately one tap further away than Google — collapsed by default so
+  // Google reads as the lead option, not just the first one in a list.
+  let emailExpanded = false;
+
+  const goToStart = () => {
+    mode = "start";
+    emailExpanded = false;
+    paint();
+  };
 
   const paint = () => {
     root.innerHTML = "";
@@ -37,69 +46,31 @@ export function renderAuth(root: HTMLElement, onAuthed: () => void): void {
       renderResetForm(form, errorEl);
     } else if (mode === "reset-done") {
       const p = document.createElement("p");
-      p.textContent = "Password updated. Log in with your new password.";
-      const back = button("Back to log in", "btn btn-primary", () => {
-        mode = "login";
-        paint();
-      });
+      p.textContent = "Password updated. Sign in with your new password.";
+      const back = button("Back to sign in", "btn btn-primary", goToStart);
       form.append(p, back);
     } else if (mode === "forgot") {
       renderForgotForm(form, errorEl);
     } else if (mode === "forgot-sent") {
       const p = document.createElement("p");
       p.textContent = "If that email has an account, a reset link is on its way.";
-      const back = button("Back to log in", "btn", () => {
-        mode = "login";
-        paint();
-      });
+      const back = button("Back to sign in", "btn", goToStart);
       form.append(p, back);
     } else {
-      renderLoginOrSignup(form, errorEl);
+      renderStart(form, errorEl);
     }
 
     card.appendChild(form);
     root.appendChild(card);
   };
 
-  function renderLoginOrSignup(form: HTMLElement, errorEl: HTMLElement) {
+  function renderStart(form: HTMLElement, errorEl: HTMLElement) {
     if (oauthError) {
       errorEl.textContent = OAUTH_ERROR_MESSAGES[oauthError] ?? "Something went wrong signing in with Google.";
       oauthError = null;
     }
 
-    const email = document.createElement("input");
-    email.type = "email";
-    email.placeholder = "Email";
-    email.autocomplete = "email";
-
-    const password = document.createElement("input");
-    password.type = "password";
-    password.placeholder = "Password";
-    password.autocomplete = mode === "login" ? "current-password" : "new-password";
-
-    const submit = document.createElement("button");
-    submit.className = "btn btn-primary";
-    submit.textContent = mode === "login" ? "Log in" : "Sign up";
-    submit.addEventListener("click", async () => {
-      errorEl.textContent = "";
-      submit.setAttribute("disabled", "true");
-      try {
-        if (mode === "login") {
-          await api.login(email.value, password.value);
-        } else {
-          await api.signup(email.value, password.value);
-        }
-        onAuthed();
-      } catch (err) {
-        console.error("[ping] auth failed", err);
-        errorEl.textContent = err instanceof ApiError ? err.message : "Something went wrong";
-        submit.removeAttribute("disabled");
-      }
-    });
-
-    form.append(email, password, errorEl, submit);
-
-    const google = button("Sign in with Google", "btn", async () => {
+    const google = button("Sign in with Google", "btn btn-primary", async () => {
       // The web redirect flow (window.location.href to Google's consent page) doesn't work inside
       // the native app's WebView — Google blocks completing sign-in in an embedded browser, so
       // Android just kicks the flow out to a real browser with no way back into the app. Native
@@ -124,21 +95,57 @@ export function renderAuth(root: HTMLElement, onAuthed: () => void): void {
         google.removeAttribute("disabled");
       }
     });
-    form.appendChild(google);
+    form.append(google, errorEl);
 
-    if (mode === "login") {
-      const forgot = button("Forgot password?", "btn", () => {
-        mode = "forgot";
+    if (!emailExpanded) {
+      const showEmail = button("Sign in with email", "link-btn", () => {
+        emailExpanded = true;
         paint();
       });
-      form.appendChild(forgot);
+      form.appendChild(showEmail);
+      return;
     }
 
-    const toggle = button(mode === "login" ? "New here? Sign up" : "Have an account? Log in", "btn", () => {
-      mode = mode === "login" ? "signup" : "login";
+    const emailLabel = document.createElement("p");
+    emailLabel.className = "link-btn";
+    emailLabel.style.cursor = "default";
+    emailLabel.textContent = "Sign in with email";
+    form.appendChild(emailLabel);
+
+    const email = document.createElement("input");
+    email.type = "email";
+    email.placeholder = "Email";
+    email.autocomplete = "email";
+
+    const password = document.createElement("input");
+    password.type = "password";
+    password.placeholder = "Password";
+    password.autocomplete = "current-password";
+
+    // Agnostic on purpose: a new email creates the account right here instead of a separate signup
+    // form — signing up and signing in felt like the same action, so now they are one.
+    const submit = document.createElement("button");
+    submit.className = "btn btn-primary";
+    submit.textContent = "Sign in";
+    submit.addEventListener("click", async () => {
+      errorEl.textContent = "";
+      submit.setAttribute("disabled", "true");
+      try {
+        await api.login(email.value, password.value);
+        onAuthed();
+      } catch (err) {
+        console.error("[ping] auth failed", err);
+        errorEl.textContent = err instanceof ApiError ? err.message : "Something went wrong";
+        submit.removeAttribute("disabled");
+      }
+    });
+
+    const forgot = button("Forgot password?", "link-btn", () => {
+      mode = "forgot";
       paint();
     });
-    form.appendChild(toggle);
+
+    form.append(email, password, submit, forgot);
   }
 
   function renderForgotForm(form: HTMLElement, errorEl: HTMLElement) {
@@ -163,10 +170,7 @@ export function renderAuth(root: HTMLElement, onAuthed: () => void): void {
       paint();
     });
 
-    const back = button("Back to log in", "btn", () => {
-      mode = "login";
-      paint();
-    });
+    const back = button("Back to sign in", "btn", goToStart);
 
     form.append(p, email, errorEl, submit, back);
   }

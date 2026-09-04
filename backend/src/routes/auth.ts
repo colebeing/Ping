@@ -15,37 +15,34 @@ import {
 } from "../auth";
 import { sendPasswordResetEmail } from "../email";
 
-interface SignupBody {
-  email: string;
-  password: string;
-}
-
-export async function handleSignup(request: Request, env: Env): Promise<Response> {
-  const { email, password } = await readJson<SignupBody>(request);
-  if (!email || !password || password.length < 8) {
-    return errorResponse("Email and a password of at least 8 characters are required", 400);
-  }
-
-  try {
-    const user = await createUser(env, email, password);
-    const token = await createSession(env, user.id);
-    return json({ email: user.email }, 201, { "Set-Cookie": sessionCookieHeader(token) });
-  } catch (err) {
-    return errorResponse(err instanceof Error ? err.message : "Signup failed", 409);
-  }
-}
-
 interface Credentials {
   email: string;
   password: string;
 }
 
+/**
+ * Signing in and signing up are the same action now — deliberately: a new email creates the
+ * account on the spot rather than bouncing to a separate signup form, since the two flows felt
+ * identical anyway. An email that already has a password gets verified as a real login; an email
+ * with no password on file (e.g. a Google-only account) falls through to the same "invalid" error
+ * as a wrong password — same generic message either way, so this can't be used to enumerate which
+ * emails have accounts.
+ */
 export async function handleLogin(request: Request, env: Env): Promise<Response> {
   const { email, password } = await readJson<Credentials>(request);
-  const user = await getUser(env, email ?? "");
-  if (!user?.passwordHash || !user.salt || !(await verifyPassword(password ?? "", user.salt, user.passwordHash))) {
-    return errorResponse("Invalid email or password", 401);
+  if (!email || !password || password.length < 8) {
+    return errorResponse("Email and a password of at least 8 characters are required", 400);
   }
+
+  let user = await getUser(env, email);
+  if (user) {
+    if (!user.passwordHash || !user.salt || !(await verifyPassword(password, user.salt, user.passwordHash))) {
+      return errorResponse("Invalid email or password", 401);
+    }
+  } else {
+    user = await createUser(env, email, password);
+  }
+
   const token = await createSession(env, user.id);
   return json({ email: user.email }, 200, { "Set-Cookie": sessionCookieHeader(token) });
 }

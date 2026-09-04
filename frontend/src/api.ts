@@ -137,8 +137,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  signup: (email: string, password: string) =>
-    request<{ email: string }>("/api/signup", { method: "POST", body: JSON.stringify({ email, password }) }),
+  /** Signs in, or creates the account on the spot if the email doesn't have one yet — signing up
+   * and signing in are the same action, so there's no separate signup call. */
   login: (email: string, password: string) =>
     request<{ email: string }>("/api/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   logout: () => request<{ ok: true }>("/api/logout", { method: "POST" }),

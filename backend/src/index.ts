@@ -1,7 +1,7 @@
 import type { Env } from "./types";
 import { corsHeaders, errorResponse, handlePreflight, HttpError } from "./http";
 import { requireAuth, isAdmin } from "./auth";
-import { handleSignup, handleLogin, handleLogout, handleRequestPasswordReset, handleConfirmPasswordReset } from "./routes/auth";
+import { handleLogin, handleLogout, handleRequestPasswordReset, handleConfirmPasswordReset } from "./routes/auth";
 import { handleMe } from "./routes/me";
 import { handleGetQuestion } from "./routes/question";
 import { handleAnswer, handleFollowup } from "./routes/answer";
@@ -28,7 +28,6 @@ async function route(request: Request, env: Env): Promise<Response> {
 
   if (method === "OPTIONS") return handlePreflight(request, env);
 
-  if (pathname === "/api/signup" && method === "POST") return handleSignup(request, env);
   if (pathname === "/api/login" && method === "POST") return handleLogin(request, env);
   if (pathname === "/api/logout" && method === "POST") return handleLogout(request, env);
   if (pathname === "/api/push/vapid-public-key" && method === "GET") return handleGetVapidPublicKey(request, env);

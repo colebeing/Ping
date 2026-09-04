@@ -240,47 +240,22 @@ export async function renderSettings(root: HTMLElement, onHome: () => void, onLo
 }
 
 /** Shown only for an unclaimed anonymous account — a quiet, always-available option, never a
- * proactive nag (Home carries the one-time nudge for that; this card is just where it points to). */
+ * proactive nag (Home carries the one-time nudge for that; this card is just where it points to).
+ * Google leads when it's available; email sign-in sits one tap further away behind a plain link,
+ * matching the same pattern the sign-in screen uses. */
 function renderClaimCard(onClaimed: () => void): HTMLElement {
   const card = document.createElement("div");
   card.className = "card";
-  card.innerHTML = `<h3>Save your account</h3><p>Add an email so you can get back in on another device — nothing changes about how Ping works.</p>`;
-
-  const email = document.createElement("input");
-  email.type = "email";
-  email.placeholder = "Email";
-  email.autocomplete = "email";
-
-  const password = document.createElement("input");
-  password.type = "password";
-  password.placeholder = "Password";
-  password.autocomplete = "new-password";
+  card.innerHTML = `<h3>Save your account</h3><p>So you can return on another device.</p>`;
 
   const errorEl = document.createElement("div");
   errorEl.className = "error";
-
-  const save = document.createElement("button");
-  save.className = "btn btn-primary";
-  save.textContent = "Save account";
-  save.addEventListener("click", async () => {
-    errorEl.textContent = "";
-    save.setAttribute("disabled", "true");
-    try {
-      await api.claimWithPassword(email.value, password.value);
-      onClaimed();
-    } catch (err) {
-      errorEl.textContent = err instanceof ApiError ? err.message : "Couldn't save your account.";
-      save.removeAttribute("disabled");
-    }
-  });
-
-  card.append(email, password, errorEl, save);
 
   // Web's Google button is a full-page redirect that never hands back an ID token to claim with —
   // password claim covers web; native gets the extra option since it can hand one over directly.
   if (Capacitor.isNativePlatform()) {
     const google = document.createElement("button");
-    google.className = "btn";
+    google.className = "btn btn-primary";
     google.textContent = "Continue with Google";
     google.addEventListener("click", async () => {
       errorEl.textContent = "";
@@ -297,8 +272,55 @@ function renderClaimCard(onClaimed: () => void): HTMLElement {
         google.removeAttribute("disabled");
       }
     });
-    card.appendChild(google);
+    card.append(google, errorEl);
+  } else {
+    card.appendChild(errorEl);
   }
+
+  const emailGroup = document.createElement("div");
+  emailGroup.style.display = "none";
+
+  const emailLabel = document.createElement("p");
+  emailLabel.className = "link-btn";
+  emailLabel.style.cursor = "default";
+  emailLabel.textContent = "Save with email";
+
+  const email = document.createElement("input");
+  email.type = "email";
+  email.placeholder = "Email";
+  email.autocomplete = "email";
+
+  const password = document.createElement("input");
+  password.type = "password";
+  password.placeholder = "Password";
+  password.autocomplete = "new-password";
+
+  const save = document.createElement("button");
+  save.className = "btn btn-primary";
+  save.textContent = "Save account";
+  save.addEventListener("click", async () => {
+    errorEl.textContent = "";
+    save.setAttribute("disabled", "true");
+    try {
+      await api.claimWithPassword(email.value, password.value);
+      onClaimed();
+    } catch (err) {
+      errorEl.textContent = err instanceof ApiError ? err.message : "Couldn't save your account.";
+      save.removeAttribute("disabled");
+    }
+  });
+
+  emailGroup.append(emailLabel, email, password, save);
+
+  const showEmail = document.createElement("button");
+  showEmail.className = "link-btn";
+  showEmail.textContent = "Save with email";
+  showEmail.addEventListener("click", () => {
+    showEmail.style.display = "none";
+    emailGroup.style.display = "block";
+  });
+
+  card.append(showEmail, emailGroup);
 
   return card;
 }
