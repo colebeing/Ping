@@ -1,5 +1,4 @@
-import { LIVE_BLOCKS, type Category, type Env, type Invitation, type RecommendationNudge, type RecommendationCopy, type TriggerConfig, type UserState } from "./types";
-import { getConfig } from "./config";
+import { LIVE_BLOCKS, type Category, type Invitation, type RecommendationNudge, type RecommendationCopy, type TriggerConfig, type UserState } from "./types";
 
 function daysBetween(a: string, b: string): number {
   const msPerDay = 24 * 60 * 60 * 1000;
@@ -105,16 +104,14 @@ export function detectStreaks(state: UserState, thresholds: TriggerConfig, copy:
   return newRecs;
 }
 
-export async function acceptRecommendation(env: Env, state: UserState, recommendationId: string): Promise<boolean> {
+export function acceptRecommendation(state: UserState, recommendationId: string): boolean {
   const idx = state.pendingNudges.findIndex((n) => n.kind === "recommendation" && n.id === recommendationId);
   if (idx === -1) return false;
   const rec = state.pendingNudges[idx] as RecommendationNudge;
   state.pendingNudges.splice(idx, 1);
 
-  const config = await getConfig(env);
   state.activeOverrides[rec.block] = {
-    when: config.blocks[rec.block].question.when,
-    how: rec.invitation.how,
+    question: rec.invitation.texts[rec.block],
     yes: rec.invitation.yes,
     no: rec.invitation.no,
     category: rec.category,

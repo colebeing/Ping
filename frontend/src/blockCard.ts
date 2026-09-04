@@ -125,7 +125,7 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
 
         const proposed = document.createElement("p");
         proposed.className = "followup-prompt";
-        proposed.textContent = `Did ${q.when} ${step.recommendation.invitation.how}?`;
+        proposed.textContent = step.recommendation.invitation.texts[step.recommendation.block];
         wrap.appendChild(proposed);
 
         const row = document.createElement("div");

@@ -37,13 +37,6 @@ export function isBlockId(value: unknown): value is BlockId {
 }
 export type Answer = "yes" | "no";
 
-export interface QuestionTemplate {
-  /** e.g. "today start" — the WHEN slot */
-  when: string;
-  /** e.g. "how you wanted" — the HOW slot */
-  how: string;
-}
-
 export interface FollowupPrompt {
   /** The follow-up question text itself, e.g. "Who made it work?" */
   prompt: string;
@@ -53,7 +46,9 @@ export interface FollowupPrompt {
 
 /** WHY is now the only follow-up (WHAT was dropped) — one prompt per answer valence. */
 export interface BlockContent {
-  question: QuestionTemplate;
+  /** The complete question, e.g. "Did today start how you wanted?" — one fully-written string, not
+   * composed from separate WHEN/HOW slots, so admins have full control over phrasing per block. */
+  question: string;
   yes: FollowupPrompt;
   no: FollowupPrompt;
 }
@@ -79,9 +74,11 @@ export interface TriggerConfig {
   retireAfterDays: number;
 }
 
-/** A full invitation to swap the block's HOW question — as fleshed out as the starter question, with its own yes/no follow-ups. */
+/** A full invitation to swap a block's question — as fleshed out as the starter question, with its
+ * own yes/no follow-ups. One complete text per canonical block, since an invitation can fire on
+ * whichever block the streak happened on — no when/how composition, same as BlockContent.question. */
 export interface Invitation {
-  how: string;
+  texts: Record<LiveBlockId, string>;
   yes: FollowupPrompt;
   no: FollowupPrompt;
 }
@@ -96,8 +93,8 @@ export interface RecommendationCopy {
 }
 
 export interface QuestionOverride {
-  when: string;
-  how: string;
+  /** The complete text for the one block this override applies to, snapshotted at accept time. */
+  question: string;
   yes: FollowupPrompt;
   no: FollowupPrompt;
   /** null when this came from a generalYes/generalNo invitation (no single category drove it). */
@@ -116,7 +113,8 @@ interface NudgeBase {
  * of nudge among several now, not a separate system — see UserState.pendingNudges. */
 export interface RecommendationNudge extends NudgeBase {
   kind: "recommendation";
-  block: BlockId;
+  /** Always a live block — detectStreaks only ever scans LIVE_BLOCKS (see recommendations.ts). */
+  block: LiveBlockId;
   /** null when this is a generalYes/generalNo invitation (streak held across mixed categories). */
   category: Category | null;
   valence: "amplify" | "resolve";

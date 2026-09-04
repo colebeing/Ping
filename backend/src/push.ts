@@ -43,7 +43,7 @@ const BLOCK_PROMPTS: Record<BlockId, string> = {
 
 function blockPushBody(state: Awaited<ReturnType<typeof getState>>, block: BlockId): string {
   const override = state.activeOverrides[block];
-  return override ? `Did ${override.when} ${override.how}?` : BLOCK_PROMPTS[block];
+  return override ? override.question : BLOCK_PROMPTS[block];
 }
 
 interface PushOutcome {

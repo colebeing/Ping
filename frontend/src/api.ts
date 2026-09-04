@@ -25,8 +25,6 @@ export interface FollowupPrompt {
 
 export interface QuestionResponse {
   block: BlockId;
-  when: string;
-  how: string;
   text: string;
   overridden: boolean;
   existingAnswer: {
@@ -53,7 +51,7 @@ export interface Cadence {
 }
 
 export interface BlockContent {
-  question: { when: string; how: string };
+  question: string;
   yes: FollowupPrompt;
   no: FollowupPrompt;
 }
@@ -65,9 +63,11 @@ export interface TriggerConfig {
   retireAfterDays: number;
 }
 
-/** A full invitation to swap a block's HOW question — as fleshed out as the starter question, with its own yes/no follow-ups. */
+/** A full invitation to swap a block's question — as fleshed out as the starter question, with its
+ * own yes/no follow-ups. One complete text per canonical block, since an invitation can fire on
+ * whichever block the streak happened on. */
 export interface Invitation {
-  how: string;
+  texts: Record<LiveBlockId, string>;
   yes: FollowupPrompt;
   no: FollowupPrompt;
 }
@@ -95,7 +95,7 @@ interface NudgeBase {
 /** A live invitation to swap a block's HOW question, proposed after a streak — renders inline per-block. */
 export interface RecommendationNudge extends NudgeBase {
   kind: "recommendation";
-  block: BlockId;
+  block: LiveBlockId;
   category: Category | null;
   valence: "amplify" | "resolve";
   invitation: Invitation;

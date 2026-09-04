@@ -12,7 +12,7 @@ export async function handleListRecommendations(_request: Request, env: Env, use
 
 export async function handleAcceptRecommendation(_request: Request, env: Env, userId: string, id: string): Promise<Response> {
   const state = await getState(env, userId);
-  const ok = await acceptRecommendation(env, state, id);
+  const ok = acceptRecommendation(state, id);
   if (!ok) return errorResponse("Recommendation not found", 404);
   await saveState(env, userId, state);
   return json({ ok: true, active: state.activeOverrides });

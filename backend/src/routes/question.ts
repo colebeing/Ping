@@ -20,11 +20,11 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
 
   const config = await getConfig(env);
   const override = state.activeOverrides[block];
-  const when = override?.when ?? config.blocks[block].question.when;
-  const how = override?.how ?? config.blocks[block].question.how;
-  // For a day that isn't actually today (History looking back), "today" in
-  // the question text is ambiguous — say "the day" instead to disambiguate.
-  const whenText = date === today ? when : when.replace(/\btoday\b/, "the day");
+  const question = override?.question ?? config.blocks[block].question;
+  // For a day that isn't actually today (History looking back), "today" in the question text is
+  // ambiguous — say "the day" instead to disambiguate. Global replace: with no when/how boundary to
+  // anchor which "today" is meant, a complete question can plausibly contain the word more than once.
+  const text = date === today ? question : question.replace(/\btoday\b/g, "the day");
 
   const existingAnswer = state.answers.find((a) => a.date === date && a.block === block);
   let followup: { prompt: string; optionLabel: string } | undefined;
@@ -43,9 +43,7 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
   return json({
     block,
     date,
-    when,
-    how,
-    text: `Did ${whenText} ${how}?`,
+    text,
     overridden: Boolean(override),
     existingAnswer: existingAnswer ? { ...existingAnswer, followup } : null,
     pendingRecommendation,

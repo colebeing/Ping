@@ -1,5 +1,5 @@
-import { api, type AdminConfig, type Category, type FollowupPrompt, type Invitation } from "../api";
-import { CATEGORY_LABEL } from "../blockCard";
+import { api, LIVE_BLOCKS, type AdminConfig, type Category, type FollowupPrompt, type Invitation } from "../api";
+import { BLOCK_LABEL, CATEGORY_LABEL } from "../blockCard";
 
 export async function renderAdmin(root: HTMLElement): Promise<void> {
   root.innerHTML = `<h2>Admin</h2><div class="card">Loading…</div>`;
@@ -30,21 +30,18 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
       saveBtn.textContent = "Saving…";
       saveBtn.setAttribute("disabled", "true");
       try {
-        // Every live block only ever differs from q1 by its own WHEN slot — keep HOW/WHY mirrored
-        // to q1 on save. "1"/"2"/"combined" are frozen legacy blocks (from the old cadence modes)
-        // and are deliberately left untouched here, not mirrored into. Each of q2-q4's own WHEN is
-        // its own, independent slot — capture them all before any get overwritten below, since q1's
-        // own WHEN would otherwise already be gone by the time q1 itself is rebuilt.
-        const mirrorFromQ1 = (when: string) => ({
-          ...JSON.parse(JSON.stringify(config.blocks.q1)),
-          question: { ...config.blocks.q1.question, when },
-        });
+        // WHY (yes/no) still mirrors from q1 into q2-q4 on save — "1"/"2"/"combined" are frozen
+        // legacy blocks (from the old cadence modes) and are deliberately left untouched, not
+        // mirrored into. The question itself is NOT mirrored — each of q1-q4 is now a fully
+        // independent, complete question, already directly edited in place above.
         const OTHER_BLOCKS = ["q2", "q3", "q4"] as const;
-        const whens = Object.fromEntries(OTHER_BLOCKS.map((block) => [block, config.blocks[block].question.when])) as Record<
-          (typeof OTHER_BLOCKS)[number],
-          string
-        >;
-        for (const block of OTHER_BLOCKS) config.blocks[block] = mirrorFromQ1(whens[block]);
+        for (const block of OTHER_BLOCKS) {
+          config.blocks[block] = {
+            question: config.blocks[block].question,
+            yes: JSON.parse(JSON.stringify(config.blocks.q1.yes)),
+            no: JSON.parse(JSON.stringify(config.blocks.q1.no)),
+          };
+        }
 
         await api.saveAdminConfig(config);
         status.textContent = "Saved.";
@@ -73,27 +70,21 @@ function renderQuestionSection(config: AdminConfig): HTMLElement {
   const note = document.createElement("p");
   note.className = "muted";
   note.textContent =
-    "Every question asks the same thing and shares the WHY follow-up below — only each one's WHEN slot differs, and every block's WHEN slot is independent.";
+    "Each block's question is its own complete, independent sentence — write it exactly as it should read, since a user who's skipped the other three might see only this one on a given day. They share the WHY follow-up below.";
   card.appendChild(note);
 
-  const whenFields = document.createElement("div");
-  card.appendChild(whenFields);
-
-  const whenField = (label: string, block: keyof AdminConfig["blocks"]) => {
-    whenFields.appendChild(fieldLabel(label));
-    whenFields.appendChild(textInput(config.blocks[block].question.when, (v) => (config.blocks[block].question.when = v)));
+  const questionField = (label: string, block: "q1" | "q2" | "q3" | "q4") => {
+    card.appendChild(fieldLabel(label));
+    card.appendChild(textInput(config.blocks[block].question, (v) => (config.blocks[block].question = v)));
   };
 
-  whenField('Morning WHEN slot (e.g. "today start")', "q1");
-  whenField('Midday WHEN slot (e.g. "this morning go")', "q2");
-  whenField('Afternoon WHEN slot (e.g. "this afternoon go")', "q3");
-  whenField('Evening WHEN slot (e.g. "today end")', "q4");
+  questionField("Morning question", "q1");
+  questionField("Midday question", "q2");
+  questionField("Afternoon question", "q3");
+  questionField("Evening question", "q4");
 
-  // q1's content is the shared source of truth for HOW/WHY, mirrored to q2-q4 on save.
+  // q1's WHY is the shared source of truth, mirrored to q2-q4 on save.
   const content = config.blocks.q1;
-
-  card.appendChild(fieldLabel('HOW slot (e.g. "how you wanted")'));
-  card.appendChild(textInput(content.question.how, (v) => (content.question.how = v)));
 
   for (const answer of ["yes", "no"] as const) {
     card.appendChild(renderFollowupEditor(content[answer], answer === "yes" ? "Yes → WHY" : "No → WHY"));
@@ -165,7 +156,7 @@ function renderRecommendationCopySection(config: AdminConfig): HTMLElement {
   const p = document.createElement("p");
   p.className = "muted";
   p.textContent =
-    "After a trigger fires, the user is invited to swap their HOW question for one of these. Each is a full question, just like the starter question above — its own HOW slot plus yes/no follow-ups. Up to 10 can fire: one per category for a yes-streak, one per category for a no-streak, and one each for a yes- or no-streak that isn't tied to any single category.";
+    "After a trigger fires, the user is invited to swap their question for one of these. Each invitation is four complete questions — one per block, since it can fire on whichever block the streak happened on — plus its own yes/no follow-ups. Up to 10 can fire: one per category for a yes-streak, one per category for a no-streak, and one each for a yes- or no-streak that isn't tied to any single category.";
   card.appendChild(p);
 
   for (const valence of ["amplify", "resolve"] as const) {
@@ -194,7 +185,11 @@ function renderRecommendationCopySection(config: AdminConfig): HTMLElement {
 
 function renderInvitationEditor(invitation: Invitation, title: string): HTMLElement {
   const body = document.createElement("div");
-  body.appendChild(textInput(invitation.how, (v) => (invitation.how = v), 'HOW slot (e.g. "how you wanted")'));
+
+  for (const block of LIVE_BLOCKS) {
+    body.appendChild(fieldLabel(`${BLOCK_LABEL[block]} question`));
+    body.appendChild(textInput(invitation.texts[block], (v) => (invitation.texts[block] = v)));
+  }
 
   for (const answer of ["yes", "no"] as const) {
     body.appendChild(renderFollowupEditor(invitation[answer], answer === "yes" ? "Yes → WHY" : "No → WHY"));

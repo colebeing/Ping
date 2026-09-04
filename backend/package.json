@@ -7,9 +7,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "generate-seed-fallback": "tsx scripts/generate-config-seed.ts",
-    "pull-sheet": "tsx scripts/pull-sheet-content.ts",
-    "seed": "wrangler kv key put --binding=CONFIG_KV config --path=./scripts/config-seed.json --remote",
-    "seed-from-sheet": "npm run pull-sheet && npm run seed"
+    "seed": "wrangler kv key put --binding=CONFIG_KV config --path=./scripts/config-seed.json --remote"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260825.1",

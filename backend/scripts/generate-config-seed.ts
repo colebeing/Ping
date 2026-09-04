@@ -1,8 +1,7 @@
 // Run with: npm run generate-seed-fallback
-// Content lives in the "Ping — Question Library" Google Sheet now — use
-// `npm run seed-from-sheet` for normal content updates instead. This script
-// is only for regenerating scripts/config-seed.json from src/config.ts's
-// hardcoded DEFAULT_CONFIG, e.g. if you need to bootstrap without the sheet.
+// The Admin UI is the canonical place to edit live question content — this script only regenerates
+// scripts/config-seed.json from src/config.ts's DEFAULT_CONFIG, e.g. to bootstrap a fresh KV namespace
+// via `npm run seed`.
 import { writeFileSync } from "node:fs";
 import { DEFAULT_CONFIG } from "../src/config";
 

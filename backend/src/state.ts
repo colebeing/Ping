@@ -1,4 +1,4 @@
-import type { Env, LiveBlockId, UserState } from "./types";
+import type { Env, LiveBlockId, QuestionOverride, UserState } from "./types";
 
 // Four hours apart, clearing MIN_GAP_MINUTES's 2-hour spacing rule with room to spare. Shared between
 // a brand-new account and the legacy-cadence migration below (for whichever slots a migrating user
@@ -96,7 +96,30 @@ export async function getState(env: Env, userId: string): Promise<UserState> {
   // entries can't be salvaged piecemeal, so drop just those, not the whole state.
   if (Object.values(stored.activeOverrides).some((o) => o && !("yes" in o))) stored.activeOverrides = {};
   if (stored.retiredOverrides.some((o) => !("yes" in o))) stored.retiredOverrides = [];
-  stored.pendingNudges = stored.pendingNudges.filter((n) => n.kind !== "recommendation" || "invitation" in n);
+  // Old when/how question-template shape -> one complete question string, the same lossless flatten
+  // config.ts's getConfig() uses for admin config. Runs after the check just above, so this only ever
+  // sees entries that already have real yes/no follow-ups (a genuinely-incompatible shape was already
+  // dropped there, not flattened here).
+  const flattenOverride = (o: QuestionOverride): QuestionOverride => {
+    if ("question" in o) return o;
+    const old = o as unknown as { when: string; how: string; yes: QuestionOverride["yes"]; no: QuestionOverride["no"]; category: QuestionOverride["category"]; acceptedAt: string };
+    // Fresh object literal, not a spread of the old one — so the dead when/how keys don't silently
+    // survive and get re-persisted, same reasoning as the cadence migration just above in this file.
+    return { question: `Did ${old.when} ${old.how}?`, yes: old.yes, no: old.no, category: old.category, acceptedAt: old.acceptedAt };
+  };
+  for (const block of Object.keys(stored.activeOverrides) as (keyof typeof stored.activeOverrides)[]) {
+    const o = stored.activeOverrides[block];
+    if (o) stored.activeOverrides[block] = flattenOverride(o);
+  }
+  stored.retiredOverrides = stored.retiredOverrides.map(flattenOverride);
+  // A pending (not-yet-accepted) recommendation snapshots its own `invitation` at creation time — an
+  // old-shaped one (`{how,yes,no}`, no `.texts`) can't be salvaged the way the override case above can
+  // (there's no single block to flatten it against yet), so it's dropped like any other genuinely
+  // incompatible pending-nudge shape: transient, low-stakes state — detectStreaks naturally re-proposes
+  // the same pattern if it continues.
+  stored.pendingNudges = stored.pendingNudges.filter(
+    (n) => n.kind !== "recommendation" || ("invitation" in n && "texts" in n.invitation),
+  );
   return stored;
 }
 

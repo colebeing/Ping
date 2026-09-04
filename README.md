@@ -24,10 +24,10 @@ npx wrangler kv namespace create STATE_KV
 
 Paste the two namespace ids into `wrangler.toml`.
 
-Seed question content into `CONFIG_KV` from the content sheet (see "Content" below):
+Seed question content into `CONFIG_KV` (see "Content" below):
 
 ```bash
-npm run seed-from-sheet
+npm run seed
 ```
 
 Generate VAPID keys for push (needs the `web-push` CLI, or any VAPID generator):
@@ -88,17 +88,18 @@ A user's alarm is (re)computed whenever they update their cadence (`POST /api/ca
 
 ## Content
 
-Question/follow-up wording lives in the ["Ping — Question Library"](https://docs.google.com/spreadsheets/d/1i1l824brm4c23hj704_ItinbBXyDSauM_oQe0Tr-sVw/edit) Google Sheet, not in code. To publish an edit:
+Question/follow-up wording is edited live in the Admin tab (`PUT /api/admin/config`) — that's the sole,
+canonical place to edit it, not code. Each of the four daily blocks (q1-q4: morning/midday/afternoon/
+evening) has its own complete, independently-written question — not composed from separate slots, so
+each reads correctly on its own even for a user who's skipped the other three. WHY (the yes/no
+follow-up prompt) is shared: editing it under q1 mirrors it into q2-q4 on save. WHAT and WHY follow-ups
+**alternate** across successive same-valence answers for a block (one follow-up per answer, not both) —
+this differs from the original spec text ("both firing on both yes and no"), changed deliberately to
+keep answering lightweight.
 
-```bash
-npm run seed-from-sheet
-```
-
-This pulls the sheet's public CSV export (`backend/scripts/pull-sheet-content.ts`), converts it to `config-seed.json`, and writes it to `CONFIG_KV` — no redeploy needed, live within seconds. The sheet must stay shared as "Anyone with the link — Viewer" for the pull to work unauthenticated; if you lock it down, `pull-sheet-content.ts` will fail with a clear error rather than silently using stale data.
-
-Only block 1 (morning) content is drafted; block 2 reuses it verbatim (only the base question's WHEN slot swaps start→end) — see `pull-sheet-content.ts` if that should change. WHAT and WHY follow-ups **alternate** across successive same-valence answers for a block (one follow-up per answer, not both) — this differs from the original spec text ("both firing on both yes and no"), changed deliberately to keep answering lightweight.
-
-`src/config.ts`'s `DEFAULT_CONFIG` is only a fallback for if `CONFIG_KV` is ever empty (e.g. a fresh environment before the first seed) — it's hardcoded to match the sheet's current content but won't stay in sync automatically; the sheet is the source of truth.
+`src/config.ts`'s `DEFAULT_CONFIG` is only a fallback for if `CONFIG_KV` is ever empty (e.g. a fresh
+environment before the first seed); `npm run generate-seed-fallback` regenerates `scripts/config-seed.json`
+from it, and `npm run seed` pushes that file to `CONFIG_KV`.
 
 ## Accounts and password reset
 
@@ -106,15 +107,15 @@ Signup is open — `POST /api/signup` just takes an email and password, no invit
 
 ## Admin
 
-The Admin tab (shown only when `GET /api/me` reports `isAdmin: true` — set directly in KV, no self-service grant) edits question content, WHAT/WHY copy, escalation/streak thresholds, and saved live via `PUT /api/admin/config`. Question content there and the Google Sheet write the same underlying data (`CONFIG_KV`'s `config` key) — whichever you touch last wins. Thresholds and recommendation copy live in separate KV keys (`config:triggers`, `config:recommendation-copy`) specifically so the sheet pull can never overwrite them.
+The Admin tab (shown only when `GET /api/me` reports `isAdmin: true` — set directly in KV, no self-service grant) edits question content, WHAT/WHY copy, escalation/streak thresholds, and saves live via `PUT /api/admin/config`, all writing `CONFIG_KV`'s `config` key. Thresholds and recommendation copy live in separate KV keys (`config:triggers`, `config:recommendation-copy`) so an Admin save of one section can never clobber another.
 
-The "invitations to swap" section isn't just a phrasing tweak — when a streak trigger fires, the user is invited to swap their block's HOW question for a full replacement, with its own yes/no follow-ups, just as fleshed out as the starter question. Up to 10 invitations are configurable: one per category (friends/colleagues/family/me) for a yes-streak ("amplify"), one per category for a no-streak ("resolve"), and one general yes-streak / general no-streak invitation for when the streak holds across mixed categories with no single one driving it (`backend/src/recommendations.ts`'s `detectStreaks`).
+The "invitations to swap" section isn't just a phrasing tweak — when a streak trigger fires, the user is invited to swap their block's question for a full replacement, with its own yes/no follow-ups, just as fleshed out as the starter question. Each invitation is four complete questions (one per block, since it can fire on whichever block the streak happened on), not composed from shared slots. Up to 10 invitations are configurable: one per category (friends/colleagues/family/me) for a yes-streak ("amplify"), one per category for a no-streak ("resolve"), and one general yes-streak / general no-streak invitation for when the streak holds across mixed categories with no single one driving it (`backend/src/recommendations.ts`'s `detectStreaks`).
 
 Admins also get an Analytics tab (`GET /api/admin/analytics`) showing usage across all users: total users/check-ins, active-user counts (7d/30d), a 30-day daily check-in chart, aggregate category and yes/no breakdowns, and a per-user table (join date, check-in count, last active, current daily streak, top category). Since `STATE_KV` has no query/scan beyond key listing, this handler lists every `user:*` key and reads each user's full state to aggregate — fine at current scale, but worth revisiting (e.g. a maintained user-index key) if the user count grows large enough to make that expensive.
 
 ## What's deliberately not built yet
 
-Per the spec's "do not build until told go" and parked-idea sections: no calendar integration, no couples/B2B features, no custom category labels, no SAML (would only matter for a B2B direction the spec marks "tracked, not active"). Per-response need-quadrant tagging (the sheet's R1-4 Tag columns) also isn't wired in — the spec explicitly parks that disambiguation logic; the backend still uses the coarser static `DOMAIN_NEED_MAP` in `src/types.ts`.
+Per the spec's "do not build until told go" and parked-idea sections: no calendar integration, no couples/B2B features, no custom category labels, no SAML (would only matter for a B2B direction the spec marks "tracked, not active"). Per-response need-quadrant tagging also isn't wired in — the spec explicitly parks that disambiguation logic; the backend still uses the coarser static `DOMAIN_NEED_MAP` in `src/types.ts`.
 
 ## Known gaps worth knowing about before relying on this
 
@@ -123,6 +124,5 @@ Per the spec's "do not build until told go" and parked-idea sections: no calenda
 - Reset emails silently no-op if `RESEND_API_KEY` isn't set (reset always returns success either way, by design, to avoid leaking account existence — so a misconfigured key is easy to miss without checking Worker logs).
 - No way to unsubscribe/remove a stale push subscription from a device you no longer use.
 - The app icon (`frontend/public/icon.svg`) is a placeholder; add real branding + a PNG version for better iOS home-screen support before shipping.
-- Only block 1's content is drafted in the sheet; block 2 is a verbatim reuse, not independently written.
 - No onboarding flow — the spec calls for something minimal ("channel choice up front, calendar access earned later"); right now a new user just lands on login/signup.
 - The end-user side of "invitations to swap" isn't in the frontend yet — `GET /api/recommendations` and `POST /api/recommendations/:id/accept` exist and are exercised by nothing but the admin content editor; there's no UI that shows a pending invitation to a user or lets them accept/decline it.

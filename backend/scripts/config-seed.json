@@ -1,10 +1,7 @@
 {
   "blocks": {
     "1": {
-      "question": {
-        "when": "today start",
-        "how": "how you wanted"
-      },
+      "question": "Did today start how you wanted?",
       "yes": {
         "prompt": "Who made it work?",
         "options": {
@@ -25,10 +22,7 @@
       }
     },
     "2": {
-      "question": {
-        "when": "today end",
-        "how": "how you wanted"
-      },
+      "question": "Did today end how you wanted?",
       "yes": {
         "prompt": "Who made it work?",
         "options": {
@@ -49,10 +43,91 @@
       }
     },
     "combined": {
-      "question": {
-        "when": "today go",
-        "how": "how you wanted"
+      "question": "Did today go how you wanted?",
+      "yes": {
+        "prompt": "Who made it work?",
+        "options": {
+          "friends": "Friends",
+          "colleagues": "Colleagues",
+          "family": "Family",
+          "me": "Me"
+        }
       },
+      "no": {
+        "prompt": "Who had to move?",
+        "options": {
+          "friends": "Friends",
+          "colleagues": "Colleagues",
+          "family": "Family",
+          "me": "Me"
+        }
+      }
+    },
+    "q1": {
+      "question": "Did today start how you wanted?",
+      "yes": {
+        "prompt": "Who made it work?",
+        "options": {
+          "friends": "Friends",
+          "colleagues": "Colleagues",
+          "family": "Family",
+          "me": "Me"
+        }
+      },
+      "no": {
+        "prompt": "Who had to move?",
+        "options": {
+          "friends": "Friends",
+          "colleagues": "Colleagues",
+          "family": "Family",
+          "me": "Me"
+        }
+      }
+    },
+    "q2": {
+      "question": "Did this morning go how you wanted?",
+      "yes": {
+        "prompt": "Who made it work?",
+        "options": {
+          "friends": "Friends",
+          "colleagues": "Colleagues",
+          "family": "Family",
+          "me": "Me"
+        }
+      },
+      "no": {
+        "prompt": "Who had to move?",
+        "options": {
+          "friends": "Friends",
+          "colleagues": "Colleagues",
+          "family": "Family",
+          "me": "Me"
+        }
+      }
+    },
+    "q3": {
+      "question": "Did this afternoon go how you wanted?",
+      "yes": {
+        "prompt": "Who made it work?",
+        "options": {
+          "friends": "Friends",
+          "colleagues": "Colleagues",
+          "family": "Family",
+          "me": "Me"
+        }
+      },
+      "no": {
+        "prompt": "Who had to move?",
+        "options": {
+          "friends": "Friends",
+          "colleagues": "Colleagues",
+          "family": "Family",
+          "me": "Me"
+        }
+      }
+    },
+    "q4": {
+      "question": "Did today end how you wanted?",
       "yes": {
         "prompt": "Who made it work?",
         "options": {
