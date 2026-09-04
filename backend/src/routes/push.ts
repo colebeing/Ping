@@ -22,6 +22,9 @@ export async function handleSubscribe(request: Request, env: Env, userId: string
     state.pushSubscriptions.push(subscription);
   }
   state.deviceRegistrations.push({ type: "webpush", platform: body.platform ?? "unknown", registeredAt: new Date().toISOString() });
+  // Enabling notifications through any path — this one, Settings, or the always-on Home banner —
+  // shouldn't leave a "want reminders?" nudge sitting around now that the answer is already yes.
+  state.pendingNudges = state.pendingNudges.filter((n) => n.kind !== "notification-permission");
   await saveState(env, userId, state);
   await scheduleUserPush(env, userId);
   return json({ ok: true });
@@ -45,6 +48,7 @@ export async function handleRegisterFcmToken(request: Request, env: Env, userId:
     state.fcmTokens.push(body.fcmToken);
   }
   state.deviceRegistrations.push({ type: "fcm", platform: body.platform ?? "unknown", registeredAt: new Date().toISOString() });
+  state.pendingNudges = state.pendingNudges.filter((n) => n.kind !== "notification-permission");
   await saveState(env, userId, state);
   await scheduleUserPush(env, userId);
 
@@ -64,5 +68,17 @@ export async function handleNotificationClicked(request: Request, env: Env, user
   const body = await readJson<{ block?: string }>(request);
   if (!isBlockId(body.block)) return errorResponse("block must be a valid block id", 400);
   await recordNotificationClicked(env, userId, body.block);
+  return json({ ok: true });
+}
+
+/** Generic across every Home-level nudge kind (notification-permission, save-account, and whatever's
+ * added later) — resolving one is always "remove it from the queue," whichever way the user answered;
+ * the actual Yes-side action (enabling push, opening the claim card) is a frontend concern. */
+export async function handleDismissNudge(_request: Request, env: Env, userId: string, id: string): Promise<Response> {
+  const state = await getState(env, userId);
+  const before = state.pendingNudges.length;
+  state.pendingNudges = state.pendingNudges.filter((n) => n.id !== id);
+  if (state.pendingNudges.length === before) return errorResponse("Nudge not found", 404);
+  await saveState(env, userId, state);
   return json({ ok: true });
 }

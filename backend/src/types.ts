@@ -99,8 +99,17 @@ export interface QuestionOverride {
   acceptedAt: string; // ISO date
 }
 
-export interface Recommendation {
+/** Fields every kind of nudge carries, regardless of what it's about. */
+interface NudgeBase {
   id: string;
+  createdAt: string; // ISO date
+}
+
+/** The original "swap invitation" mechanic — a content-adaptation nudge, proposing to change a
+ * block's question going forward, triggered by a streak in the user's own answer history. One kind
+ * of nudge among several now, not a separate system — see UserState.pendingNudges. */
+export interface RecommendationNudge extends NudgeBase {
+  kind: "recommendation";
   block: BlockId;
   /** null when this is a generalYes/generalNo invitation (streak held across mixed categories). */
   category: Category | null;
@@ -108,8 +117,25 @@ export interface Recommendation {
   invitation: Invitation;
   /** Date of the most recent answer counted into the streak that produced this — the floor a fresh streak must clear after a decline, see DeclinedStreak. */
   asOfDate: string;
-  createdAt: string; // ISO date
 }
+
+/** Asks to enable push notifications — triggered by a global follow-up-count checkpoint, not tied to
+ * any block/category. Fires only while notifications are still off. */
+export interface NotificationPermissionNudge extends NudgeBase {
+  kind: "notification-permission";
+  checkpoint: number;
+}
+
+/** Asks an anonymous user to save their account (add an email) — fires only once notifications are
+ * already on, at a later checkpoint than the notification nudge itself. */
+export interface SaveAccountNudge extends NudgeBase {
+  kind: "save-account";
+  checkpoint: number;
+}
+
+// invite-friend: deliberately not added yet — no trigger, no destination flow exists. Add a fourth
+// variant here (and a row in backend/src/routes/answer.ts's CHECKPOINT_TRIGGERS) once that flow does.
+export type Nudge = RecommendationNudge | NotificationPermissionNudge | SaveAccountNudge;
 
 /** Marks "the user already said no to this exact streak" so detectStreaks doesn't re-propose it
  * every single day the pattern continues. Only entries strictly after asOfDate count toward a
@@ -183,8 +209,17 @@ export interface UserState {
   answerEdits: AnswerEditRecord[];
   activeOverrides: Partial<Record<BlockId, QuestionOverride>>;
   retiredOverrides: QuestionOverride[];
-  pendingRecommendations: Recommendation[];
+  /** Every kind of earned in-flow prompt — swap invitations, notification/save-account asks, and
+   * whatever's added later — one queue, one dismiss endpoint. See types.ts's Nudge union. */
+  pendingNudges: Nudge[];
   declinedStreaks: Partial<Record<BlockId, DeclinedStreak>>;
+  /** Lifetime count of completed follow-ups (category picked), incremented once per handleFollowup
+   * call. Deliberately NOT decremented on edit — unlike pathCounts/categoryCounts, this exists purely
+   * to trigger nudge checkpoints once each, not to stay an accurate "current" count. Do not derive
+   * this from answers.filter(a => a.category).length instead: handleAnswer wipes an existing record's
+   * category on every re-post (including the harmless "resume" case), which would make a derived
+   * count non-monotonic and let an already-fired checkpoint re-fire after an edit. */
+  totalFollowupsAnswered: number;
   cadence: Cadence;
   pushSubscriptions: PushSubscriptionJSON[];
   /** FCM registration tokens for the native Android wrapper — separate from pushSubscriptions (Web Push). */

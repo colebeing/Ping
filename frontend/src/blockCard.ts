@@ -1,4 +1,4 @@
-import { api, type Answer, type BlockId, type Category, type FollowupPrompt, type Recommendation } from "./api";
+import { api, type Answer, type BlockId, type Category, type FollowupPrompt, type RecommendationNudge } from "./api";
 
 export const BLOCK_LABEL: Record<BlockId, string> = {
   "1": "Morning",
@@ -25,7 +25,7 @@ type Step =
   // A bonus third tap after the normal check-in + follow-up, only shown when
   // a streak just crossed threshold: the invitation's own question, answered
   // Yes to swap the block's HOW going forward or No to keep things as-is.
-  | { kind: "recommendation"; recommendation: Recommendation; next: DoneStep }
+  | { kind: "recommendation"; recommendation: RecommendationNudge; next: DoneStep }
   | DoneStep;
 
 /**

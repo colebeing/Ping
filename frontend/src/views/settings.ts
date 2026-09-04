@@ -5,6 +5,21 @@ import { currentBlockForCadence } from "./today";
 import { CHEVRON_LEFT_SVG, HOME_ICON_SVG } from "../icons";
 import { getNativeGoogleIdToken } from "../googleSignIn";
 
+/** Shared by the Log out button and the claim card's "Sign in" link — both need the exact same
+ * teardown (Ping's own session, plus the native Google account picker's separately-cached Firebase
+ * session) so the next "Sign in with Google" tap prompts fresh instead of hitting a stale one. */
+async function endSession(): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const { FirebaseAuthentication } = await import("@capacitor-firebase/authentication");
+      await FirebaseAuthentication.signOut();
+    } catch (err) {
+      console.error("[ping] firebase sign-out failed", err);
+    }
+  }
+  await api.logout();
+}
+
 export async function renderSettings(root: HTMLElement, onHome: () => void, onLogout: () => void): Promise<void> {
   root.innerHTML = `<h2>Settings</h2><div class="card">Loading…</div>`;
   try {
@@ -41,25 +56,22 @@ export async function renderSettings(root: HTMLElement, onHome: () => void, onLo
     logout.className = "btn";
     logout.textContent = "Log out";
     logout.addEventListener("click", async () => {
-      // Ping's own session is separate from the native Google account picker's cached
-      // session — without this, the next "Sign in with Google" tap hits an already
-      // signed-in Firebase Auth state and fails instead of prompting fresh.
-      if (Capacitor.isNativePlatform()) {
-        try {
-          const { FirebaseAuthentication } = await import("@capacitor-firebase/authentication");
-          await FirebaseAuthentication.signOut();
-        } catch (err) {
-          console.error("[ping] firebase sign-out failed", err);
-        }
-      }
-      await api.logout();
+      await endSession();
       onLogout();
     });
     account.appendChild(logout);
     root.appendChild(account);
 
     if (me.email === null) {
-      root.appendChild(renderClaimCard(() => void renderSettings(root, onHome, onLogout)));
+      root.appendChild(
+        renderClaimCard(
+          () => void renderSettings(root, onHome, onLogout),
+          async () => {
+            await endSession();
+            onLogout();
+          },
+        ),
+      );
     }
 
     const cadenceCard = document.createElement("div");
@@ -243,7 +255,7 @@ export async function renderSettings(root: HTMLElement, onHome: () => void, onLo
  * proactive nag (Home carries the one-time nudge for that; this card is just where it points to).
  * Google leads when it's available; email sign-in sits one tap further away behind a plain link,
  * matching the same pattern the sign-in screen uses. */
-function renderClaimCard(onClaimed: () => void): HTMLElement {
+function renderClaimCard(onClaimed: () => void, onSignIn: () => void): HTMLElement {
   const card = document.createElement("div");
   card.className = "card";
   card.innerHTML = `<h3>Save your account</h3><p>So you can return on another device.</p>`;
@@ -321,6 +333,12 @@ function renderClaimCard(onClaimed: () => void): HTMLElement {
   });
 
   card.append(showEmail, emailGroup);
+
+  const signIn = document.createElement("button");
+  signIn.className = "link-btn";
+  signIn.textContent = "Already have an account? Sign in";
+  signIn.addEventListener("click", onSignIn);
+  card.appendChild(signIn);
 
   return card;
 }

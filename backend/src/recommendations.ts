@@ -1,4 +1,4 @@
-import { ALL_BLOCKS, type Category, type Env, type Invitation, type Recommendation, type RecommendationCopy, type TriggerConfig, type UserState } from "./types";
+import { ALL_BLOCKS, type Category, type Env, type Invitation, type RecommendationNudge, type RecommendationCopy, type TriggerConfig, type UserState } from "./types";
 import { getConfig } from "./config";
 
 function daysBetween(a: string, b: string): number {
@@ -20,8 +20,8 @@ function isPrevCalendarDay(earlier: string, later: string): boolean {
  * but the category varies day to day, it's a "no underlying pattern" streak
  * — the general yes/no invitation (the remaining 2 slots).
  */
-export function detectStreaks(state: UserState, thresholds: TriggerConfig, copy: RecommendationCopy): Recommendation[] {
-  const newRecs: Recommendation[] = [];
+export function detectStreaks(state: UserState, thresholds: TriggerConfig, copy: RecommendationCopy): RecommendationNudge[] {
+  const newRecs: RecommendationNudge[] = [];
 
   for (const block of ALL_BLOCKS) {
     const entries = state.answers.filter((a) => a.block === block && a.category).sort((a, b) => a.date.localeCompare(b.date));
@@ -84,12 +84,15 @@ export function detectStreaks(state: UserState, thresholds: TriggerConfig, copy:
       continue;
     }
 
-    const alreadyPending = state.pendingRecommendations.some((r) => r.block === block && r.category === runCategory && r.valence === valence);
+    const alreadyPending = state.pendingNudges.some(
+      (n) => n.kind === "recommendation" && n.block === block && n.category === runCategory && n.valence === valence,
+    );
     const alreadyActive = state.activeOverrides[block]?.category === runCategory;
     if (alreadyPending || alreadyActive) continue;
 
     newRecs.push({
       id: crypto.randomUUID(),
+      kind: "recommendation",
       block,
       category: runCategory,
       valence,
@@ -103,10 +106,10 @@ export function detectStreaks(state: UserState, thresholds: TriggerConfig, copy:
 }
 
 export async function acceptRecommendation(env: Env, state: UserState, recommendationId: string): Promise<boolean> {
-  const idx = state.pendingRecommendations.findIndex((r) => r.id === recommendationId);
+  const idx = state.pendingNudges.findIndex((n) => n.kind === "recommendation" && n.id === recommendationId);
   if (idx === -1) return false;
-  const rec = state.pendingRecommendations[idx];
-  state.pendingRecommendations.splice(idx, 1);
+  const rec = state.pendingNudges[idx] as RecommendationNudge;
+  state.pendingNudges.splice(idx, 1);
 
   const config = await getConfig(env);
   state.activeOverrides[rec.block] = {
@@ -126,10 +129,10 @@ export async function acceptRecommendation(env: Env, state: UserState, recommend
 /** The user said no — dismiss it, and remember the exact streak declined so
  * detectStreaks won't re-propose it while that same run continues. */
 export function declineRecommendation(state: UserState, recommendationId: string): boolean {
-  const idx = state.pendingRecommendations.findIndex((r) => r.id === recommendationId);
+  const idx = state.pendingNudges.findIndex((n) => n.kind === "recommendation" && n.id === recommendationId);
   if (idx === -1) return false;
-  const rec = state.pendingRecommendations[idx];
-  state.pendingRecommendations.splice(idx, 1);
+  const rec = state.pendingNudges[idx] as RecommendationNudge;
+  state.pendingNudges.splice(idx, 1);
   state.declinedStreaks[rec.block] = { category: rec.category, valence: rec.valence, asOfDate: rec.asOfDate };
   return true;
 }

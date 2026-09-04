@@ -1,9 +1,33 @@
-import { CATEGORIES, isBlockId, type Answer, type AnswerRecord, type BlockId, type Category, type Env } from "../types";
+import { CATEGORIES, isBlockId, type Answer, type AnswerRecord, type BlockId, type Category, type Env, type Nudge, type UserRecord, type UserState } from "../types";
 import { errorResponse, json, readJson } from "../http";
-import { getState, saveState, resolveDate } from "../state";
+import { getState, saveState, resolveDate, hasPushEnabled } from "../state";
 import { getConfig, getTriggerConfig, getRecommendationCopy } from "../config";
 import { decrementFollowupEvent, recordFollowupEvent } from "../escalation";
 import { detectStreaks } from "../recommendations";
+import { getUser } from "../auth";
+
+/**
+ * Checkpoint-triggered nudges — a global follow-up-count table, deliberately a different shape from
+ * detectStreaks above: streak detection iterates blocks and builds per-block invitation content, a
+ * simple gate can't express that, so it stays its own function. These fire at most once each (a
+ * monotonic counter only ever equals a given checkpoint once), and only when nothing else Home-level
+ * is already pending — see runCheckpointTriggers below.
+ */
+const CHECKPOINT_TRIGGERS: { kind: "notification-permission" | "save-account"; checkpoint: number; condition: (state: UserState, user: UserRecord | null) => boolean }[] = [
+  { kind: "notification-permission", checkpoint: 1, condition: (s) => !hasPushEnabled(s) },
+  { kind: "notification-permission", checkpoint: 3, condition: (s) => !hasPushEnabled(s) },
+  { kind: "notification-permission", checkpoint: 10, condition: (s) => !hasPushEnabled(s) },
+  { kind: "save-account", checkpoint: 8, condition: (s, u) => hasPushEnabled(s) && !u?.email },
+];
+
+function runCheckpointTriggers(state: UserState, user: UserRecord | null): void {
+  const hasHomeLevelPending = state.pendingNudges.some((n) => n.kind !== "recommendation");
+  if (hasHomeLevelPending) return;
+  const trigger = CHECKPOINT_TRIGGERS.find((t) => t.checkpoint === state.totalFollowupsAnswered && t.condition(state, user));
+  if (!trigger) return;
+  const nudge: Nudge = { id: crypto.randomUUID(), kind: trigger.kind, checkpoint: trigger.checkpoint, createdAt: new Date().toISOString() };
+  state.pendingNudges.push(nudge);
+}
 
 interface AnswerBody {
   block: BlockId;
@@ -72,14 +96,23 @@ export async function handleFollowup(request: Request, env: Env, userId: string)
     }
   }
   record.category = body.category;
+  // Lifetime, never decremented on edit — see UserState.totalFollowupsAnswered's doc comment for why
+  // this can't be derived from answers.filter(a => a.category).length instead.
+  state.totalFollowupsAnswered++;
 
-  const [thresholds, copy] = await Promise.all([getTriggerConfig(env), getRecommendationCopy(env)]);
+  const [thresholds, copy, user] = await Promise.all([getTriggerConfig(env), getRecommendationCopy(env), getUser(env, userId)]);
   const { triggers, primary } = recordFollowupEvent(state, record.block, record.answer, body.category, thresholds);
 
   const newRecs = detectStreaks(state, thresholds, copy);
-  state.pendingRecommendations.push(...newRecs);
+  state.pendingNudges.push(...newRecs);
+  runCheckpointTriggers(state, user);
 
   await saveState(env, userId, state);
 
-  return json({ triggers, primary, newRecommendations: newRecs, pendingRecommendations: state.pendingRecommendations });
+  return json({
+    triggers,
+    primary,
+    newRecommendations: newRecs,
+    pendingRecommendations: state.pendingNudges.filter((n) => n.kind === "recommendation"),
+  });
 }

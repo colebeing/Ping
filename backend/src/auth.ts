@@ -106,7 +106,7 @@ export async function claimAccount(
   const id = normalizeEmail(email);
   if (await env.STATE_KV.get(`user:${id}`)) throw new Error("An account with that email already exists");
 
-  const fromState = await getState(env, fromId); // whole-object copy, so pendingRecommendations/activeOverrides/etc. all carry over untouched
+  const fromState = await getState(env, fromId); // whole-object copy, so pendingNudges/activeOverrides/etc. all carry over untouched
   const claimed: UserRecord = { ...fromUser, id, email: id, ...(credentials ?? {}) };
   await env.STATE_KV.put(`user:${id}`, JSON.stringify(claimed));
   await saveState(env, id, fromState);

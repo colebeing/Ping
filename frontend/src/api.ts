@@ -27,7 +27,7 @@ export interface QuestionResponse {
     followup?: { prompt: string; optionLabel: string };
   } | null;
   /** Only ever set for today's own card — recovers an invitation the user didn't resolve before reloading. */
-  pendingRecommendation: Recommendation | null;
+  pendingRecommendation: RecommendationNudge | null;
 }
 
 export interface AnswerResponse {
@@ -80,20 +80,38 @@ export interface AdminConfig {
   recommendationCopy: RecommendationCopy;
 }
 
-/** A live invitation to swap a block's HOW question, proposed after a streak. */
-export interface Recommendation {
+interface NudgeBase {
   id: string;
+  createdAt: string;
+}
+
+/** A live invitation to swap a block's HOW question, proposed after a streak — renders inline per-block. */
+export interface RecommendationNudge extends NudgeBase {
+  kind: "recommendation";
   block: BlockId;
   category: Category | null;
   valence: "amplify" | "resolve";
   invitation: Invitation;
   asOfDate: string;
-  createdAt: string;
 }
 
+/** Earned at follow-up totals 1/3/10 while push is off — renders at most one at a time on Home. */
+export interface NotificationPermissionNudge extends NudgeBase {
+  kind: "notification-permission";
+  checkpoint: number;
+}
+
+/** Earned at follow-up total 8, once push is already on and the account has no email yet. */
+export interface SaveAccountNudge extends NudgeBase {
+  kind: "save-account";
+  checkpoint: number;
+}
+
+export type Nudge = RecommendationNudge | NotificationPermissionNudge | SaveAccountNudge;
+
 export interface FollowupResponse {
-  newRecommendations: Recommendation[];
-  pendingRecommendations: Recommendation[];
+  newRecommendations: RecommendationNudge[];
+  pendingRecommendations: RecommendationNudge[];
 }
 
 export interface AnalyticsUserSummary {
@@ -150,6 +168,7 @@ export const api = {
       pushSubscriptionCount: number;
       fcmTokenCount: number;
       isAdmin: boolean;
+      homeNudge: Nudge | null;
     }>("/api/me"),
 
   /** The zero-friction entry point — mints an anonymous account + session with no credentials, so
@@ -177,6 +196,7 @@ export const api = {
 
   acceptRecommendation: (id: string) => request<{ ok: true }>(`/api/recommendations/${id}/accept`, { method: "POST" }),
   declineRecommendation: (id: string) => request<{ ok: true }>(`/api/recommendations/${id}/decline`, { method: "POST" }),
+  dismissNudge: (id: string) => request<{ ok: true }>(`/api/nudges/${id}/dismiss`, { method: "POST" }),
 
   updateCadence: (cadence: Partial<Cadence>) =>
     request<{ cadence: Cadence }>("/api/cadence", { method: "POST", body: JSON.stringify(cadence) }),

@@ -8,8 +8,9 @@ export function defaultState(): UserState {
     answerEdits: [],
     activeOverrides: {},
     retiredOverrides: [],
-    pendingRecommendations: [],
+    pendingNudges: [],
     declinedStreaks: {},
+    totalFollowupsAnswered: 0,
     cadence: { block1: "11:00", block2: "23:00", timezone: "UTC", frequency: "twice" },
     pushSubscriptions: [],
     fcmTokens: [],
@@ -18,6 +19,11 @@ export function defaultState(): UserState {
     appOpenDates: [],
     deviceRegistrations: [],
   };
+}
+
+/** Whether this user has any device registered to actually receive a push, on either channel. */
+export function hasPushEnabled(state: UserState): boolean {
+  return state.pushSubscriptions.length > 0 || state.fcmTokens.length > 0;
 }
 
 export async function getState(env: Env, userId: string): Promise<UserState> {
@@ -31,6 +37,14 @@ export async function getState(env: Env, userId: string): Promise<UserState> {
   if (!stored.notificationEvents) stored.notificationEvents = [];
   if (!stored.appOpenDates) stored.appOpenDates = [];
   if (!stored.deviceRegistrations) stored.deviceRegistrations = [];
+  if (!stored.totalFollowupsAnswered) stored.totalFollowupsAnswered = 0;
+  // pendingRecommendations -> pendingNudges: every old entry is already a valid RecommendationNudge
+  // once tagged with `kind` — mapped rather than dropped, so an invitation a user hasn't resolved yet
+  // survives the migration instead of silently vanishing.
+  if (!stored.pendingNudges) {
+    const old = (stored as unknown as { pendingRecommendations?: unknown[] }).pendingRecommendations ?? [];
+    stored.pendingNudges = old.map((r) => ({ ...(r as object), kind: "recommendation" as const })) as UserState["pendingNudges"];
+  }
   // The WHY follow-up's category set changed (friends/work/home/capacity ->
   // friends/colleagues/family/me) and WHAT was dropped entirely — old
   // path/category counts and answer categories are no longer meaningful
@@ -41,14 +55,14 @@ export async function getState(env: Env, userId: string): Promise<UserState> {
     stored.answers = [];
     stored.activeOverrides = {};
     stored.retiredOverrides = [];
-    stored.pendingRecommendations = [];
+    stored.pendingNudges = [];
   }
   // Recommendations used to carry a plain "suggestedHow" string and overrides
   // had no yes/no follow-ups of their own (they borrowed the block's) — old-shape
   // entries can't be salvaged piecemeal, so drop just those, not the whole state.
   if (Object.values(stored.activeOverrides).some((o) => o && !("yes" in o))) stored.activeOverrides = {};
   if (stored.retiredOverrides.some((o) => !("yes" in o))) stored.retiredOverrides = [];
-  if (stored.pendingRecommendations.some((r) => !("invitation" in r))) stored.pendingRecommendations = [];
+  stored.pendingNudges = stored.pendingNudges.filter((n) => n.kind !== "recommendation" || "invitation" in n);
   return stored;
 }
 

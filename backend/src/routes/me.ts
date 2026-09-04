@@ -16,6 +16,10 @@ export async function handleMe(_request: Request, env: Env, userId: string): Pro
     await saveState(env, userId, state);
   }
 
+  // Recommendation nudges render inline per-block (via /api/question); this is only ever the
+  // notification-permission/save-account/etc. kind Home renders at the top level, at most one.
+  const homeNudge = state.pendingNudges.find((n) => n.kind !== "recommendation") ?? null;
+
   return json({
     email: user?.email ?? null,
     createdAt: user?.createdAt ?? null,
@@ -23,5 +27,6 @@ export async function handleMe(_request: Request, env: Env, userId: string): Pro
     pushSubscriptionCount: state.pushSubscriptions.length,
     fcmTokenCount: state.fcmTokens.length,
     isAdmin: user?.isAdmin === true,
+    homeNudge,
   });
 }

@@ -1,14 +1,69 @@
-import { api, type BlockId, type Cadence } from "../api";
+import { api, type BlockId, type Cadence, type Nudge } from "../api";
 import { mountBlockCard } from "../blockCard";
 import { blocksForCadence, currentBlockForCadence } from "./today";
 import { localDateStr, renderHistoryList } from "./history";
 import { SETTINGS_ICON_SVG } from "../icons";
 import { enablePushNotifications } from "../push-setup";
 
-// Long enough that an anonymous account has actually gotten some use out of Ping before being
-// asked to save it, short enough the no-recovery-path risk window doesn't stretch out unreasonably.
-const ACCOUNT_NUDGE_AFTER_DAYS = 3;
-const ACCOUNT_NUDGE_SEEN_KEY = "ping:accountNudgeSeen";
+/** The single Home-level nudge slot — notification-permission, save-account, or whatever earned
+ * checkpoint kind comes next. Recommendation nudges never land here; those render inline per-block. */
+function renderNudge(container: HTMLElement, nudge: Nudge, onSettings: () => void, refresh: () => void): void {
+  if (nudge.kind === "recommendation") return;
+  container.innerHTML = "";
+
+  const card = document.createElement("div");
+  card.className = "card";
+
+  const badge = document.createElement("span");
+  badge.className = "pill recommendation-badge";
+  badge.textContent = nudge.kind === "notification-permission" ? "Quick reminder" : "Save your account";
+  card.appendChild(badge);
+
+  const prompt = document.createElement("p");
+  prompt.className = "followup-prompt";
+  prompt.textContent =
+    nudge.kind === "notification-permission" ? "Would you like quick reminders to answer from?" : "Would you like to save your account?";
+  card.appendChild(prompt);
+
+  const row = document.createElement("div");
+  row.className = "btn-row";
+
+  const yes = document.createElement("button");
+  yes.className = "btn btn-primary";
+  yes.textContent = "Yes";
+  yes.addEventListener("click", async () => {
+    yes.disabled = true;
+    no.disabled = true;
+    if (nudge.kind === "notification-permission") {
+      // Answering Yes resolves the nudge outright, whether or not the OS permission prompt actually
+      // gets granted — a denial here isn't something re-asking at the next checkpoint would fix (most
+      // browsers won't re-prompt once denied), and the always-on Home banner already covers "still
+      // not enabled" indefinitely. A successful subscribe already clears the nudge server-side (see
+      // routes/push.ts); the explicit dismiss below covers the denied/unsupported case, and no-ops
+      // harmlessly (404, swallowed) when the subscribe path got there first.
+      await enablePushNotifications();
+      await api.dismissNudge(nudge.id).catch(() => undefined);
+      refresh();
+    } else {
+      await api.dismissNudge(nudge.id);
+      onSettings();
+    }
+  });
+
+  const no = document.createElement("button");
+  no.className = "btn";
+  no.textContent = "No";
+  no.addEventListener("click", async () => {
+    yes.disabled = true;
+    no.disabled = true;
+    await api.dismissNudge(nudge.id);
+    refresh();
+  });
+
+  row.append(yes, no);
+  card.appendChild(row);
+  container.appendChild(card);
+}
 
 /** Has this block's own scheduled moment already happened today, in the account's timezone? Used
  * to decide which of today's blocks besides the current one are worth showing at all — a block
@@ -56,7 +111,7 @@ export async function renderHome(root: HTMLElement, onSettings: () => void): Pro
     root.appendChild(header);
 
     // Reappears on every render while notifications aren't on — Ping's whole loop runs on the
-    // nudge, so this isn't a one-and-done tip, unlike the account banner below.
+    // nudge, so this isn't a one-and-done tip, unlike the earned, dismissible nudge card below.
     const pushEnabled = me.pushSubscriptionCount > 0 || me.fcmTokenCount > 0;
     if (!pushEnabled) {
       const banner = document.createElement("div");
@@ -74,33 +129,16 @@ export async function renderHome(root: HTMLElement, onSettings: () => void): Pro
       root.appendChild(banner);
     }
 
-    // Exactly once, ever — never framed as risk/loss, just a quiet "you can save this." Marked seen
-    // the moment it's shown (not only on dismiss), so it truly never reappears after this.
-    if (me.email === null && me.createdAt) {
-      const daysSince = (Date.now() - new Date(me.createdAt).getTime()) / 86_400_000;
-      let alreadySeen = true;
-      try {
-        alreadySeen = localStorage.getItem(ACCOUNT_NUDGE_SEEN_KEY) === "1";
-      } catch {
-        // Private browsing / storage disabled — treat as already seen rather than risk showing it every time.
-      }
-      if (daysSince >= ACCOUNT_NUDGE_AFTER_DAYS && !alreadySeen) {
-        try {
-          localStorage.setItem(ACCOUNT_NUDGE_SEEN_KEY, "1");
-        } catch {
-          // Nothing to do if storage isn't available — the banner just shows this once regardless.
-        }
-        const banner = document.createElement("div");
-        banner.className = "banner";
-        banner.innerHTML = `<p style="margin:0 0 10px">Save your account so you can get back in on another device.</p>`;
-        const saveBtn = document.createElement("button");
-        saveBtn.className = "btn";
-        saveBtn.textContent = "Save your account";
-        saveBtn.addEventListener("click", onSettings);
-        banner.appendChild(saveBtn);
-        root.appendChild(banner);
-      }
-    }
+    const nudgeContainer = document.createElement("div");
+    root.appendChild(nudgeContainer);
+
+    const refreshNudge = async () => {
+      const fresh = await api.me();
+      if (fresh.homeNudge) renderNudge(nudgeContainer, fresh.homeNudge, onSettings, () => void refreshNudge());
+      else nudgeContainer.innerHTML = "";
+    };
+
+    if (me.homeNudge) renderNudge(nudgeContainer, me.homeNudge, onSettings, () => void refreshNudge());
 
     const today = localDateStr(me.cadence.timezone, new Date());
     const current = currentBlockForCadence(me.cadence);
@@ -113,7 +151,7 @@ export async function renderHome(root: HTMLElement, onSettings: () => void): Pro
       const container = document.createElement("div");
       container.className = block === current ? "today-hero" : "";
       root.appendChild(container);
-      void mountBlockCard(container, block, today);
+      void mountBlockCard(container, block, today, () => void refreshNudge());
     }
 
     const toggle = document.createElement("button");

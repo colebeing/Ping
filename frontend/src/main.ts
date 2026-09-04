@@ -1,7 +1,6 @@
 import "./style.css";
 import { api, ApiError, isBlockId, type BlockId } from "./api";
 import { renderAuth } from "./views/auth";
-import { renderOnboarding } from "./views/onboarding";
 import { renderHome } from "./views/home";
 import { renderSettings } from "./views/settings";
 import { renderAdmin } from "./views/admin";
@@ -33,11 +32,20 @@ async function boot(): Promise<void> {
     const me = await api.me();
     showApp(me.isAdmin);
   } catch (err) {
-    // Only a genuine "no session" (401) should offer onboarding — its one button creates an
-    // anonymous account, a side effect a transient network/5xx failure must never trigger for
-    // someone who actually already has a valid session.
-    if (err instanceof ApiError && err.status === 401) showOnboarding();
-    else showAuth();
+    // Only a genuine "no session" (401) should mint a fresh anonymous account — a transient
+    // network/5xx failure must never trigger that side effect for someone who actually already
+    // has a valid session, so it falls back to the login screen instead.
+    if (err instanceof ApiError && err.status === 401) {
+      try {
+        await api.startAnonymous();
+        const me = await api.me();
+        showApp(me.isAdmin);
+      } catch {
+        showAuth();
+      }
+    } else {
+      showAuth();
+    }
   }
 }
 
@@ -47,16 +55,6 @@ function showAuth(): void {
   renderAuth(app!, () => {
     void api.me().then((me) => showApp(me.isAdmin));
   });
-}
-
-function showOnboarding(): void {
-  goToBlock = null;
-  app!.innerHTML = "";
-  renderOnboarding(
-    app!,
-    () => void api.me().then((me) => showApp(me.isAdmin)),
-    () => showAuth(),
-  );
 }
 
 function showApp(isAdmin: boolean): void {

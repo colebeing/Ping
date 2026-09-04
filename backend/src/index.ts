@@ -6,7 +6,7 @@ import { handleMe } from "./routes/me";
 import { handleGetQuestion } from "./routes/question";
 import { handleAnswer, handleFollowup } from "./routes/answer";
 import { handleListRecommendations, handleAcceptRecommendation, handleDeclineRecommendation, handleUpdateCadence } from "./routes/recommendations";
-import { handleSubscribe, handleGetVapidPublicKey, handleTestPush, handleRegisterFcmToken, handleNotificationClicked } from "./routes/push";
+import { handleSubscribe, handleGetVapidPublicKey, handleTestPush, handleRegisterFcmToken, handleNotificationClicked, handleDismissNudge } from "./routes/push";
 import { handleGetAdminConfig, handleSaveAdminConfig, handleGetConfigAuditLog } from "./routes/admin";
 import { handleGetAnalytics } from "./routes/analytics";
 import { handleGoogleStart, handleGoogleCallback, handleGoogleTokenSignIn } from "./routes/googleAuth";
@@ -54,6 +54,9 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === "/api/push/clicked" && method === "POST") return handleNotificationClicked(request, env, userId);
   if (pathname === "/api/account/claim/password" && method === "POST") return handleClaimWithPassword(request, env, userId);
   if (pathname === "/api/account/claim/google" && method === "POST") return handleClaimWithGoogle(request, env, userId);
+
+  const dismissNudgeMatch = pathname.match(/^\/api\/nudges\/([^/]+)\/dismiss$/);
+  if (dismissNudgeMatch && method === "POST") return handleDismissNudge(request, env, userId, dismissNudgeMatch[1]);
 
   const acceptMatch = pathname.match(/^\/api\/recommendations\/([^/]+)\/accept$/);
   if (acceptMatch && method === "POST") return handleAcceptRecommendation(request, env, userId, acceptMatch[1]);
