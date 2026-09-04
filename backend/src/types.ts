@@ -209,9 +209,11 @@ export interface UserRecord {
   isAdmin?: boolean;
 }
 
+/** Non-expiring, like DeviceTokenRecord below — a sign-in shouldn't silently log someone out. The
+ * cookie carrying this token still has a Max-Age (browsers cap it regardless, ~400 days), but the
+ * session itself has no server-side expiry; logout is the only thing that ends it. */
 export interface SessionRecord {
   userId: string;
-  expiresAt: number; // epoch ms
 }
 
 /** Long-lived, non-expiring — minted once when the native app registers its FCM token, so a

@@ -2,7 +2,10 @@ import type { DeviceTokenRecord, Env, PasswordResetToken, SessionRecord, UserRec
 import { getState, saveState } from "./state";
 
 const PBKDF2_ITERATIONS = 100_000;
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+// Not the session's actual lifetime (it has none) — just the longest Max-Age a browser will honor
+// on the cookie carrying it, per Chrome's ~400-day hard cap. Sending more than a browser accepts is
+// harmless; it just clamps to its own ceiling instead of silently dropping the cookie shorter.
+const SESSION_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 400;
 const RESET_TOKEN_TTL_SECONDS = 60 * 60; // 1 hour
 export const SESSION_COOKIE = "ping_session";
 
@@ -139,8 +142,8 @@ export async function consumePasswordResetToken(env: Env, token: string): Promis
 
 export async function createSession(env: Env, userId: string): Promise<string> {
   const token = crypto.randomUUID();
-  const record: SessionRecord = { userId, expiresAt: Date.now() + SESSION_TTL_SECONDS * 1000 };
-  await env.STATE_KV.put(`session:${token}`, JSON.stringify(record), { expirationTtl: SESSION_TTL_SECONDS });
+  const record: SessionRecord = { userId };
+  await env.STATE_KV.put(`session:${token}`, JSON.stringify(record));
   return token;
 }
 
@@ -170,7 +173,7 @@ function parseCookies(header: string | null): Record<string, string> {
 // SameSite=None because the static frontend (GitHub Pages) and this Worker
 // are different origins; CORS in index.ts restricts which origins can use it.
 export function sessionCookieHeader(token: string): string {
-  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=${SESSION_TTL_SECONDS}`;
+  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=${SESSION_COOKIE_MAX_AGE_SECONDS}`;
 }
 
 export function clearSessionCookieHeader(): string {
@@ -190,7 +193,7 @@ export async function requireAuth(request: Request, env: Env): Promise<string | 
   const token = cookies[SESSION_COOKIE];
   if (!token) return null;
   const session = await env.STATE_KV.get<SessionRecord>(`session:${token}`, "json");
-  if (!session || session.expiresAt < Date.now()) return null;
+  if (!session) return null;
   return session.userId;
 }
 
