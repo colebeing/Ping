@@ -206,7 +206,7 @@ function renderUsersTable(data: AnalyticsResponse): HTMLElement {
     const tr = document.createElement("tr");
     const joined = user.createdAt.slice(0, 10);
     const topCategory = user.topCategory ? CATEGORY_LABEL[user.topCategory] : "—";
-    tr.innerHTML = `<td>${escapeHtml(user.email)}</td><td>${joined}</td><td>${user.totalAnswers}</td><td>${
+    tr.innerHTML = `<td>${escapeHtml(user.email ?? "(anonymous)")}</td><td>${joined}</td><td>${user.totalAnswers}</td><td>${
       user.lastActive ?? "—"
     }</td><td>${user.activeDayStreak}</td><td>${topCategory}</td><td>${lastNotificationCell(user.lastNotification)}</td>`;
     tbody.appendChild(tr);

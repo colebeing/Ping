@@ -1,4 +1,5 @@
 import type { DeviceTokenRecord, Env, PasswordResetToken, SessionRecord, UserRecord } from "./types";
+import { getState, saveState } from "./state";
 
 const PBKDF2_ITERATIONS = 100_000;
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
@@ -46,24 +47,69 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-export async function createUser(env: Env, email: string, password: string): Promise<UserRecord> {
-  const id = normalizeEmail(email);
+const ANON_ID_PREFIX = "anon:";
+
+/** Shared create-and-store step for every "brand new UserRecord" path below — the one place that
+ * enforces "id must not already exist" so it can't drift between callers. */
+async function putNewUserRecord(env: Env, id: string, extra: Partial<UserRecord> = {}): Promise<UserRecord> {
   const existing = await env.STATE_KV.get(`user:${id}`);
   if (existing) throw new Error("An account with that email already exists");
-  const { hash, salt } = await hashPassword(password);
-  const user: UserRecord = { id, email: id, passwordHash: hash, salt, createdAt: new Date().toISOString() };
+  const user: UserRecord = { id, createdAt: new Date().toISOString(), ...extra };
   await env.STATE_KV.put(`user:${id}`, JSON.stringify(user));
   return user;
+}
+
+export async function createUser(env: Env, email: string, password: string): Promise<UserRecord> {
+  const id = normalizeEmail(email);
+  const { hash, salt } = await hashPassword(password);
+  return putNewUserRecord(env, id, { email: id, passwordHash: hash, salt });
 }
 
 export async function getUser(env: Env, email: string): Promise<UserRecord | null> {
   return env.STATE_KV.get<UserRecord>(`user:${normalizeEmail(email)}`, "json");
 }
 
-/** Google sign-in never needs a password, but UserRecord always has one so password-login and reset keep working uniformly — this one is just never handed to the user. */
 export async function createUserFromGoogle(env: Env, email: string): Promise<UserRecord> {
-  const unusedPassword = crypto.randomUUID() + crypto.randomUUID();
-  return createUser(env, email, unusedPassword);
+  const id = normalizeEmail(email);
+  return putNewUserRecord(env, id, { email: id });
+}
+
+/** The zero-friction entry point — id doubles as its own normalized "email" for getUser's
+ * re-normalization (already-lowercase strings are a no-op under .trim().toLowerCase()), so no
+ * separate anonymous-lookup path is needed anywhere else in the codebase. */
+export async function createAnonymousUser(env: Env): Promise<UserRecord> {
+  return putNewUserRecord(env, `${ANON_ID_PREFIX}${crypto.randomUUID()}`);
+}
+
+/**
+ * Migrates an unclaimed anonymous account onto a real, permanent identity keyed by normalized
+ * email — the ONLY place a UserRecord's id ever changes after creation. Ordering matters: the new
+ * records are written first, the old ones deleted only after — KV has no multi-key transactions, so
+ * an interrupted migration's worst case is a harmless orphaned pre-claim record, never lost data.
+ * Refuses a source account that already has an email — without that guard, hitting this by mistake
+ * from an already-named session could silently reassign it onto a different email and delete its
+ * real `user:`/`state:` records.
+ */
+export async function claimAccount(
+  env: Env,
+  fromId: string,
+  email: string,
+  credentials: { passwordHash: string; salt: string } | null,
+): Promise<UserRecord> {
+  const fromUser = await getUser(env, fromId);
+  if (!fromUser) throw new Error("Account not found");
+  if (fromUser.email) throw new Error("This account already has an email saved");
+
+  const id = normalizeEmail(email);
+  if (await env.STATE_KV.get(`user:${id}`)) throw new Error("An account with that email already exists");
+
+  const fromState = await getState(env, fromId); // whole-object copy, so pendingRecommendations/activeOverrides/etc. all carry over untouched
+  const claimed: UserRecord = { ...fromUser, id, email: id, ...(credentials ?? {}) };
+  await env.STATE_KV.put(`user:${id}`, JSON.stringify(claimed));
+  await saveState(env, id, fromState);
+  await env.STATE_KV.delete(`user:${fromId}`);
+  await env.STATE_KV.delete(`state:${fromId}`);
+  return claimed;
 }
 
 export async function setPassword(env: Env, userId: string, newPassword: string): Promise<void> {

@@ -4,7 +4,7 @@ import { json } from "../http";
 import { getState } from "../state";
 
 export interface AnalyticsUserSummary {
-  email: string;
+  email: string | null;
   createdAt: string;
   totalAnswers: number;
   lastActive: string | null;
@@ -126,7 +126,7 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
     }
 
     users.push({
-      email: user.email,
+      email: user.email ?? null,
       createdAt: user.createdAt,
       totalAnswers: state.answers.length,
       lastActive,

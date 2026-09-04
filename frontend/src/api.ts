@@ -97,7 +97,7 @@ export interface FollowupResponse {
 }
 
 export interface AnalyticsUserSummary {
-  email: string;
+  email: string | null;
   createdAt: string;
   totalAnswers: number;
   lastActive: string | null;
@@ -142,7 +142,23 @@ export const api = {
   login: (email: string, password: string) =>
     request<{ email: string }>("/api/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   logout: () => request<{ ok: true }>("/api/logout", { method: "POST" }),
-  me: () => request<{ email: string; cadence: Cadence; pushSubscriptionCount: number; isAdmin: boolean }>("/api/me"),
+  me: () =>
+    request<{
+      email: string | null;
+      createdAt: string | null;
+      cadence: Cadence;
+      pushSubscriptionCount: number;
+      fcmTokenCount: number;
+      isAdmin: boolean;
+    }>("/api/me"),
+
+  /** The zero-friction entry point — mints an anonymous account + session with no credentials, so
+   * granting notifications can be the only thing standing between opening Ping and using it. */
+  startAnonymous: () => request<{ email: null }>("/api/account/start", { method: "POST" }),
+  claimWithPassword: (email: string, password: string) =>
+    request<{ email: string }>("/api/account/claim/password", { method: "POST", body: JSON.stringify({ email, password }) }),
+  claimWithGoogleIdToken: (idToken: string) =>
+    request<{ email: string }>("/api/account/claim/google", { method: "POST", body: JSON.stringify({ idToken }) }),
 
   requestPasswordReset: (email: string) =>
     request<{ ok: true }>("/api/password-reset/request", { method: "POST", body: JSON.stringify({ email }) }),

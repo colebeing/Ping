@@ -3,6 +3,7 @@ import { api, ApiError } from "../api";
 import { enablePushNotifications } from "../push-setup";
 import { currentBlockForCadence } from "./today";
 import { CHEVRON_LEFT_SVG, HOME_ICON_SVG } from "../icons";
+import { getNativeGoogleIdToken } from "../googleSignIn";
 
 export async function renderSettings(root: HTMLElement, onHome: () => void, onLogout: () => void): Promise<void> {
   root.innerHTML = `<h2>Settings</h2><div class="card">Loading…</div>`;
@@ -32,7 +33,10 @@ export async function renderSettings(root: HTMLElement, onHome: () => void, onLo
 
     const account = document.createElement("div");
     account.className = "card";
-    account.innerHTML = `<p class="muted">Signed in as</p><h3>${escapeHtml(me.email)}</h3>`;
+    account.innerHTML =
+      me.email !== null
+        ? `<p class="muted">Signed in as</p><h3>${escapeHtml(me.email)}</h3>`
+        : `<p class="muted">Using Ping without an account</p><h3>Not saved yet</h3>`;
     const logout = document.createElement("button");
     logout.className = "btn";
     logout.textContent = "Log out";
@@ -53,6 +57,10 @@ export async function renderSettings(root: HTMLElement, onHome: () => void, onLo
     });
     account.appendChild(logout);
     root.appendChild(account);
+
+    if (me.email === null) {
+      root.appendChild(renderClaimCard(() => void renderSettings(root, onHome, onLogout)));
+    }
 
     const cadenceCard = document.createElement("div");
     cadenceCard.className = "card";
@@ -186,14 +194,15 @@ export async function renderSettings(root: HTMLElement, onHome: () => void, onLo
     cadenceCard.appendChild(form);
     root.appendChild(cadenceCard);
 
+    const pushEnabled = me.pushSubscriptionCount > 0 || me.fcmTokenCount > 0;
     const pushCard = document.createElement("div");
     pushCard.className = "card";
     pushCard.innerHTML = `<h3>Notifications</h3><p>${
-      me.pushSubscriptionCount > 0 ? "Push notifications are on for this device." : "Get a nudge at your check-in times."
+      pushEnabled ? "Push notifications are on for this device." : "Get a nudge at your check-in times."
     }</p>`;
     const enableBtn = document.createElement("button");
     enableBtn.className = "btn";
-    enableBtn.textContent = me.pushSubscriptionCount > 0 ? "Re-enable on this device" : "Enable notifications";
+    enableBtn.textContent = pushEnabled ? "Re-enable on this device" : "Enable notifications";
     enableBtn.addEventListener("click", async () => {
       enableBtn.textContent = "Enabling…";
       const result = await enablePushNotifications();
@@ -228,6 +237,70 @@ export async function renderSettings(root: HTMLElement, onHome: () => void, onLo
     root.innerHTML = `<div class="card error">Couldn't load settings.</div>`;
     console.error(err);
   }
+}
+
+/** Shown only for an unclaimed anonymous account — a quiet, always-available option, never a
+ * proactive nag (Home carries the one-time nudge for that; this card is just where it points to). */
+function renderClaimCard(onClaimed: () => void): HTMLElement {
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = `<h3>Save your account</h3><p>Add an email so you can get back in on another device — nothing changes about how Ping works.</p>`;
+
+  const email = document.createElement("input");
+  email.type = "email";
+  email.placeholder = "Email";
+  email.autocomplete = "email";
+
+  const password = document.createElement("input");
+  password.type = "password";
+  password.placeholder = "Password";
+  password.autocomplete = "new-password";
+
+  const errorEl = document.createElement("div");
+  errorEl.className = "error";
+
+  const save = document.createElement("button");
+  save.className = "btn btn-primary";
+  save.textContent = "Save account";
+  save.addEventListener("click", async () => {
+    errorEl.textContent = "";
+    save.setAttribute("disabled", "true");
+    try {
+      await api.claimWithPassword(email.value, password.value);
+      onClaimed();
+    } catch (err) {
+      errorEl.textContent = err instanceof ApiError ? err.message : "Couldn't save your account.";
+      save.removeAttribute("disabled");
+    }
+  });
+
+  card.append(email, password, errorEl, save);
+
+  // Web's Google button is a full-page redirect that never hands back an ID token to claim with —
+  // password claim covers web; native gets the extra option since it can hand one over directly.
+  if (Capacitor.isNativePlatform()) {
+    const google = document.createElement("button");
+    google.className = "btn";
+    google.textContent = "Continue with Google";
+    google.addEventListener("click", async () => {
+      errorEl.textContent = "";
+      google.setAttribute("disabled", "true");
+      try {
+        const idToken = await getNativeGoogleIdToken();
+        await api.claimWithGoogleIdToken(idToken);
+        // The old device token (minted for the anonymous id) is now stale — re-registering mints a
+        // fresh one under the newly-claimed id so background notification actions keep working.
+        await enablePushNotifications().catch(() => undefined);
+        onClaimed();
+      } catch (err) {
+        errorEl.textContent = err instanceof ApiError ? err.message : "Couldn't save your account.";
+        google.removeAttribute("disabled");
+      }
+    });
+    card.appendChild(google);
+  }
+
+  return card;
 }
 
 const HTML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };

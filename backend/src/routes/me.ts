@@ -17,7 +17,8 @@ export async function handleMe(_request: Request, env: Env, userId: string): Pro
   }
 
   return json({
-    email: userId,
+    email: user?.email ?? null,
+    createdAt: user?.createdAt ?? null,
     cadence: state.cadence,
     pushSubscriptionCount: state.pushSubscriptions.length,
     fcmTokenCount: state.fcmTokens.length,

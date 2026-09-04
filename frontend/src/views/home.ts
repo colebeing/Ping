@@ -3,6 +3,12 @@ import { mountBlockCard } from "../blockCard";
 import { blocksForCadence, currentBlockForCadence } from "./today";
 import { localDateStr, renderHistoryList } from "./history";
 import { SETTINGS_ICON_SVG } from "../icons";
+import { enablePushNotifications } from "../push-setup";
+
+// Long enough that an anonymous account has actually gotten some use out of Ping before being
+// asked to save it, short enough the no-recovery-path risk window doesn't stretch out unreasonably.
+const ACCOUNT_NUDGE_AFTER_DAYS = 3;
+const ACCOUNT_NUDGE_SEEN_KEY = "ping:accountNudgeSeen";
 
 /** Has this block's own scheduled moment already happened today, in the account's timezone? Used
  * to decide which of today's blocks besides the current one are worth showing at all — a block
@@ -48,6 +54,53 @@ export async function renderHome(root: HTMLElement, onSettings: () => void): Pro
     settingsBtn.addEventListener("click", onSettings);
     header.append(heading, settingsBtn);
     root.appendChild(header);
+
+    // Reappears on every render while notifications aren't on — Ping's whole loop runs on the
+    // nudge, so this isn't a one-and-done tip, unlike the account banner below.
+    const pushEnabled = me.pushSubscriptionCount > 0 || me.fcmTokenCount > 0;
+    if (!pushEnabled) {
+      const banner = document.createElement("div");
+      banner.className = "banner";
+      banner.innerHTML = `<p style="margin:0 0 10px">Turn on notifications to get your check-in nudge.</p>`;
+      const enableBtn = document.createElement("button");
+      enableBtn.className = "btn btn-primary";
+      enableBtn.textContent = "Enable notifications";
+      enableBtn.addEventListener("click", async () => {
+        enableBtn.textContent = "Enabling…";
+        await enablePushNotifications();
+        void renderHome(root, onSettings);
+      });
+      banner.appendChild(enableBtn);
+      root.appendChild(banner);
+    }
+
+    // Exactly once, ever — never framed as risk/loss, just a quiet "you can save this." Marked seen
+    // the moment it's shown (not only on dismiss), so it truly never reappears after this.
+    if (me.email === null && me.createdAt) {
+      const daysSince = (Date.now() - new Date(me.createdAt).getTime()) / 86_400_000;
+      let alreadySeen = true;
+      try {
+        alreadySeen = localStorage.getItem(ACCOUNT_NUDGE_SEEN_KEY) === "1";
+      } catch {
+        // Private browsing / storage disabled — treat as already seen rather than risk showing it every time.
+      }
+      if (daysSince >= ACCOUNT_NUDGE_AFTER_DAYS && !alreadySeen) {
+        try {
+          localStorage.setItem(ACCOUNT_NUDGE_SEEN_KEY, "1");
+        } catch {
+          // Nothing to do if storage isn't available — the banner just shows this once regardless.
+        }
+        const banner = document.createElement("div");
+        banner.className = "banner";
+        banner.innerHTML = `<p style="margin:0 0 10px">Save your account so you can get back in on another device.</p>`;
+        const saveBtn = document.createElement("button");
+        saveBtn.className = "btn";
+        saveBtn.textContent = "Save your account";
+        saveBtn.addEventListener("click", onSettings);
+        banner.appendChild(saveBtn);
+        root.appendChild(banner);
+      }
+    }
 
     const today = localDateStr(me.cadence.timezone, new Date());
     const current = currentBlockForCadence(me.cadence);

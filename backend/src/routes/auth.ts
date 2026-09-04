@@ -43,7 +43,7 @@ interface Credentials {
 export async function handleLogin(request: Request, env: Env): Promise<Response> {
   const { email, password } = await readJson<Credentials>(request);
   const user = await getUser(env, email ?? "");
-  if (!user || !(await verifyPassword(password ?? "", user.salt, user.passwordHash))) {
+  if (!user?.passwordHash || !user.salt || !(await verifyPassword(password ?? "", user.salt, user.passwordHash))) {
     return errorResponse("Invalid email or password", 401);
   }
   const token = await createSession(env, user.id);

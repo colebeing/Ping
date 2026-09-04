@@ -199,10 +199,12 @@ export interface UserState {
 }
 
 export interface UserRecord {
-  id: string; // normalized email
-  email: string;
-  passwordHash: string;
-  salt: string;
+  /** Normalized email once claimed; "anon:<uuid>" until then — see auth.ts's claimAccount. */
+  id: string;
+  /** Absent for an anonymous, not-yet-claimed account. */
+  email?: string;
+  passwordHash?: string;
+  salt?: string;
   createdAt: string;
   isAdmin?: boolean;
 }

@@ -1,5 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { api, ApiError } from "../api";
+import { getNativeGoogleIdToken } from "../googleSignIn";
 
 type Mode = "login" | "signup" | "forgot" | "forgot-sent" | "reset" | "reset-done";
 
@@ -110,10 +111,7 @@ export function renderAuth(root: HTMLElement, onAuthed: () => void): void {
       errorEl.textContent = "";
       google.setAttribute("disabled", "true");
       try {
-        const { FirebaseAuthentication } = await import("@capacitor-firebase/authentication");
-        const result = await FirebaseAuthentication.signInWithGoogle();
-        const idToken = result.credential?.idToken;
-        if (!idToken) throw new Error("Google didn't return a usable sign-in token");
+        const idToken = await getNativeGoogleIdToken();
         await api.loginWithGoogleIdToken(idToken);
         onAuthed();
       } catch (err) {

@@ -10,6 +10,7 @@ import { handleSubscribe, handleGetVapidPublicKey, handleTestPush, handleRegiste
 import { handleGetAdminConfig, handleSaveAdminConfig, handleGetConfigAuditLog } from "./routes/admin";
 import { handleGetAnalytics } from "./routes/analytics";
 import { handleGoogleStart, handleGoogleCallback, handleGoogleTokenSignIn } from "./routes/googleAuth";
+import { handleStartAnonymous, handleClaimWithPassword, handleClaimWithGoogle } from "./routes/account";
 import { PushScheduler } from "./scheduler";
 
 export { PushScheduler };
@@ -36,6 +37,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === "/api/auth/google/start" && method === "GET") return handleGoogleStart(request, env);
   if (pathname === "/api/auth/google/callback" && method === "GET") return handleGoogleCallback(request, env);
   if (pathname === "/api/auth/google/token" && method === "POST") return handleGoogleTokenSignIn(request, env);
+  if (pathname === "/api/account/start" && method === "POST") return handleStartAnonymous(request, env);
 
   // Everything below requires a session.
   const userId = await requireAuth(request, env);
@@ -51,6 +53,8 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === "/api/push/register-fcm" && method === "POST") return handleRegisterFcmToken(request, env, userId);
   if (pathname === "/api/push/test" && method === "POST") return handleTestPush(request, env, userId);
   if (pathname === "/api/push/clicked" && method === "POST") return handleNotificationClicked(request, env, userId);
+  if (pathname === "/api/account/claim/password" && method === "POST") return handleClaimWithPassword(request, env, userId);
+  if (pathname === "/api/account/claim/google" && method === "POST") return handleClaimWithGoogle(request, env, userId);
 
   const acceptMatch = pathname.match(/^\/api\/recommendations\/([^/]+)\/accept$/);
   if (acceptMatch && method === "POST") return handleAcceptRecommendation(request, env, userId, acceptMatch[1]);
