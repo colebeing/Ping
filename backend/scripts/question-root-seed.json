@@ -26,7 +26,13 @@
   "children": {
     "amplify": {
       "friends": {
-        "question": "Would you like to focus on protecting friend time?",
+        "inviteQuestion": "Would you like to focus on protecting friend time?",
+        "blockQuestions": {
+          "q1": "Would you like to focus on protecting friend time?",
+          "q2": "Would you like to focus on protecting friend time?",
+          "q3": "Would you like to focus on protecting friend time?",
+          "q4": "Would you like to focus on protecting friend time?"
+        },
         "yes": {
           "prompt": "Who made it work?",
           "options": {
@@ -51,7 +57,13 @@
         }
       },
       "colleagues": {
-        "question": "Would you like to focus on leaning on your colleagues?",
+        "inviteQuestion": "Would you like to focus on leaning on your colleagues?",
+        "blockQuestions": {
+          "q1": "Would you like to focus on leaning on your colleagues?",
+          "q2": "Would you like to focus on leaning on your colleagues?",
+          "q3": "Would you like to focus on leaning on your colleagues?",
+          "q4": "Would you like to focus on leaning on your colleagues?"
+        },
         "yes": {
           "prompt": "Who made it work?",
           "options": {
@@ -76,7 +88,13 @@
         }
       },
       "family": {
-        "question": "Would you like to focus on protecting family time?",
+        "inviteQuestion": "Would you like to focus on protecting family time?",
+        "blockQuestions": {
+          "q1": "Would you like to focus on protecting family time?",
+          "q2": "Would you like to focus on protecting family time?",
+          "q3": "Would you like to focus on protecting family time?",
+          "q4": "Would you like to focus on protecting family time?"
+        },
         "yes": {
           "prompt": "Who made it work?",
           "options": {
@@ -101,7 +119,13 @@
         }
       },
       "me": {
-        "question": "Would you like to focus on protecting time for yourself?",
+        "inviteQuestion": "Would you like to focus on protecting time for yourself?",
+        "blockQuestions": {
+          "q1": "Would you like to focus on protecting time for yourself?",
+          "q2": "Would you like to focus on protecting time for yourself?",
+          "q3": "Would you like to focus on protecting time for yourself?",
+          "q4": "Would you like to focus on protecting time for yourself?"
+        },
         "yes": {
           "prompt": "Who made it work?",
           "options": {
@@ -128,7 +152,13 @@
     },
     "resolve": {
       "friends": {
-        "question": "Would you like to focus on making space for friends?",
+        "inviteQuestion": "Would you like to focus on making space for friends?",
+        "blockQuestions": {
+          "q1": "Would you like to focus on making space for friends?",
+          "q2": "Would you like to focus on making space for friends?",
+          "q3": "Would you like to focus on making space for friends?",
+          "q4": "Would you like to focus on making space for friends?"
+        },
         "yes": {
           "prompt": "Who made it work?",
           "options": {
@@ -153,7 +183,13 @@
         }
       },
       "colleagues": {
-        "question": "Would you like to focus on getting ahead of what colleagues need?",
+        "inviteQuestion": "Would you like to focus on getting ahead of what colleagues need?",
+        "blockQuestions": {
+          "q1": "Would you like to focus on getting ahead of what colleagues need?",
+          "q2": "Would you like to focus on getting ahead of what colleagues need?",
+          "q3": "Would you like to focus on getting ahead of what colleagues need?",
+          "q4": "Would you like to focus on getting ahead of what colleagues need?"
+        },
         "yes": {
           "prompt": "Who made it work?",
           "options": {
@@ -178,7 +214,13 @@
         }
       },
       "family": {
-        "question": "Would you like to focus on making space for family?",
+        "inviteQuestion": "Would you like to focus on making space for family?",
+        "blockQuestions": {
+          "q1": "Would you like to focus on making space for family?",
+          "q2": "Would you like to focus on making space for family?",
+          "q3": "Would you like to focus on making space for family?",
+          "q4": "Would you like to focus on making space for family?"
+        },
         "yes": {
           "prompt": "Who made it work?",
           "options": {
@@ -203,7 +245,13 @@
         }
       },
       "me": {
-        "question": "Would you like to focus on protecting your own time?",
+        "inviteQuestion": "Would you like to focus on protecting your own time?",
+        "blockQuestions": {
+          "q1": "Would you like to focus on protecting your own time?",
+          "q2": "Would you like to focus on protecting your own time?",
+          "q3": "Would you like to focus on protecting your own time?",
+          "q4": "Would you like to focus on protecting your own time?"
+        },
         "yes": {
           "prompt": "Who made it work?",
           "options": {
@@ -229,7 +277,13 @@
       }
     },
     "generalYes": {
-      "question": "Would you like to keep doing what's working?",
+      "inviteQuestion": "Would you like to keep doing what's working?",
+      "blockQuestions": {
+        "q1": "Would you like to keep doing what's working?",
+        "q2": "Would you like to keep doing what's working?",
+        "q3": "Would you like to keep doing what's working?",
+        "q4": "Would you like to keep doing what's working?"
+      },
       "yes": {
         "prompt": "Who made it work?",
         "options": {
@@ -254,7 +308,13 @@
       }
     },
     "generalNo": {
-      "question": "Would you like to get ahead of what's pulling at you?",
+      "inviteQuestion": "Would you like to get ahead of what's pulling at you?",
+      "blockQuestions": {
+        "q1": "Would you like to get ahead of what's pulling at you?",
+        "q2": "Would you like to get ahead of what's pulling at you?",
+        "q3": "Would you like to get ahead of what's pulling at you?",
+        "q4": "Would you like to get ahead of what's pulling at you?"
+      },
       "yes": {
         "prompt": "Who made it work?",
         "options": {

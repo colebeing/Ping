@@ -24,7 +24,13 @@ function emptyFollowup(): FollowupPrompt {
 }
 
 function emptyNode(): EscalationNode {
-  return { question: "", yes: emptyFollowup(), no: emptyFollowup(), children: { amplify: {}, resolve: {} } };
+  return {
+    inviteQuestion: "",
+    blockQuestions: { q1: "", q2: "", q3: "", q4: "" },
+    yes: emptyFollowup(),
+    no: emptyFollowup(),
+    children: { amplify: {}, resolve: {} },
+  };
 }
 
 function childAt(children: EscalationChildren, step: EscalationStep): EscalationNode | undefined {
@@ -53,9 +59,14 @@ function resolveNode(root: QuestionRoot, path: EscalationPath): EscalationNode |
   return node;
 }
 
-function stepLabel(step: EscalationStep): string {
+/** A step's true label is whatever the PARENT node's own yes/no follow-up option text says for that
+ * category — the literal button text a real end-user taps — not a fixed generic name, since admins can
+ * customize that text per node. Falls back to CATEGORY_LABEL only while the option text is genuinely
+ * still blank. The "Mixed" (general) slots aren't tied to one category, so they keep fixed text. */
+function dynamicStepLabel(step: EscalationStep, parentYes: FollowupPrompt, parentNo: FollowupPrompt): string {
   if (step.category === null) return step.valence === "amplify" ? "Mixed (yes-streak)" : "Mixed (no-streak)";
-  return CATEGORY_LABEL[step.category];
+  const prompt = step.valence === "amplify" ? parentYes : parentNo;
+  return prompt.options[step.category] || CATEGORY_LABEL[step.category];
 }
 
 /** The 10 possible child slots off any node, in the same fixed order the map's columns and the tree
@@ -79,16 +90,19 @@ function collectRows(root: QuestionRoot): MapRow[] {
   const rootPreview = `${root.blockQuestions.q1} (+3 more)`;
   const rows: MapRow[] = [{ path: [], label: "Routine question", questionPreview: rootPreview }];
 
-  const walk = (children: EscalationChildren, path: EscalationPath) => {
+  // Carries each step's own parent yes/no down the walk (needed for dynamicStepLabel) and the labels
+  // built so far (joined for display, same as the old flat childPath.map(stepLabel).join(" → ")).
+  const walk = (children: EscalationChildren, path: EscalationPath, parentYes: FollowupPrompt, parentNo: FollowupPrompt, priorLabels: string[]) => {
     for (const step of SLOTS) {
       const child = childAt(children, step);
       if (!child) continue;
       const childPath = [...path, step];
-      rows.push({ path: childPath, label: childPath.map(stepLabel).join(" → "), questionPreview: child.question });
-      walk(child.children, childPath);
+      const labels = [...priorLabels, dynamicStepLabel(step, parentYes, parentNo)];
+      rows.push({ path: childPath, label: labels.join(" → "), questionPreview: child.inviteQuestion });
+      walk(child.children, childPath, child.yes, child.no, labels);
     }
   };
-  walk(root.children, []);
+  walk(root.children, [], root.yes, root.no, []);
   return rows;
 }
 
@@ -226,7 +240,7 @@ function renderQuestionMap(root: QuestionRoot, navigate: (path: EscalationPath) 
       btn.type = "button";
       btn.className = "map-slot-btn" + (existing ? " filled" : " empty");
       btn.textContent = existing ? "✓" : "–";
-      btn.title = existing ? existing.question : "Not yet configured";
+      btn.title = existing ? existing.inviteQuestion : "Not yet configured";
       btn.addEventListener("click", () => {
         // Mirrors renderLeaf's own "add a swap invite" affordance — an empty slot has nothing to
         // navigate to yet, so create the blank node first, same as clicking it from inside the tree
@@ -248,11 +262,11 @@ function renderQuestionMap(root: QuestionRoot, navigate: (path: EscalationPath) 
 }
 
 /**
- * Every node in the escalation tree — root included — gets the identical editor shape: its own
- * question field(s), its own shared yes/no follow-up, and two branch groups of 5 leaves each
- * (Friends/Colleagues/Family/Me/Mixed, once for the Yes-path and once for the No-path). Only the
- * question field itself varies: 4 per-block texts at the root, 1 block-agnostic text everywhere
- * deeper. `navigate` re-renders this same card at a different path — see renderAdmin's `renderBoth`.
+ * Every node in the escalation tree — root included — gets the identical editor shape: (non-root only)
+ * a swap invite field, the same 4 timed question fields root has, its own shared yes/no follow-up, and
+ * two branch groups of 5 leaves each (Friends/Colleagues/Family/Me/Mixed, once for the Yes-path and
+ * once for the No-path). `navigate` re-renders this same card at a different path — see renderAdmin's
+ * `renderBoth`.
  */
 function renderNodeEditor(root: QuestionRoot, path: EscalationPath, navigate: (path: EscalationPath) => void): HTMLElement {
   const card = document.createElement("div");
@@ -261,13 +275,23 @@ function renderNodeEditor(root: QuestionRoot, path: EscalationPath, navigate: (p
   const crumbs = document.createElement("div");
   crumbs.className = "breadcrumbs";
   crumbs.appendChild(breadcrumb("Routine question", path.length === 0, () => navigate([])));
+  // Walks alongside the path, carrying each step's own parent yes/no (dynamicStepLabel needs the
+  // PARENT's option text, not the step's own node) — root seeds it, each resolved step's own yes/no
+  // becomes the parent for the next step.
+  let parentYes = root.yes;
+  let parentNo = root.no;
   for (let i = 0; i < path.length; i++) {
     const sep = document.createElement("span");
     sep.className = "breadcrumb-sep";
     sep.textContent = "/";
     crumbs.appendChild(sep);
     const target = path.slice(0, i + 1);
-    crumbs.appendChild(breadcrumb(stepLabel(path[i]), i === path.length - 1, () => navigate(target)));
+    crumbs.appendChild(breadcrumb(dynamicStepLabel(path[i], parentYes, parentNo), i === path.length - 1, () => navigate(target)));
+    const stepNode = resolveNode(root, target);
+    if (stepNode) {
+      parentYes = stepNode.yes;
+      parentNo = stepNode.no;
+    }
   }
   card.appendChild(crumbs);
 
@@ -281,25 +305,41 @@ function renderNodeEditor(root: QuestionRoot, path: EscalationPath, navigate: (p
   }
 
   const h = document.createElement("h3");
-  h.textContent = path.length === 0 ? "Routine question" : `Swap invite: ${stepLabel(path[path.length - 1])}`;
+  if (path.length === 0) {
+    h.textContent = "Routine question";
+  } else {
+    // The label for THIS node's own step comes from its parent's yes/no — one level up from
+    // parentYes/parentNo above, which by now hold this node's OWN yes/no after the breadcrumb loop.
+    const grandparentPath = path.slice(0, -1);
+    const grandparentNode = grandparentPath.length === 0 ? null : resolveNode(root, grandparentPath);
+    const labelYes = grandparentNode ? grandparentNode.yes : root.yes;
+    const labelNo = grandparentNode ? grandparentNode.no : root.no;
+    h.textContent = `Swap invite: ${dynamicStepLabel(path[path.length - 1], labelYes, labelNo)}`;
+  }
   card.appendChild(h);
 
-  const note = document.createElement("p");
-  note.className = "muted";
-  note.textContent =
+  if (path.length > 0) {
+    const inviteNote = document.createElement("p");
+    inviteNote.className = "muted";
+    inviteNote.textContent = "Asked once, as a yes/no confirmation, when the streak that unlocks this fires.";
+    card.appendChild(inviteNote);
+    card.appendChild(fieldLabel("Swap invite"));
+    card.appendChild(textInput(node!.inviteQuestion, (v) => (node!.inviteQuestion = v)));
+  }
+
+  const blockQuestionsNote = document.createElement("p");
+  blockQuestionsNote.className = "muted";
+  blockQuestionsNote.style.marginTop = "16px";
+  blockQuestionsNote.textContent =
     path.length === 0
       ? "Each block's question is its own complete, independent sentence — write it exactly as it should read, since a user who's skipped the other three might see only this one on a given day."
-      : "One complete, block-agnostic question — this swap invite can fire on whichever block the streak happened on, so it doesn't reference a time of day.";
-  card.appendChild(note);
+      : "Once accepted, this becomes the routine question on every block going forward — its own complete, independent sentence per time of day, just like the routine question above.";
+  card.appendChild(blockQuestionsNote);
 
-  if (path.length === 0) {
-    for (const [label, block] of ROOT_BLOCK_FIELDS) {
-      card.appendChild(fieldLabel(`${label} question`));
-      card.appendChild(textInput(root.blockQuestions[block], (v) => (root.blockQuestions[block] = v)));
-    }
-  } else {
-    card.appendChild(fieldLabel("Question"));
-    card.appendChild(textInput(node!.question, (v) => (node!.question = v)));
+  const blockQuestions = path.length === 0 ? root.blockQuestions : node!.blockQuestions;
+  for (const [label, block] of ROOT_BLOCK_FIELDS) {
+    card.appendChild(fieldLabel(`${label} question`));
+    card.appendChild(textInput(blockQuestions[block], (v) => (blockQuestions[block] = v)));
   }
 
   const followupNote = document.createElement("p");
@@ -314,8 +354,8 @@ function renderNodeEditor(root: QuestionRoot, path: EscalationPath, navigate: (p
   card.appendChild(renderFollowupEditor(no, "No → WHY"));
 
   const children = path.length === 0 ? root.children : node!.children;
-  card.appendChild(renderBranchGroup("Yes-path swap invites", "amplify", children, path, navigate));
-  card.appendChild(renderBranchGroup("No-path swap invites", "resolve", children, path, navigate));
+  card.appendChild(renderBranchGroup("Yes-path swap invites", "amplify", yes, children, path, navigate));
+  card.appendChild(renderBranchGroup("No-path swap invites", "resolve", no, children, path, navigate));
 
   return card;
 }
@@ -332,6 +372,7 @@ function breadcrumb(label: string, isCurrent: boolean, onClick: () => void): HTM
 function renderBranchGroup(
   title: string,
   valence: "amplify" | "resolve",
+  prompt: FollowupPrompt,
   children: EscalationChildren,
   path: EscalationPath,
   navigate: (path: EscalationPath) => void,
@@ -345,8 +386,10 @@ function renderBranchGroup(
   label.textContent = title;
   wrap.appendChild(label);
 
+  // Each leaf's true label is this node's own configured option text for that category — the literal
+  // button text a real user taps — falling back to CATEGORY_LABEL only while it's still blank.
   for (const cat of CATEGORY_ORDER) {
-    wrap.appendChild(renderLeaf(CATEGORY_LABEL[cat], { valence, category: cat }, children, path, navigate));
+    wrap.appendChild(renderLeaf(prompt.options[cat] || CATEGORY_LABEL[cat], { valence, category: cat }, children, path, navigate));
   }
   wrap.appendChild(renderLeaf("Mixed", { valence, category: null }, children, path, navigate));
 
@@ -372,7 +415,7 @@ function renderLeaf(
   if (existing) {
     const preview = document.createElement("p");
     preview.className = "leaf-preview muted";
-    preview.textContent = existing.question || "(no question text yet)";
+    preview.textContent = existing.inviteQuestion || "(no question text yet)";
     row.appendChild(preview);
 
     const openBtn = document.createElement("button");

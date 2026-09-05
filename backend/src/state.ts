@@ -11,7 +11,6 @@ export function defaultState(): UserState {
     categoryCounts: { friends: 0, colleagues: 0, family: 0, me: 0 },
     answers: [],
     answerEdits: [],
-    activeOverrides: {},
     retiredOverrides: [],
     pendingNudges: [],
     declinedStreaks: {},
@@ -87,26 +86,43 @@ export async function getState(env: Env, userId: string): Promise<UserState> {
     stored.categoryCounts = { friends: 0, colleagues: 0, family: 0, me: 0 };
     stored.pathCounts = {};
     stored.answers = [];
-    stored.activeOverrides = {};
+    stored.activeOverride = undefined;
     stored.retiredOverrides = [];
     stored.pendingNudges = [];
+  }
+  // Overrides used to be per-block (activeOverrides: Partial<Record<BlockId, QuestionOverride>>) —
+  // accepting a swap invite now changes the routine question on all four blocks at once, so there's a
+  // single activeOverride instead. A per-block record can't be salvaged into one global value (no
+  // principled way to pick a winner across blocks), so it's dropped like every other genuinely
+  // incompatible shape below, not guessed at.
+  if ("activeOverrides" in stored) {
+    delete (stored as unknown as { activeOverrides?: unknown }).activeOverrides;
+    stored.activeOverride = undefined;
   }
   // Recommendations used to carry a plain "suggestedHow" string and overrides
   // had no yes/no follow-ups of their own (they borrowed the block's) — old-shape
   // entries can't be salvaged piecemeal, so drop just those, not the whole state.
-  if (Object.values(stored.activeOverrides).some((o) => o && !("yes" in o))) stored.activeOverrides = {};
+  if (stored.activeOverride && !("yes" in stored.activeOverride)) stored.activeOverride = undefined;
   if (stored.retiredOverrides.some((o) => !("yes" in o))) stored.retiredOverrides = [];
   // Every override shape before the escalation tree (including the immediately-prior when/how->question
   // flatten's own output) lacks `path` — valence was never stored on a QuestionOverride before now, so
   // there's no way to reconstruct which tree path produced it. Dropped the same way the check just
   // above drops other genuinely-incompatible override shapes, not guessed at.
-  if (Object.values(stored.activeOverrides).some((o) => o && !("path" in o))) stored.activeOverrides = {};
+  if (stored.activeOverride && !("path" in stored.activeOverride)) stored.activeOverride = undefined;
   if (stored.retiredOverrides.some((o) => !("path" in o))) stored.retiredOverrides = [];
+  // Escalation nodes used to carry one flat, block-agnostic `question` string — an override built from
+  // one lacks `blockQuestions` (the new per-block shape) and can't be salvaged (there's no way to
+  // reconstruct 4 timed phrasings from 1 flat string), so it's dropped the same way.
+  if (stored.activeOverride && !("blockQuestions" in stored.activeOverride)) stored.activeOverride = undefined;
+  if (stored.retiredOverrides.some((o) => !("blockQuestions" in o))) stored.retiredOverrides = [];
   // A pending (not-yet-accepted) recommendation snapshots its own path/node at creation time — an
-  // old-shaped one (carrying `invitation` instead) can't be salvaged (there's no tree to resolve it
-  // against retroactively), so it's dropped like any other genuinely incompatible pending-nudge shape:
-  // transient, low-stakes state — detectStreaks naturally re-proposes the same pattern if it continues.
-  stored.pendingNudges = stored.pendingNudges.filter((n) => n.kind !== "recommendation" || ("path" in n && "node" in n));
+  // old-shaped one (carrying `invitation` instead, or a `node` built before the blockQuestions split)
+  // can't be salvaged (there's no tree to resolve it against retroactively), so it's dropped like any
+  // other genuinely incompatible pending-nudge shape: transient, low-stakes state — detectStreaks
+  // naturally re-proposes the same pattern if it continues.
+  stored.pendingNudges = stored.pendingNudges.filter(
+    (n) => n.kind !== "recommendation" || ("path" in n && "node" in n && "blockQuestions" in n.node),
+  );
   return stored;
 }
 

@@ -2,6 +2,7 @@ import {
   LIVE_BLOCKS,
   type AppConfig,
   type BlockContent,
+  type Category,
   type ConfigAuditEntry,
   type Env,
   type EscalationChildren,
@@ -64,12 +65,17 @@ export const DEFAULT_TRIGGERS: TriggerConfig = {
   retireAfterDays: 7,
 };
 
-// One complete, block-agnostic question per swap invite — no when/how composition, no per-block
-// variants (only the one block whose streak produced it is ever overridden with it). Phrased as an
-// explicit "Would you like to...?" confirmation, deliberately distinct in voice from the routine
-// question's "Did...?" framing, so it reads as an invitation to change rather than another check-in.
+// Phrased as an explicit "Would you like to...?" confirmation, deliberately distinct in voice from the
+// routine question's "Did...?" framing, so it reads as an invitation to change rather than another
+// check-in. The same text seeds all 4 timed slots by default (admins differentiate later, exactly as
+// they would for root) since accepting changes every block's question at once, not just one.
 function leaf(question: string): EscalationNode {
-  return { question, ...SHARED_FOLLOWUPS, children: { amplify: {}, resolve: {} } };
+  return {
+    inviteQuestion: question,
+    blockQuestions: { q1: question, q2: question, q3: question, q4: question },
+    ...SHARED_FOLLOWUPS,
+    children: { amplify: {}, resolve: {} },
+  };
 }
 
 const DEFAULT_ESCALATION_CHILDREN: EscalationChildren = {
@@ -138,17 +144,52 @@ function migrateEscalationChildren(rawCopy: Record<string, unknown> | null): Esc
   return children;
 }
 
+/** A node's shape before the per-block-override change had one flat `question` string instead of
+ * `inviteQuestion` + `blockQuestions` (4 timed phrasings) — mechanically lossless: the same text
+ * becomes both the invite confirmation and all 4 timed slots, exactly what a user was already seeing
+ * on every block once this node's invite was accepted. */
+function migrateNodeShape(node: EscalationNode): EscalationNode {
+  const raw = node as unknown as { question?: string; blockQuestions?: Record<LiveBlockId, string> };
+  const upgraded: EscalationNode = raw.blockQuestions
+    ? node
+    : {
+        inviteQuestion: raw.question ?? "",
+        blockQuestions: { q1: raw.question ?? "", q2: raw.question ?? "", q3: raw.question ?? "", q4: raw.question ?? "" },
+        yes: node.yes,
+        no: node.no,
+        children: node.children,
+      };
+  return { ...upgraded, children: migrateChildrenShape(upgraded.children) };
+}
+
+function migrateChildrenShape(children: EscalationChildren): EscalationChildren {
+  const migrated: EscalationChildren = { amplify: {}, resolve: {} };
+  for (const cat of Object.keys(children.amplify) as Category[]) {
+    const c = children.amplify[cat];
+    if (c) migrated.amplify[cat] = migrateNodeShape(c);
+  }
+  for (const cat of Object.keys(children.resolve) as Category[]) {
+    const c = children.resolve[cat];
+    if (c) migrated.resolve[cat] = migrateNodeShape(c);
+  }
+  if (children.generalYes) migrated.generalYes = migrateNodeShape(children.generalYes);
+  if (children.generalNo) migrated.generalNo = migrateNodeShape(children.generalNo);
+  return migrated;
+}
+
 /**
  * The whole live question tree. No write-on-read: if `config:question-root` is empty, this computes
  * and RETURNS a seeded value without persisting it — a concurrent Admin save landing between a read
  * and a would-be write here could otherwise get silently clobbered by stale seeded data written after
  * it (getConfig/this function's predecessor never wrote on read either). The seed only actually
  * persists the first time an admin saves, which round-trips the whole computed tree back through the
- * normal save path regardless of whether anyone ever merely viewed the Admin page first.
+ * normal save path regardless of whether anyone ever merely viewed the Admin page first. The same
+ * no-write-on-read rule applies to migrateChildrenShape below: an old-shaped stored tree is upgraded
+ * in memory only, not written back here.
  */
 export async function getQuestionRoot(env: Env): Promise<QuestionRoot> {
   const stored = await env.CONFIG_KV.get<QuestionRoot>("config:question-root", "json");
-  if (stored) return stored;
+  if (stored) return { ...stored, children: migrateChildrenShape(stored.children) };
 
   // Nothing saved under the new key yet — seed from whatever's sitting in the older "config"/
   // "config:recommendation-copy" keys, if anything. Read the RAW blob: AppConfig's type no longer

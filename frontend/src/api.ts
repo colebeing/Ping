@@ -73,11 +73,15 @@ export interface EscalationStep {
 export type EscalationPath = EscalationStep[];
 
 /** One node in the escalation tree — the routine question a swap invite produces once accepted (or,
- * recursively, a swap invite one of its OWN follow-up answers produces). Complete, block-agnostic
- * question text, its own yes/no follow-up, and its own further swap invites. An absent slot in
- * `children` means "not yet authored" — never falls back to some default. */
+ * recursively, a swap invite one of its OWN follow-up answers produces). Its own yes/no follow-up, and
+ * its own further swap invites. An absent slot in `children` means "not yet authored" — never falls
+ * back to some default. */
 export interface EscalationNode {
-  question: string;
+  /** The one-time "would you like to switch?" confirmation shown when the swap invite fires. */
+  inviteQuestion: string;
+  /** Ongoing daily phrasing once accepted — same shape as QuestionRoot.blockQuestions: accepting
+   * changes the routine question on all four blocks at once, not just the one that streaked. */
+  blockQuestions: Record<LiveBlockId, string>;
   yes: FollowupPrompt;
   no: FollowupPrompt;
   children: EscalationChildren;
@@ -122,7 +126,7 @@ export interface RecommendationNudge extends NudgeBase {
   /** The full path this proposes moving to. */
   path: EscalationPath;
   /** The proposed node's own content. */
-  node: { question: string; yes: FollowupPrompt; no: FollowupPrompt };
+  node: { inviteQuestion: string; blockQuestions: Record<LiveBlockId, string>; yes: FollowupPrompt; no: FollowupPrompt };
   /** Denormalized from path's last step — display convenience only. */
   category: Category | null;
   valence: "amplify" | "resolve";

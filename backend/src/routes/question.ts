@@ -14,11 +14,13 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
   const date = resolveDate(state.cadence.timezone, url.searchParams.get("date"));
 
   // Override retirement is always evaluated against real "today", regardless of which date's card is being viewed.
-  const before = JSON.stringify(state.activeOverrides);
+  const before = JSON.stringify(state.activeOverride);
   checkRetirement(state, today, await getTriggerConfig(env));
-  if (JSON.stringify(state.activeOverrides) !== before) await saveState(env, userId, state);
+  if (JSON.stringify(state.activeOverride) !== before) await saveState(env, userId, state);
 
-  const override = state.activeOverrides[block];
+  // The account's single active override (if any) applies across all four live blocks — irrelevant to
+  // a legacy block, which never had one.
+  const override = isLiveBlockId(block) ? state.activeOverride : undefined;
   // Live blocks (q1-q4) source their base question/follow-up from the escalation tree; the 3 frozen
   // legacy blocks ("1"/"2"/"combined") still read from AppConfig, exactly as before this tree existed.
   let question: string;
@@ -26,12 +28,13 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
   let no: FollowupPrompt;
   if (isLiveBlockId(block)) {
     const root = await getQuestionRoot(env);
-    question = override?.question ?? root.blockQuestions[block];
+    question = override?.blockQuestions[block] ?? root.blockQuestions[block];
     yes = root.yes;
     no = root.no;
   } else {
     const config = await getConfig(env);
-    question = override?.question ?? config.blocks[block].question;
+    // No override is ever active for a legacy block (overrides only ever apply to q1-q4, see above).
+    question = config.blocks[block].question;
     yes = config.blocks[block].yes;
     no = config.blocks[block].no;
   }

@@ -1,5 +1,5 @@
 import { buildPushPayload, type PushMessage, type PushSubscription as WebPushSubscription, type VapidKeys } from "@block65/webcrypto-web-push";
-import { LIVE_BLOCKS, type BlockId, type Cadence, type Env, type LiveBlockId, type PushSubscriptionJSON } from "./types";
+import { LIVE_BLOCKS, isLiveBlockId, type BlockId, type Cadence, type Env, type LiveBlockId, type PushSubscriptionJSON } from "./types";
 import { getState, saveState, todayLocal } from "./state";
 import { sendFcmPush, type SendOutcome } from "./fcm";
 
@@ -42,8 +42,10 @@ const BLOCK_PROMPTS: Record<BlockId, string> = {
 };
 
 function blockPushBody(state: Awaited<ReturnType<typeof getState>>, block: BlockId): string {
-  const override = state.activeOverrides[block];
-  return override ? override.question : BLOCK_PROMPTS[block];
+  // The account's single active override (if any) applies across all four live blocks — irrelevant to
+  // a legacy block, which never had one.
+  if (isLiveBlockId(block) && state.activeOverride) return state.activeOverride.blockQuestions[block];
+  return BLOCK_PROMPTS[block];
 }
 
 interface PushOutcome {

@@ -7,7 +7,7 @@ import { scheduleUserPush } from "../scheduler";
 export async function handleListRecommendations(_request: Request, env: Env, userId: string): Promise<Response> {
   const state = await getState(env, userId);
   const pending = state.pendingNudges.filter((n) => n.kind === "recommendation");
-  return json({ pending, active: state.activeOverrides, retired: state.retiredOverrides });
+  return json({ pending, active: state.activeOverride ?? null, retired: state.retiredOverrides });
 }
 
 export async function handleAcceptRecommendation(_request: Request, env: Env, userId: string, id: string): Promise<Response> {
@@ -15,7 +15,7 @@ export async function handleAcceptRecommendation(_request: Request, env: Env, us
   const ok = acceptRecommendation(state, id);
   if (!ok) return errorResponse("Recommendation not found", 404);
   await saveState(env, userId, state);
-  return json({ ok: true, active: state.activeOverrides });
+  return json({ ok: true, active: state.activeOverride ?? null });
 }
 
 export async function handleDeclineRecommendation(_request: Request, env: Env, userId: string, id: string): Promise<Response> {

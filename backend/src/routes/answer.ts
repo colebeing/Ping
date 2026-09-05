@@ -63,7 +63,7 @@ export async function handleAnswer(request: Request, env: Env, userId: string): 
 
   await saveState(env, userId, state);
 
-  const override = state.activeOverrides[body.block];
+  const override = state.activeOverride;
   // body.block is always live here (isLiveBlockId-gated above) — its un-overridden follow-up is
   // always the escalation tree's one shared root.yes/root.no, never AppConfig (legacy-only now).
   const content = override ? override[body.answer] : (await getQuestionRoot(env))[body.answer];

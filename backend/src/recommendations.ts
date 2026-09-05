@@ -59,6 +59,11 @@ function pathsEqual(a: EscalationPath, b: EscalationPath): boolean {
 export function detectStreaks(state: UserState, thresholds: TriggerConfig, root: QuestionRoot): RecommendationNudge[] {
   const newRecs: RecommendationNudge[] = [];
 
+  // One shared tree position for the whole account now (accepting a swap invite moves every block at
+  // once) — computed once, not per block.
+  const currentPath = state.activeOverride?.path ?? [];
+  const children = currentPath.length === 0 ? root.children : (resolveNode(root, currentPath)?.children ?? root.children);
+
   for (const block of LIVE_BLOCKS) {
     const entries = state.answers.filter((a) => a.block === block && a.category).sort((a, b) => a.date.localeCompare(b.date));
     if (entries.length === 0) continue;
@@ -120,8 +125,6 @@ export function detectStreaks(state: UserState, thresholds: TriggerConfig, root:
       continue;
     }
 
-    const currentPath = state.activeOverrides[block]?.path ?? [];
-    const children = currentPath.length === 0 ? root.children : (resolveNode(root, currentPath)?.children ?? root.children);
     const child = step.category === null ? (step.valence === "amplify" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
     if (!child) continue; // nothing authored at this slot — no swap invite offered, no error
 
@@ -130,18 +133,20 @@ export function detectStreaks(state: UserState, thresholds: TriggerConfig, root:
     // Dedup compares the FULL path, not just the trailing {valence, category} — two structurally
     // distinct nodes at different depths can share the same trailing step (e.g. a depth-1 node and
     // some depth-3 descendant that also happens to end in the same category/valence).
-    const alreadyPending = state.pendingNudges.some((n) => n.kind === "recommendation" && n.block === block && pathsEqual(n.path, candidatePath));
-    const alreadyActive = Boolean(
-      state.activeOverrides[block] && pathsEqual(state.activeOverrides[block]!.path, candidatePath),
-    );
-    if (alreadyPending || alreadyActive) continue;
+    const alreadyPending = state.pendingNudges.some((n) => n.kind === "recommendation" && pathsEqual(n.path, candidatePath));
+    const alreadyActive = Boolean(state.activeOverride && pathsEqual(state.activeOverride.path, candidatePath));
+    // Every block now shares the same tree position, so two DIFFERENT blocks can independently cross
+    // threshold in this same call and propose the identical candidatePath — check against newRecs
+    // pushed so far this pass too, or the same accept-target gets proposed twice in one response.
+    const alreadyProposedThisPass = newRecs.some((r) => pathsEqual(r.path, candidatePath));
+    if (alreadyPending || alreadyActive || alreadyProposedThisPass) continue;
 
     newRecs.push({
       id: crypto.randomUUID(),
       kind: "recommendation",
       block,
       path: candidatePath,
-      node: { question: child.question, yes: child.yes, no: child.no },
+      node: { inviteQuestion: child.inviteQuestion, blockQuestions: child.blockQuestions, yes: child.yes, no: child.no },
       category: runCategory,
       valence,
       asOfDate: lastEntry.date,
@@ -158,17 +163,21 @@ export function acceptRecommendation(state: UserState, recommendationId: string)
   const rec = state.pendingNudges[idx] as RecommendationNudge;
   state.pendingNudges.splice(idx, 1);
 
-  state.activeOverrides[rec.block] = {
+  state.activeOverride = {
     path: rec.path,
-    question: rec.node.question,
+    blockQuestions: rec.node.blockQuestions,
     yes: rec.node.yes,
     no: rec.node.no,
     category: rec.category,
     acceptedAt: new Date().toISOString(),
   };
-  // A stale decline marker for this block no longer means anything once a
-  // (possibly different) invitation has actually been accepted.
-  delete state.declinedStreaks[rec.block];
+  // The account's tree position just moved for every block — any other still-pending recommendation
+  // was computed against the position that just changed, so it's stale. detectStreaks naturally
+  // re-proposes a fresh one against the new active path if those patterns continue.
+  state.pendingNudges = state.pendingNudges.filter((n) => n.kind !== "recommendation");
+  // Same reason: a decline's meaning is tied to the tree position it was declined at, which just
+  // moved for the whole account, not just the one block that produced this accepted invitation.
+  state.declinedStreaks = {};
   return true;
 }
 
@@ -190,18 +199,18 @@ export function declineRecommendation(state: UserState, recommendationId: string
  * A's accepted state too. Same flat-reset behavior this always had; the tree just gives it a real (if
  * rare) way to lose more state than a single-level override ever could. */
 export function checkRetirement(state: UserState, todayStr: string, thresholds: TriggerConfig): void {
-  for (const block of LIVE_BLOCKS) {
-    const override = state.activeOverrides[block];
-    if (!override) continue;
-    const acceptedDate = override.acceptedAt.slice(0, 10);
-    if (daysBetween(acceptedDate, todayStr) < thresholds.retireAfterDays) continue;
+  const override = state.activeOverride;
+  if (!override) return;
+  const acceptedDate = override.acceptedAt.slice(0, 10);
+  if (daysBetween(acceptedDate, todayStr) < thresholds.retireAfterDays) return;
 
-    const heldWithNoSetback = !state.answers.some(
-      (a) => a.block === block && a.date >= acceptedDate && a.answer === "no",
-    );
-    if (heldWithNoSetback) {
-      state.retiredOverrides.push(override);
-      delete state.activeOverrides[block];
-    }
+  // Held across the whole account now — a "no" on ANY of the four blocks means the swapped-in
+  // question isn't landing, since all four ask their own variant of the same active node.
+  const heldWithNoSetback = !state.answers.some(
+    (a) => (LIVE_BLOCKS as string[]).includes(a.block) && a.date >= acceptedDate && a.answer === "no",
+  );
+  if (heldWithNoSetback) {
+    state.retiredOverrides.push(override);
+    state.activeOverride = undefined;
   }
 }

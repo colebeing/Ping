@@ -86,13 +86,17 @@ export interface EscalationStep {
 export type EscalationPath = EscalationStep[];
 
 /** One node in the escalation tree — the routine question a swap invite produces once accepted (or,
- * recursively, a swap invite ONE of ITS OWN follow-up answers produces). A complete, block-agnostic
- * question (no when/how composition, and no per-block variants — unlike the root, it never needs one:
- * only the single block whose streak produced it is ever overridden with it), its own yes/no
- * follow-up, and its own set of further swap invites. An absent slot in `children` means "not yet
- * authored" — never falls back to some default, see EscalationChildren. */
+ * recursively, a swap invite ONE of ITS OWN follow-up answers produces). Its own yes/no follow-up, and
+ * its own set of further swap invites. An absent slot in `children` means "not yet authored" — never
+ * falls back to some default, see EscalationChildren. */
 export interface EscalationNode {
-  question: string;
+  /** The one-time "would you like to switch?" confirmation shown when the swap invite fires. */
+  inviteQuestion: string;
+  /** Ongoing daily phrasing once accepted — same shape as QuestionRoot.blockQuestions: accepting
+   * changes the routine question on ALL FOUR blocks at once (one shared "current position" for the
+   * whole account, not a per-block override), so this node needs its own 4 timed phrasings just like
+   * the root does. */
+  blockQuestions: Record<LiveBlockId, string>;
   yes: FollowupPrompt;
   no: FollowupPrompt;
   children: EscalationChildren;
@@ -121,14 +125,17 @@ export interface QuestionRoot {
   children: EscalationChildren;
 }
 
+/** The account's single active swap-in question, if any — applies across all four live blocks at once
+ * (accepting a swap invite changes the whole daily routine, not just the one block whose streak
+ * produced it). */
 export interface QuestionOverride {
   /** How to re-find this override's originating node from the root — [] is impossible for a real
    * override (accepting one always takes at least one step), kept as EscalationPath's own type rather
    * than a non-empty variant since a defensive resolveNode(root, []) reading "root" is harmless. */
   path: EscalationPath;
-  /** The complete text for the one block this override applies to — denormalized from the node at
-   * `path` (snapshotted at accept time) so every existing simple read of it stays a plain field. */
-  question: string;
+  /** Denormalized from the node at `path` (snapshotted at accept time) — same shape as
+   * QuestionRoot.blockQuestions, since this override applies to every block, not just one. */
+  blockQuestions: Record<LiveBlockId, string>;
   yes: FollowupPrompt;
   no: FollowupPrompt;
   /** Denormalized from path's last step — null when it came from a generalYes/generalNo slot. */
@@ -147,13 +154,14 @@ interface NudgeBase {
  * of nudge among several now, not a separate system — see UserState.pendingNudges. */
 export interface RecommendationNudge extends NudgeBase {
   kind: "recommendation";
-  /** Always a live block — detectStreaks only ever scans LIVE_BLOCKS (see recommendations.ts). */
+  /** The block whose own answer history produced this streak — display/logging only now that
+   * accepting affects every block at once; detectStreaks only ever scans LIVE_BLOCKS. */
   block: LiveBlockId;
-  /** The full path this proposes moving to (one step deeper than the block's current active path) —
-   * accepting sets activeOverrides[block].path to exactly this. */
+  /** The full path this proposes moving to (one step deeper than the account's current active path) —
+   * accepting sets activeOverride.path to exactly this. */
   path: EscalationPath;
   /** The proposed node's own content — no tree/config lookup needed to accept. */
-  node: { question: string; yes: FollowupPrompt; no: FollowupPrompt };
+  node: { inviteQuestion: string; blockQuestions: Record<LiveBlockId, string>; yes: FollowupPrompt; no: FollowupPrompt };
   /** Denormalized from path's last step — display/logging convenience only, never used for dedup
    * (two different nodes can share a trailing step; only a full-path compare tells them apart). */
   category: Category | null;
@@ -250,7 +258,8 @@ export interface UserState {
   answers: AnswerRecord[];
   /** Append-only — never read by app logic, purely a trail for analytics. */
   answerEdits: AnswerEditRecord[];
-  activeOverrides: Partial<Record<BlockId, QuestionOverride>>;
+  /** The account's single active swap-in question, if any — see QuestionOverride's own doc comment. */
+  activeOverride?: QuestionOverride;
   retiredOverrides: QuestionOverride[];
   /** Every kind of earned in-flow prompt — swap invitations, notification/save-account asks, and
    * whatever's added later — one queue, one dismiss endpoint. See types.ts's Nudge union. */
