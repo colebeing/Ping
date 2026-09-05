@@ -31,6 +31,14 @@ body {
   padding: calc(20px + env(safe-area-inset-top, 0px)) 16px calc(90px + env(safe-area-inset-bottom, 0px));
 }
 
+/* Admin's question map/tree can run wide with real content on a real screen — widen just this view on
+   larger viewports, gated by min-width so phone widths (where this class does nothing) stay untouched. */
+@media (min-width: 860px) {
+  body.admin-view #app {
+    max-width: 1080px;
+  }
+}
+
 h1,
 h2,
 h3 {
@@ -663,4 +671,81 @@ body.no-tabs #app {
   flex-shrink: 0;
   margin: 0;
   font-size: 13px;
+}
+
+/* Admin's read-only question map — every authored node at a glance, with a filled/empty indicator per
+   child slot. Own horizontal scroller so the page body never scrolls sideways on a narrow viewport. */
+.map-scroll {
+  overflow-x: auto;
+}
+
+.map-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.map-table th,
+.map-table td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--surface-2);
+  white-space: nowrap;
+}
+
+.map-table thead th {
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.map-table thead tr:first-child th {
+  text-align: center;
+  border-bottom: 1px solid var(--surface-2);
+}
+
+.map-question {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-dim);
+}
+
+.map-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.map-slot {
+  text-align: center;
+}
+
+.map-slot-btn {
+  background: none;
+  border: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.map-slot-btn.filled {
+  background: var(--surface-2);
+  color: var(--good);
+}
+
+.map-slot-btn.empty {
+  color: var(--text-dim);
+  opacity: 0.5;
 }

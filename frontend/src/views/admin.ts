@@ -58,6 +58,40 @@ function stepLabel(step: EscalationStep): string {
   return CATEGORY_LABEL[step.category];
 }
 
+/** The 10 possible child slots off any node, in the same fixed order the map's columns and the tree
+ * editor's two branch groups both use. */
+const SLOTS: EscalationStep[] = [
+  ...CATEGORY_ORDER.map((category) => ({ valence: "amplify" as const, category })),
+  { valence: "amplify" as const, category: null },
+  ...CATEGORY_ORDER.map((category) => ({ valence: "resolve" as const, category })),
+  { valence: "resolve" as const, category: null },
+];
+
+interface MapRow {
+  path: EscalationPath;
+  label: string;
+  questionPreview: string;
+}
+
+/** Depth-first walk collecting every AUTHORED node (root always included, since it always exists) —
+ * an unauthored slot never gets a row of its own, only a gap indicator on its parent's row. */
+function collectRows(root: QuestionRoot): MapRow[] {
+  const rootPreview = `${root.blockQuestions.q1} (+3 more)`;
+  const rows: MapRow[] = [{ path: [], label: "Routine question", questionPreview: rootPreview }];
+
+  const walk = (children: EscalationChildren, path: EscalationPath) => {
+    for (const step of SLOTS) {
+      const child = childAt(children, step);
+      if (!child) continue;
+      const childPath = [...path, step];
+      rows.push({ path: childPath, label: childPath.map(stepLabel).join(" → "), questionPreview: child.question });
+      walk(child.children, childPath);
+    }
+  };
+  walk(root.children, []);
+  return rows;
+}
+
 export async function renderAdmin(root: HTMLElement): Promise<void> {
   root.innerHTML = `<h2>Admin</h2><div class="card">Loading…</div>`;
   try {
@@ -73,19 +107,33 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
     intro.textContent = "Edits apply immediately on save — no redeploy needed. This is the canonical place to edit question content.";
     root.appendChild(intro);
 
+    const mapCard = document.createElement("div");
+    root.appendChild(mapCard);
+
     const treeCard = document.createElement("div");
     root.appendChild(treeCard);
 
     let currentPath: EscalationPath = [];
+    // Re-renders both cards — the map's own rows/gaps change the moment a new node is created via the
+    // tree editor's "add a swap invite" affordance, so it needs to stay in sync with every navigation,
+    // not just the tree editor itself.
     const navigate = (path: EscalationPath) => {
       currentPath = path;
-      renderTree();
+      renderBoth();
     };
-    const renderTree = () => {
+    // The map sits above the tree editor — jumping from a map row/cell should bring the editor it just
+    // navigated into view, unlike navigating from inside the (already-visible) editor itself.
+    const navigateFromMap = (path: EscalationPath) => {
+      navigate(path);
+      treeCard.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    const renderBoth = () => {
+      mapCard.innerHTML = "";
+      mapCard.appendChild(renderQuestionMap(config.questionRoot, navigateFromMap));
       treeCard.innerHTML = "";
       treeCard.appendChild(renderNodeEditor(config.questionRoot, currentPath, navigate));
     };
-    renderTree();
+    renderBoth();
 
     root.appendChild(renderTriggersSection(config));
 
@@ -116,11 +164,95 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
 }
 
 /**
+ * A read-only overview of every question actually authored so far: one row per node (root included),
+ * its own breadcrumb path and question preview, and a filled (✓) / empty (–) indicator for each of its
+ * 10 possible child slots — the same fixed slot order the tree editor's two branch groups use. Purely
+ * informational for now (per decision: no inline creation here yet, that may come later) — every
+ * button just navigates the tree editor below to that path, reusing its existing create-on-demand
+ * "Not yet configured" affordance rather than duplicating it.
+ */
+function renderQuestionMap(root: QuestionRoot, navigate: (path: EscalationPath) => void): HTMLElement {
+  const card = document.createElement("div");
+  card.className = "card";
+
+  const h = document.createElement("h3");
+  h.textContent = "Question map";
+  card.appendChild(h);
+
+  const note = document.createElement("p");
+  note.className = "muted";
+  note.textContent =
+    "Every question authored so far, and which of its own swap invites are filled in versus still open. Click a row's path to open it, or a slot directly to jump straight to that gap.";
+  card.appendChild(note);
+
+  const scroller = document.createElement("div");
+  scroller.className = "map-scroll";
+  const table = document.createElement("table");
+  table.className = "map-table";
+
+  const thead = document.createElement("thead");
+  const groupRow = document.createElement("tr");
+  groupRow.innerHTML = `<th rowspan="2">Path</th><th rowspan="2">Question</th><th colspan="5">Yes-path</th><th colspan="5">No-path</th>`;
+  const labelRow = document.createElement("tr");
+  const slotLabels = [...CATEGORY_ORDER.map((c) => CATEGORY_LABEL[c]), "Mixed"];
+  labelRow.innerHTML = [...slotLabels, ...slotLabels].map((label) => `<th>${label}</th>`).join("");
+  thead.append(groupRow, labelRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  for (const row of collectRows(root)) {
+    const tr = document.createElement("tr");
+
+    const pathCell = document.createElement("td");
+    const pathBtn = document.createElement("button");
+    pathBtn.type = "button";
+    pathBtn.className = "map-link";
+    pathBtn.textContent = row.label;
+    pathBtn.addEventListener("click", () => navigate(row.path));
+    pathCell.appendChild(pathBtn);
+    tr.appendChild(pathCell);
+
+    const qCell = document.createElement("td");
+    qCell.className = "map-question";
+    qCell.textContent = row.questionPreview || "(no question text yet)";
+    tr.appendChild(qCell);
+
+    const children = row.path.length === 0 ? root.children : resolveNode(root, row.path)!.children;
+    for (const slot of SLOTS) {
+      const cell = document.createElement("td");
+      cell.className = "map-slot";
+      const existing = childAt(children, slot);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "map-slot-btn" + (existing ? " filled" : " empty");
+      btn.textContent = existing ? "✓" : "–";
+      btn.title = existing ? existing.question : "Not yet configured";
+      btn.addEventListener("click", () => {
+        // Mirrors renderLeaf's own "add a swap invite" affordance — an empty slot has nothing to
+        // navigate to yet, so create the blank node first, same as clicking it from inside the tree
+        // editor itself would.
+        if (!existing) setChildAt(children, slot, emptyNode());
+        navigate([...row.path, slot]);
+      });
+      cell.appendChild(btn);
+      tr.appendChild(cell);
+    }
+
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  scroller.appendChild(table);
+  card.appendChild(scroller);
+
+  return card;
+}
+
+/**
  * Every node in the escalation tree — root included — gets the identical editor shape: its own
  * question field(s), its own shared yes/no follow-up, and two branch groups of 5 leaves each
  * (Friends/Colleagues/Family/Me/Mixed, once for the Yes-path and once for the No-path). Only the
  * question field itself varies: 4 per-block texts at the root, 1 block-agnostic text everywhere
- * deeper. `navigate` re-renders this same card at a different path — see renderAdmin's `renderTree`.
+ * deeper. `navigate` re-renders this same card at a different path — see renderAdmin's `renderBoth`.
  */
 function renderNodeEditor(root: QuestionRoot, path: EscalationPath, navigate: (path: EscalationPath) => void): HTMLElement {
   const card = document.createElement("div");

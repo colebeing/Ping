@@ -108,6 +108,10 @@ function showApp(isAdmin: boolean): void {
   goToBlock = (_block) => goHome();
 
   const renderActive = () => {
+    // Admin's question map/tree can run wide with real content — widen the shared #app container for
+    // it specifically (gated by a min-width media query, so phone widths are untouched) rather than
+    // loosening the mobile-first layout everywhere.
+    document.body.classList.toggle("admin-view", active === "admin");
     if (active === "home") void renderHome(content, goSettings);
     else if (active === "admin") void renderAdmin(content);
     else if (active === "analytics") void renderAnalytics(content);
