@@ -53,8 +53,10 @@ export interface BlockContent {
   no: FollowupPrompt;
 }
 
+/** Frozen legacy blocks only — "1"/"2"/"combined" content, never edited again, kept purely so History
+ * reads old answered days correctly. Live q1-q4 content lives in QuestionRoot instead. */
 export interface AppConfig {
-  blocks: Record<BlockId, BlockContent>;
+  blocks: Record<"1" | "2" | "combined", BlockContent>;
 }
 
 /** One entry per admin config save — global (not per-user), capped to the most recent 50. */
@@ -74,30 +76,62 @@ export interface TriggerConfig {
   retireAfterDays: number;
 }
 
-/** A full invitation to swap a block's question — as fleshed out as the starter question, with its
- * own yes/no follow-ups. One complete text per canonical block, since an invitation can fire on
- * whichever block the streak happened on — no when/how composition, same as BlockContent.question. */
-export interface Invitation {
-  texts: Record<LiveBlockId, string>;
-  yes: FollowupPrompt;
-  no: FollowupPrompt;
+/** One step down the escalation tree: which valence-branch and which category (null = the general,
+ * mixed-category slot) was taken. A full EscalationPath is how a node is found from the root. */
+export interface EscalationStep {
+  valence: "amplify" | "resolve";
+  category: Category | null;
 }
+/** [] means the root routine question itself — not any EscalationNode. */
+export type EscalationPath = EscalationStep[];
 
-/** Up to 10 invitations admins can configure: one per category per valence (4 x 2 = 8),
- * plus one for a yes-streak and one for a no-streak that don't share a common category. */
-export interface RecommendationCopy {
-  amplify: Record<Category, Invitation>;
-  resolve: Record<Category, Invitation>;
-  generalYes: Invitation;
-  generalNo: Invitation;
-}
-
-export interface QuestionOverride {
-  /** The complete text for the one block this override applies to, snapshotted at accept time. */
+/** One node in the escalation tree — the routine question a swap invite produces once accepted (or,
+ * recursively, a swap invite ONE of ITS OWN follow-up answers produces). A complete, block-agnostic
+ * question (no when/how composition, and no per-block variants — unlike the root, it never needs one:
+ * only the single block whose streak produced it is ever overridden with it), its own yes/no
+ * follow-up, and its own set of further swap invites. An absent slot in `children` means "not yet
+ * authored" — never falls back to some default, see EscalationChildren. */
+export interface EscalationNode {
   question: string;
   yes: FollowupPrompt;
   no: FollowupPrompt;
-  /** null when this came from a generalYes/generalNo invitation (no single category drove it). */
+  children: EscalationChildren;
+}
+
+/** Up to 10 possible next swap invites from a node (root or any deeper EscalationNode): one per
+ * category per valence (4 x 2 = 8), plus a general yes-streak and general no-streak slot for when a
+ * streak holds across mixed categories with no single one driving it. Every slot starts absent —
+ * admins author only as deep as they choose to; an absent slot means no swap invite is ever proposed
+ * there, not a default one. */
+export interface EscalationChildren {
+  amplify: Partial<Record<Category, EscalationNode>>;
+  resolve: Partial<Record<Category, EscalationNode>>;
+  generalYes?: EscalationNode;
+  generalNo?: EscalationNode;
+}
+
+/** The whole live question tree: the root routine question (Type 1: 4 per-block formulations; Type 2:
+ * one shared follow-up — every block's yes/no was already identical, mirrored on every Admin save, so
+ * this just stops storing 4 redundant copies of it) plus however deep admins have actually built
+ * escalation (Type 3/4, recursively, via `children`). Replaces RecommendationCopy entirely. */
+export interface QuestionRoot {
+  blockQuestions: Record<LiveBlockId, string>;
+  yes: FollowupPrompt;
+  no: FollowupPrompt;
+  children: EscalationChildren;
+}
+
+export interface QuestionOverride {
+  /** How to re-find this override's originating node from the root — [] is impossible for a real
+   * override (accepting one always takes at least one step), kept as EscalationPath's own type rather
+   * than a non-empty variant since a defensive resolveNode(root, []) reading "root" is harmless. */
+  path: EscalationPath;
+  /** The complete text for the one block this override applies to — denormalized from the node at
+   * `path` (snapshotted at accept time) so every existing simple read of it stays a plain field. */
+  question: string;
+  yes: FollowupPrompt;
+  no: FollowupPrompt;
+  /** Denormalized from path's last step — null when it came from a generalYes/generalNo slot. */
   category: Category | null;
   acceptedAt: string; // ISO date
 }
@@ -115,10 +149,15 @@ export interface RecommendationNudge extends NudgeBase {
   kind: "recommendation";
   /** Always a live block — detectStreaks only ever scans LIVE_BLOCKS (see recommendations.ts). */
   block: LiveBlockId;
-  /** null when this is a generalYes/generalNo invitation (streak held across mixed categories). */
+  /** The full path this proposes moving to (one step deeper than the block's current active path) —
+   * accepting sets activeOverrides[block].path to exactly this. */
+  path: EscalationPath;
+  /** The proposed node's own content — no tree/config lookup needed to accept. */
+  node: { question: string; yes: FollowupPrompt; no: FollowupPrompt };
+  /** Denormalized from path's last step — display/logging convenience only, never used for dedup
+   * (two different nodes can share a trailing step; only a full-path compare tells them apart). */
   category: Category | null;
   valence: "amplify" | "resolve";
-  invitation: Invitation;
   /** Date of the most recent answer counted into the streak that produced this — the floor a fresh streak must clear after a decline, see DeclinedStreak. */
   asOfDate: string;
 }

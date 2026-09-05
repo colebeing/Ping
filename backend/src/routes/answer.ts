@@ -1,7 +1,7 @@
 import { CATEGORIES, isLiveBlockId, type Answer, type AnswerRecord, type BlockId, type Category, type Env, type Nudge, type UserRecord, type UserState } from "../types";
 import { errorResponse, json, readJson } from "../http";
 import { getState, saveState, resolveDate, hasPushEnabled } from "../state";
-import { getConfig, getTriggerConfig, getRecommendationCopy } from "../config";
+import { getQuestionRoot, getTriggerConfig } from "../config";
 import { decrementFollowupEvent, recordFollowupEvent } from "../escalation";
 import { detectStreaks } from "../recommendations";
 import { getUser } from "../auth";
@@ -64,7 +64,9 @@ export async function handleAnswer(request: Request, env: Env, userId: string): 
   await saveState(env, userId, state);
 
   const override = state.activeOverrides[body.block];
-  const content = override ? override[body.answer] : (await getConfig(env)).blocks[body.block][body.answer];
+  // body.block is always live here (isLiveBlockId-gated above) — its un-overridden follow-up is
+  // always the escalation tree's one shared root.yes/root.no, never AppConfig (legacy-only now).
+  const content = override ? override[body.answer] : (await getQuestionRoot(env))[body.answer];
   return json({ block: body.block, date, answer: body.answer, followup: { prompt: content.prompt, options: content.options } });
 }
 
@@ -100,10 +102,10 @@ export async function handleFollowup(request: Request, env: Env, userId: string)
   // this can't be derived from answers.filter(a => a.category).length instead.
   state.totalFollowupsAnswered++;
 
-  const [thresholds, copy, user] = await Promise.all([getTriggerConfig(env), getRecommendationCopy(env), getUser(env, userId)]);
+  const [thresholds, root, user] = await Promise.all([getTriggerConfig(env), getQuestionRoot(env), getUser(env, userId)]);
   const { triggers, primary } = recordFollowupEvent(state, record.block, record.answer, body.category, thresholds);
 
-  const newRecs = detectStreaks(state, thresholds, copy);
+  const newRecs = detectStreaks(state, thresholds, root);
   state.pendingNudges.push(...newRecs);
   runCheckpointTriggers(state, user);
 

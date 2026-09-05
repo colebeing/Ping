@@ -8,8 +8,8 @@ export async function handleGetAdminConfig(_request: Request, env: Env): Promise
 
 export async function handleSaveAdminConfig(request: Request, env: Env, userId: string): Promise<Response> {
   const body = await readJson<Partial<FullAdminConfig>>(request);
-  if (!body.blocks || !body.triggers || !body.recommendationCopy) {
-    return errorResponse("Request must include blocks, triggers, and recommendationCopy", 400);
+  if (!body.blocks || !body.triggers || !body.questionRoot) {
+    return errorResponse("Request must include blocks, triggers, and questionRoot", 400);
   }
   await saveFullAdminConfig(env, body as FullAdminConfig, userId);
   return json({ ok: true });

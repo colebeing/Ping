@@ -1,4 +1,16 @@
-import type { AppConfig, BlockContent, ConfigAuditEntry, Env, FollowupPrompt, Invitation, LiveBlockId, RecommendationCopy, TriggerConfig } from "./types";
+import {
+  LIVE_BLOCKS,
+  type AppConfig,
+  type BlockContent,
+  type ConfigAuditEntry,
+  type Env,
+  type EscalationChildren,
+  type EscalationNode,
+  type FollowupPrompt,
+  type LiveBlockId,
+  type QuestionRoot,
+  type TriggerConfig,
+} from "./types";
 
 // This is the fallback used only if CONFIG_KV is empty. The Admin UI is the canonical, sole place to
 // edit live content — see scripts/generate-config-seed.ts for regenerating scripts/config-seed.json
@@ -15,17 +27,13 @@ const SHARED_FOLLOWUPS: Pick<BlockContent, "yes" | "no"> = {
   no: prompt("Who had to move?", CATEGORY_OPTIONS),
 };
 
+/** Frozen legacy blocks only — never edited again, kept purely so History reads old answered days
+ * correctly. Live q1-q4 content lives entirely in DEFAULT_QUESTION_ROOT/QuestionRoot instead. */
 export const DEFAULT_CONFIG: AppConfig = {
   blocks: {
-    // Frozen legacy blocks — never edited again, kept only so History reads old answered days correctly.
     "1": { question: "Did today start how you wanted?", ...SHARED_FOLLOWUPS },
     "2": { question: "Did today end how you wanted?", ...SHARED_FOLLOWUPS },
     combined: { question: "Did today go how you wanted?", ...SHARED_FOLLOWUPS },
-    // The four live blocks — each a complete, independently-editable question, no when/how composition.
-    q1: { question: "Did today start how you wanted?", ...SHARED_FOLLOWUPS },
-    q2: { question: "Did this morning go how you wanted?", ...SHARED_FOLLOWUPS },
-    q3: { question: "Did this afternoon go how you wanted?", ...SHARED_FOLLOWUPS },
-    q4: { question: "Did today end how you wanted?", ...SHARED_FOLLOWUPS },
   },
 };
 
@@ -34,21 +42,6 @@ export async function getConfig(env: Env): Promise<AppConfig> {
   if (!stored) return DEFAULT_CONFIG;
   // Backfill for config saved before the "combined" block existed.
   if (!stored.blocks.combined) stored.blocks.combined = DEFAULT_CONFIG.blocks.combined;
-  // Backfill for config saved before the four-times-daily blocks existed — effectively dead for any
-  // environment that's had an Admin save since q1-q4 shipped (they're always populated after that).
-  // Copies "1"'s current WHY (admin.ts's own mirror source has since moved to "q1") rather than the
-  // hardcoded default, so an account with customized WHY content doesn't see the generic default
-  // until its next Admin save. The question itself falls back to the default wholesale — there's no
-  // "1"'s-question-with-just-the-when-swapped to salvage once question is a single opaque string.
-  for (const block of ["q1", "q2", "q3", "q4"] as const) {
-    if (!stored.blocks[block]) {
-      stored.blocks[block] = {
-        yes: JSON.parse(JSON.stringify(stored.blocks["1"].yes)),
-        no: JSON.parse(JSON.stringify(stored.blocks["1"].no)),
-        question: DEFAULT_CONFIG.blocks[block].question,
-      };
-    }
-  }
   // Old when/how template shape -> one complete question string per block. Mechanically lossless:
   // reproduces exactly the text a user was already seeing, whatever its grammatical quality.
   for (const block of Object.keys(stored.blocks) as (keyof AppConfig["blocks"])[]) {
@@ -62,8 +55,8 @@ export async function getConfig(env: Env): Promise<AppConfig> {
 }
 
 // Kept in separate KV keys from "config" (question content) so a fresh question-content seed (e.g.
-// npm run seed, scripts/generate-config-seed.ts) can never clobber admin-edited triggers/recommendation
-// copy, and vice versa.
+// npm run seed, scripts/generate-config-seed.ts) can never clobber admin-edited triggers/question-tree
+// content, and vice versa.
 export const DEFAULT_TRIGGERS: TriggerConfig = {
   exactPathThreshold: 3,
   categoryVolumeThreshold: 6,
@@ -71,108 +64,137 @@ export const DEFAULT_TRIGGERS: TriggerConfig = {
   retireAfterDays: 7,
 };
 
-// One complete question per canonical block per invitation — no when/how composition. Each family of
-// 4 reads standalone regardless of which block the streak that triggered it happened on.
-function invitation(texts: Record<LiveBlockId, string>): Invitation {
-  return { texts, ...SHARED_FOLLOWUPS };
+// One complete, block-agnostic question per swap invite — no when/how composition, no per-block
+// variants (only the one block whose streak produced it is ever overridden with it). Phrased as an
+// explicit "Would you like to...?" confirmation, deliberately distinct in voice from the routine
+// question's "Did...?" framing, so it reads as an invitation to change rather than another check-in.
+function leaf(question: string): EscalationNode {
+  return { question, ...SHARED_FOLLOWUPS, children: { amplify: {}, resolve: {} } };
 }
 
-export const DEFAULT_RECOMMENDATION_COPY: RecommendationCopy = {
+const DEFAULT_ESCALATION_CHILDREN: EscalationChildren = {
   amplify: {
-    friends: invitation({
-      q1: "Did today start with protecting friend time?",
-      q2: "Did this morning go by protecting friend time?",
-      q3: "Did this afternoon go by protecting friend time?",
-      q4: "Did today end with protecting friend time?",
-    }),
-    colleagues: invitation({
-      q1: "Did today start with leaning on your colleagues?",
-      q2: "Did this morning go by leaning on your colleagues?",
-      q3: "Did this afternoon go by leaning on your colleagues?",
-      q4: "Did today end with leaning on your colleagues?",
-    }),
-    family: invitation({
-      q1: "Did today start with protecting family time?",
-      q2: "Did this morning go by protecting family time?",
-      q3: "Did this afternoon go by protecting family time?",
-      q4: "Did today end with protecting family time?",
-    }),
-    me: invitation({
-      q1: "Did today start with protecting time for yourself?",
-      q2: "Did this morning go by protecting time for yourself?",
-      q3: "Did this afternoon go by protecting time for yourself?",
-      q4: "Did today end with protecting time for yourself?",
-    }),
+    friends: leaf("Would you like to focus on protecting friend time?"),
+    colleagues: leaf("Would you like to focus on leaning on your colleagues?"),
+    family: leaf("Would you like to focus on protecting family time?"),
+    me: leaf("Would you like to focus on protecting time for yourself?"),
   },
   resolve: {
-    friends: invitation({
-      q1: "Did today start with making space for friends?",
-      q2: "Did this morning go by making space for friends?",
-      q3: "Did this afternoon go by making space for friends?",
-      q4: "Did today end with making space for friends?",
-    }),
-    colleagues: invitation({
-      q1: "Did today start ahead of what colleagues needed?",
-      q2: "Did this morning go ahead of what colleagues needed?",
-      q3: "Did this afternoon go ahead of what colleagues needed?",
-      q4: "Did today end ahead of what colleagues needed?",
-    }),
-    family: invitation({
-      q1: "Did today start with making space for family?",
-      q2: "Did this morning go by making space for family?",
-      q3: "Did this afternoon go by making space for family?",
-      q4: "Did today end with making space for family?",
-    }),
-    me: invitation({
-      q1: "Did today start with protecting your own time?",
-      q2: "Did this morning go by protecting your own time?",
-      q3: "Did this afternoon go by protecting your own time?",
-      q4: "Did today end with protecting your own time?",
-    }),
+    friends: leaf("Would you like to focus on making space for friends?"),
+    colleagues: leaf("Would you like to focus on getting ahead of what colleagues need?"),
+    family: leaf("Would you like to focus on making space for family?"),
+    me: leaf("Would you like to focus on protecting your own time?"),
   },
-  generalYes: invitation({
-    q1: "Did today start with more of what's working?",
-    q2: "Did this morning go by keeping doing what's working?",
-    q3: "Did this afternoon go by keeping doing what's working?",
-    q4: "Did today end with more of what's working?",
-  }),
-  generalNo: invitation({
-    q1: "Did today start ahead of what's pulling at you?",
-    q2: "Did this morning go ahead of what's pulling at you?",
-    q3: "Did this afternoon go ahead of what's pulling at you?",
-    q4: "Did today end ahead of what's pulling at you?",
-  }),
+  generalYes: leaf("Would you like to keep doing what's working?"),
+  generalNo: leaf("Would you like to get ahead of what's pulling at you?"),
 };
 
-export async function getTriggerConfig(env: Env): Promise<TriggerConfig> {
-  const stored = await env.CONFIG_KV.get("config:triggers", "json");
-  return (stored as TriggerConfig | null) ?? DEFAULT_TRIGGERS;
+export const DEFAULT_QUESTION_ROOT: QuestionRoot = {
+  blockQuestions: {
+    q1: "Did today start how you wanted?",
+    q2: "Did this morning go how you wanted?",
+    q3: "Did this afternoon go how you wanted?",
+    q4: "Did today end how you wanted?",
+  },
+  ...SHARED_FOLLOWUPS,
+  children: DEFAULT_ESCALATION_CHILDREN,
+};
+
+/** Best-effort extraction of a single flat question string from whatever's sitting in the old flat
+ * invitation shape (`{texts: Record<LiveBlockId,string>, ...}`, from the immediately-prior refactor) —
+ * picks `.texts.q1` as an arbitrary-but-consistent choice across 4 near-duplicate texts. Any other/
+ * older/incompatible shape just yields null, left unauthored — a perfectly normal state in this model,
+ * not an error, so there's no need to chase every historical shape here. */
+function extractLegacyInvitationText(raw: unknown): string | null {
+  if (raw && typeof raw === "object" && "texts" in raw) {
+    const texts = (raw as { texts?: unknown }).texts;
+    if (texts && typeof texts === "object" && "q1" in texts) {
+      const q1 = (texts as Record<string, unknown>).q1;
+      if (typeof q1 === "string") return q1;
+    }
+  }
+  return null;
 }
 
-export async function getRecommendationCopy(env: Env): Promise<RecommendationCopy> {
-  const stored = await env.CONFIG_KV.get<RecommendationCopy>("config:recommendation-copy", "json");
-  if (!stored) return DEFAULT_RECOMMENDATION_COPY;
-  // Recommendation copy has gone through two incompatible old shapes now — a plain string per
-  // category/valence (just the HOW slot, oldest), then a {how,yes,no} object (one HOW fragment,
-  // composed against whichever block's WHEN was live). Neither can be salvaged piecemeal into the
-  // current {texts,yes,no} shape (four independent complete questions), so any admin-customized
-  // copy in an old shape resets to the new defaults — same "fall back whole" precedent this function
-  // has always used, just one more shape it now also catches.
-  if (typeof stored.amplify?.friends === "string" || !stored.generalYes || !stored.generalNo || !("texts" in stored.amplify.friends)) {
-    return DEFAULT_RECOMMENDATION_COPY;
+/** Best-effort migration of the old flat 10-invitation shape (`config:recommendation-copy`) into
+ * depth-1 EscalationChildren — each becomes a leaf with no children of its own (nothing was ever
+ * authored deeper than depth 1 before this tree existed). Any slot that can't be salvaged is simply
+ * left unauthored rather than guessed at. */
+function migrateEscalationChildren(rawCopy: Record<string, unknown> | null): EscalationChildren {
+  const children: EscalationChildren = { amplify: {}, resolve: {} };
+  if (!rawCopy) return children;
+  const amplify = rawCopy.amplify as Record<string, unknown> | undefined;
+  const resolve = rawCopy.resolve as Record<string, unknown> | undefined;
+  for (const cat of ["friends", "colleagues", "family", "me"] as const) {
+    const aText = amplify && extractLegacyInvitationText(amplify[cat]);
+    if (aText) children.amplify[cat] = leaf(aText);
+    const rText = resolve && extractLegacyInvitationText(resolve[cat]);
+    if (rText) children.resolve[cat] = leaf(rText);
   }
-  return stored;
+  const generalYesText = extractLegacyInvitationText(rawCopy.generalYes);
+  if (generalYesText) children.generalYes = leaf(generalYesText);
+  const generalNoText = extractLegacyInvitationText(rawCopy.generalNo);
+  if (generalNoText) children.generalNo = leaf(generalNoText);
+  return children;
+}
+
+/**
+ * The whole live question tree. No write-on-read: if `config:question-root` is empty, this computes
+ * and RETURNS a seeded value without persisting it — a concurrent Admin save landing between a read
+ * and a would-be write here could otherwise get silently clobbered by stale seeded data written after
+ * it (getConfig/this function's predecessor never wrote on read either). The seed only actually
+ * persists the first time an admin saves, which round-trips the whole computed tree back through the
+ * normal save path regardless of whether anyone ever merely viewed the Admin page first.
+ */
+export async function getQuestionRoot(env: Env): Promise<QuestionRoot> {
+  const stored = await env.CONFIG_KV.get<QuestionRoot>("config:question-root", "json");
+  if (stored) return stored;
+
+  // Nothing saved under the new key yet — seed from whatever's sitting in the older "config"/
+  // "config:recommendation-copy" keys, if anything. Read the RAW blob: AppConfig's type no longer
+  // declares q1-q4, but existing KV bytes from before this migration may still carry them.
+  const rawConfig = await env.CONFIG_KV.get<{ blocks?: Record<string, { question?: unknown; yes?: FollowupPrompt; no?: FollowupPrompt }> }>(
+    "config",
+    "json",
+  );
+  const rawQ1 = rawConfig?.blocks?.q1;
+  if (!rawQ1) return DEFAULT_QUESTION_ROOT;
+
+  const blockQuestions = {} as Record<LiveBlockId, string>;
+  for (const block of LIVE_BLOCKS) {
+    const raw = rawConfig?.blocks?.[block];
+    const q = raw?.question;
+    if (typeof q === "string") blockQuestions[block] = q;
+    else if (q && typeof q === "object") {
+      const old = q as unknown as { when: string; how: string };
+      blockQuestions[block] = `Did ${old.when} ${old.how}?`;
+    } else blockQuestions[block] = DEFAULT_QUESTION_ROOT.blockQuestions[block];
+  }
+
+  const rawCopy = await env.CONFIG_KV.get<Record<string, unknown>>("config:recommendation-copy", "json");
+
+  return {
+    blockQuestions,
+    yes: rawQ1.yes ?? DEFAULT_QUESTION_ROOT.yes,
+    no: rawQ1.no ?? DEFAULT_QUESTION_ROOT.no,
+    children: migrateEscalationChildren(rawCopy),
+  };
 }
 
 export interface FullAdminConfig {
   blocks: AppConfig["blocks"];
   triggers: TriggerConfig;
-  recommendationCopy: RecommendationCopy;
+  questionRoot: QuestionRoot;
 }
 
 export async function getFullAdminConfig(env: Env): Promise<FullAdminConfig> {
-  const [config, triggers, recommendationCopy] = await Promise.all([getConfig(env), getTriggerConfig(env), getRecommendationCopy(env)]);
-  return { blocks: config.blocks, triggers, recommendationCopy };
+  const [config, triggers, questionRoot] = await Promise.all([getConfig(env), getTriggerConfig(env), getQuestionRoot(env)]);
+  return { blocks: config.blocks, triggers, questionRoot };
+}
+
+export async function getTriggerConfig(env: Env): Promise<TriggerConfig> {
+  const stored = await env.CONFIG_KV.get("config:triggers", "json");
+  return (stored as TriggerConfig | null) ?? DEFAULT_TRIGGERS;
 }
 
 const CONFIG_AUDIT_LOG_LIMIT = 50;
@@ -185,7 +207,7 @@ export async function saveFullAdminConfig(env: Env, full: FullAdminConfig, edite
   await Promise.all([
     env.CONFIG_KV.put("config", JSON.stringify({ blocks: full.blocks })),
     env.CONFIG_KV.put("config:triggers", JSON.stringify(full.triggers)),
-    env.CONFIG_KV.put("config:recommendation-copy", JSON.stringify(full.recommendationCopy)),
+    env.CONFIG_KV.put("config:question-root", JSON.stringify(full.questionRoot)),
     env.CONFIG_KV.put("config:audit-log", JSON.stringify(log)),
   ]);
 }

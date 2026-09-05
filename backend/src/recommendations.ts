@@ -1,4 +1,15 @@
-import { LIVE_BLOCKS, type Category, type Invitation, type RecommendationNudge, type RecommendationCopy, type TriggerConfig, type UserState } from "./types";
+import {
+  LIVE_BLOCKS,
+  type Category,
+  type EscalationChildren,
+  type EscalationNode,
+  type EscalationPath,
+  type EscalationStep,
+  type QuestionRoot,
+  type RecommendationNudge,
+  type TriggerConfig,
+  type UserState,
+} from "./types";
 
 function daysBetween(a: string, b: string): number {
   const msPerDay = 24 * 60 * 60 * 1000;
@@ -7,6 +18,27 @@ function daysBetween(a: string, b: string): number {
 
 function isPrevCalendarDay(earlier: string, later: string): boolean {
   return daysBetween(earlier, later) === 1;
+}
+
+/** Walks the escalation tree from the root along `path`, step by step. `[]` means "the root" — callers
+ * that need root's own children just use `root.children` directly instead of calling this with `[]`.
+ * Returns null if any step along the way is missing — shouldn't happen for a real stored override
+ * (every step it was built from once existed), but a defensive null beats a throw. */
+function resolveNode(root: QuestionRoot, path: EscalationPath): EscalationNode | null {
+  let node: EscalationNode | null = null;
+  let children: EscalationChildren = root.children;
+  for (const step of path) {
+    const next = step.category === null ? (step.valence === "amplify" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
+    if (!next) return null;
+    node = next;
+    children = next.children;
+  }
+  return node;
+}
+
+function pathsEqual(a: EscalationPath, b: EscalationPath): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((step, i) => step.valence === b[i].valence && step.category === b[i].category);
 }
 
 /**
@@ -18,8 +50,13 @@ function isPrevCalendarDay(earlier: string, later: string): boolean {
  * per-category invitation (8 of the 10 slots). If the valence-only run holds
  * but the category varies day to day, it's a "no underlying pattern" streak
  * — the general yes/no invitation (the remaining 2 slots).
+ *
+ * The invitation itself is resolved against the block's CURRENT node in the escalation tree (root, or
+ * wherever an already-accepted override has advanced to) — if that node has no child authored at this
+ * (valence, category) slot, nothing is proposed at all. Escalation only ever goes as deep as an admin
+ * has actually built it; there's no fallback to some default set.
  */
-export function detectStreaks(state: UserState, thresholds: TriggerConfig, copy: RecommendationCopy): RecommendationNudge[] {
+export function detectStreaks(state: UserState, thresholds: TriggerConfig, root: QuestionRoot): RecommendationNudge[] {
   const newRecs: RecommendationNudge[] = [];
 
   for (const block of LIVE_BLOCKS) {
@@ -73,29 +110,40 @@ export function detectStreaks(state: UserState, thresholds: TriggerConfig, copy:
     }
 
     let runCategory: Category | null = null;
-    let invitation: Invitation;
+    let step: EscalationStep;
     if (categoryRunLen >= thresholds.streakThreshold) {
       runCategory = lastCategory;
-      invitation = copy[valence][lastCategory];
+      step = { valence, category: lastCategory };
     } else if (valenceRunLen >= thresholds.streakThreshold) {
-      invitation = valence === "amplify" ? copy.generalYes : copy.generalNo;
+      step = { valence, category: null };
     } else {
       continue;
     }
 
-    const alreadyPending = state.pendingNudges.some(
-      (n) => n.kind === "recommendation" && n.block === block && n.category === runCategory && n.valence === valence,
+    const currentPath = state.activeOverrides[block]?.path ?? [];
+    const children = currentPath.length === 0 ? root.children : (resolveNode(root, currentPath)?.children ?? root.children);
+    const child = step.category === null ? (step.valence === "amplify" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
+    if (!child) continue; // nothing authored at this slot — no swap invite offered, no error
+
+    const candidatePath = [...currentPath, step];
+
+    // Dedup compares the FULL path, not just the trailing {valence, category} — two structurally
+    // distinct nodes at different depths can share the same trailing step (e.g. a depth-1 node and
+    // some depth-3 descendant that also happens to end in the same category/valence).
+    const alreadyPending = state.pendingNudges.some((n) => n.kind === "recommendation" && n.block === block && pathsEqual(n.path, candidatePath));
+    const alreadyActive = Boolean(
+      state.activeOverrides[block] && pathsEqual(state.activeOverrides[block]!.path, candidatePath),
     );
-    const alreadyActive = state.activeOverrides[block]?.category === runCategory;
     if (alreadyPending || alreadyActive) continue;
 
     newRecs.push({
       id: crypto.randomUUID(),
       kind: "recommendation",
       block,
+      path: candidatePath,
+      node: { question: child.question, yes: child.yes, no: child.no },
       category: runCategory,
       valence,
-      invitation,
       asOfDate: lastEntry.date,
       createdAt: new Date().toISOString(),
     });
@@ -111,9 +159,10 @@ export function acceptRecommendation(state: UserState, recommendationId: string)
   state.pendingNudges.splice(idx, 1);
 
   state.activeOverrides[rec.block] = {
-    question: rec.invitation.texts[rec.block],
-    yes: rec.invitation.yes,
-    no: rec.invitation.no,
+    path: rec.path,
+    question: rec.node.question,
+    yes: rec.node.yes,
+    no: rec.node.no,
     category: rec.category,
     acceptedAt: new Date().toISOString(),
   };
@@ -134,7 +183,12 @@ export function declineRecommendation(state: UserState, recommendationId: string
   return true;
 }
 
-/** Lazily retires a promoted question once its boundary has held for thresholds.retireAfterDays with no "no" answer since acceptance. */
+/** Lazily retires a promoted question once its boundary has held for thresholds.retireAfterDays with
+ * no "no" answer since acceptance — reverts fully to the root question, not "one level back": a
+ * QuestionOverride only ever carries its own current path, not a stack of previously-accepted parent
+ * nodes, so a user who advanced root -> A -> B has retiring B jump straight back to root, discarding
+ * A's accepted state too. Same flat-reset behavior this always had; the tree just gives it a real (if
+ * rare) way to lose more state than a single-level override ever could. */
 export function checkRetirement(state: UserState, todayStr: string, thresholds: TriggerConfig): void {
   for (const block of LIVE_BLOCKS) {
     const override = state.activeOverrides[block];

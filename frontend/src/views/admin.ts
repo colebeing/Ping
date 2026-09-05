@@ -1,5 +1,62 @@
-import { api, LIVE_BLOCKS, type AdminConfig, type Category, type FollowupPrompt, type Invitation } from "../api";
-import { BLOCK_LABEL, CATEGORY_LABEL } from "../blockCard";
+import {
+  api,
+  type AdminConfig,
+  type Category,
+  type EscalationChildren,
+  type EscalationNode,
+  type EscalationPath,
+  type EscalationStep,
+  type FollowupPrompt,
+  type QuestionRoot,
+} from "../api";
+import { CATEGORY_LABEL } from "../blockCard";
+
+const CATEGORY_ORDER: Category[] = ["friends", "colleagues", "family", "me"];
+const ROOT_BLOCK_FIELDS = [
+  ["Morning", "q1"],
+  ["Midday", "q2"],
+  ["Afternoon", "q3"],
+  ["Evening", "q4"],
+] as const;
+
+function emptyFollowup(): FollowupPrompt {
+  return { prompt: "", options: { friends: "", colleagues: "", family: "", me: "" } };
+}
+
+function emptyNode(): EscalationNode {
+  return { question: "", yes: emptyFollowup(), no: emptyFollowup(), children: { amplify: {}, resolve: {} } };
+}
+
+function childAt(children: EscalationChildren, step: EscalationStep): EscalationNode | undefined {
+  return step.category === null ? (step.valence === "amplify" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
+}
+
+function setChildAt(children: EscalationChildren, step: EscalationStep, node: EscalationNode): void {
+  if (step.category === null) {
+    if (step.valence === "amplify") children.generalYes = node;
+    else children.generalNo = node;
+  } else {
+    children[step.valence][step.category] = node;
+  }
+}
+
+/** Walks the tree from the root along `path` — mirrors backend/src/recommendations.ts's resolveNode. */
+function resolveNode(root: QuestionRoot, path: EscalationPath): EscalationNode | null {
+  let node: EscalationNode | null = null;
+  let children: EscalationChildren = root.children;
+  for (const step of path) {
+    const next = childAt(children, step);
+    if (!next) return null;
+    node = next;
+    children = next.children;
+  }
+  return node;
+}
+
+function stepLabel(step: EscalationStep): string {
+  if (step.category === null) return step.valence === "amplify" ? "Mixed (yes-streak)" : "Mixed (no-streak)";
+  return CATEGORY_LABEL[step.category];
+}
 
 export async function renderAdmin(root: HTMLElement): Promise<void> {
   root.innerHTML = `<h2>Admin</h2><div class="card">Loading…</div>`;
@@ -16,9 +73,21 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
     intro.textContent = "Edits apply immediately on save — no redeploy needed. This is the canonical place to edit question content.";
     root.appendChild(intro);
 
-    root.appendChild(renderQuestionSection(config));
+    const treeCard = document.createElement("div");
+    root.appendChild(treeCard);
+
+    let currentPath: EscalationPath = [];
+    const navigate = (path: EscalationPath) => {
+      currentPath = path;
+      renderTree();
+    };
+    const renderTree = () => {
+      treeCard.innerHTML = "";
+      treeCard.appendChild(renderNodeEditor(config.questionRoot, currentPath, navigate));
+    };
+    renderTree();
+
     root.appendChild(renderTriggersSection(config));
-    root.appendChild(renderRecommendationCopySection(config));
 
     const status = document.createElement("p");
     status.className = "muted";
@@ -30,19 +99,6 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
       saveBtn.textContent = "Saving…";
       saveBtn.setAttribute("disabled", "true");
       try {
-        // WHY (yes/no) still mirrors from q1 into q2-q4 on save — "1"/"2"/"combined" are frozen
-        // legacy blocks (from the old cadence modes) and are deliberately left untouched, not
-        // mirrored into. The question itself is NOT mirrored — each of q1-q4 is now a fully
-        // independent, complete question, already directly edited in place above.
-        const OTHER_BLOCKS = ["q2", "q3", "q4"] as const;
-        for (const block of OTHER_BLOCKS) {
-          config.blocks[block] = {
-            question: config.blocks[block].question,
-            yes: JSON.parse(JSON.stringify(config.blocks.q1.yes)),
-            no: JSON.parse(JSON.stringify(config.blocks.q1.no)),
-          };
-        }
-
         await api.saveAdminConfig(config);
         status.textContent = "Saved.";
       } catch (err) {
@@ -59,38 +115,153 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
   }
 }
 
-function renderQuestionSection(config: AdminConfig): HTMLElement {
+/**
+ * Every node in the escalation tree — root included — gets the identical editor shape: its own
+ * question field(s), its own shared yes/no follow-up, and two branch groups of 5 leaves each
+ * (Friends/Colleagues/Family/Me/Mixed, once for the Yes-path and once for the No-path). Only the
+ * question field itself varies: 4 per-block texts at the root, 1 block-agnostic text everywhere
+ * deeper. `navigate` re-renders this same card at a different path — see renderAdmin's `renderTree`.
+ */
+function renderNodeEditor(root: QuestionRoot, path: EscalationPath, navigate: (path: EscalationPath) => void): HTMLElement {
   const card = document.createElement("div");
   card.className = "card";
 
+  const crumbs = document.createElement("div");
+  crumbs.className = "breadcrumbs";
+  crumbs.appendChild(breadcrumb("Routine question", path.length === 0, () => navigate([])));
+  for (let i = 0; i < path.length; i++) {
+    const sep = document.createElement("span");
+    sep.className = "breadcrumb-sep";
+    sep.textContent = "/";
+    crumbs.appendChild(sep);
+    const target = path.slice(0, i + 1);
+    crumbs.appendChild(breadcrumb(stepLabel(path[i]), i === path.length - 1, () => navigate(target)));
+  }
+  card.appendChild(crumbs);
+
+  const node = path.length === 0 ? null : resolveNode(root, path);
+  if (path.length > 0 && !node) {
+    const err = document.createElement("p");
+    err.className = "error";
+    err.textContent = "This node couldn't be found — it may have been removed elsewhere.";
+    card.appendChild(err);
+    return card;
+  }
+
   const h = document.createElement("h3");
-  h.textContent = "Question";
+  h.textContent = path.length === 0 ? "Routine question" : `Swap invite: ${stepLabel(path[path.length - 1])}`;
   card.appendChild(h);
 
   const note = document.createElement("p");
   note.className = "muted";
   note.textContent =
-    "Each block's question is its own complete, independent sentence — write it exactly as it should read, since a user who's skipped the other three might see only this one on a given day. They share the WHY follow-up below.";
+    path.length === 0
+      ? "Each block's question is its own complete, independent sentence — write it exactly as it should read, since a user who's skipped the other three might see only this one on a given day."
+      : "One complete, block-agnostic question — this swap invite can fire on whichever block the streak happened on, so it doesn't reference a time of day.";
   card.appendChild(note);
 
-  const questionField = (label: string, block: "q1" | "q2" | "q3" | "q4") => {
-    card.appendChild(fieldLabel(label));
-    card.appendChild(textInput(config.blocks[block].question, (v) => (config.blocks[block].question = v)));
-  };
-
-  questionField("Morning question", "q1");
-  questionField("Midday question", "q2");
-  questionField("Afternoon question", "q3");
-  questionField("Evening question", "q4");
-
-  // q1's WHY is the shared source of truth, mirrored to q2-q4 on save.
-  const content = config.blocks.q1;
-
-  for (const answer of ["yes", "no"] as const) {
-    card.appendChild(renderFollowupEditor(content[answer], answer === "yes" ? "Yes → WHY" : "No → WHY"));
+  if (path.length === 0) {
+    for (const [label, block] of ROOT_BLOCK_FIELDS) {
+      card.appendChild(fieldLabel(`${label} question`));
+      card.appendChild(textInput(root.blockQuestions[block], (v) => (root.blockQuestions[block] = v)));
+    }
+  } else {
+    card.appendChild(fieldLabel("Question"));
+    card.appendChild(textInput(node!.question, (v) => (node!.question = v)));
   }
 
+  const followupNote = document.createElement("p");
+  followupNote.className = "muted";
+  followupNote.style.marginTop = "16px";
+  followupNote.textContent = "Follow-up, asked right after answering:";
+  card.appendChild(followupNote);
+
+  const yes = path.length === 0 ? root.yes : node!.yes;
+  const no = path.length === 0 ? root.no : node!.no;
+  card.appendChild(renderFollowupEditor(yes, "Yes → WHY"));
+  card.appendChild(renderFollowupEditor(no, "No → WHY"));
+
+  const children = path.length === 0 ? root.children : node!.children;
+  card.appendChild(renderBranchGroup("Yes-path swap invites", "amplify", children, path, navigate));
+  card.appendChild(renderBranchGroup("No-path swap invites", "resolve", children, path, navigate));
+
   return card;
+}
+
+function breadcrumb(label: string, isCurrent: boolean, onClick: () => void): HTMLElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "breadcrumb" + (isCurrent ? " current" : "");
+  btn.textContent = label;
+  if (!isCurrent) btn.addEventListener("click", onClick);
+  return btn;
+}
+
+function renderBranchGroup(
+  title: string,
+  valence: "amplify" | "resolve",
+  children: EscalationChildren,
+  path: EscalationPath,
+  navigate: (path: EscalationPath) => void,
+): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.style.marginTop = "16px";
+
+  const label = document.createElement("p");
+  label.className = "muted";
+  label.style.fontWeight = "600";
+  label.textContent = title;
+  wrap.appendChild(label);
+
+  for (const cat of CATEGORY_ORDER) {
+    wrap.appendChild(renderLeaf(CATEGORY_LABEL[cat], { valence, category: cat }, children, path, navigate));
+  }
+  wrap.appendChild(renderLeaf("Mixed", { valence, category: null }, children, path, navigate));
+
+  return wrap;
+}
+
+function renderLeaf(
+  label: string,
+  step: EscalationStep,
+  children: EscalationChildren,
+  path: EscalationPath,
+  navigate: (path: EscalationPath) => void,
+): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "leaf-row";
+
+  const labelEl = document.createElement("span");
+  labelEl.className = "leaf-label";
+  labelEl.textContent = label;
+  row.appendChild(labelEl);
+
+  const existing = childAt(children, step);
+  if (existing) {
+    const preview = document.createElement("p");
+    preview.className = "leaf-preview muted";
+    preview.textContent = existing.question || "(no question text yet)";
+    row.appendChild(preview);
+
+    const openBtn = document.createElement("button");
+    openBtn.type = "button";
+    openBtn.className = "link-btn";
+    openBtn.textContent = "Open →";
+    openBtn.addEventListener("click", () => navigate([...path, step]));
+    row.appendChild(openBtn);
+  } else {
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "link-btn";
+    addBtn.textContent = "Not yet configured — add a swap invite";
+    addBtn.addEventListener("click", () => {
+      setChildAt(children, step, emptyNode());
+      navigate([...path, step]);
+    });
+    row.appendChild(addBtn);
+  }
+
+  return row;
 }
 
 function renderFollowupEditor(prompt: FollowupPrompt, title: string): HTMLElement {
@@ -104,7 +275,8 @@ function renderFollowupEditor(prompt: FollowupPrompt, title: string): HTMLElemen
   return accordion(title, body);
 }
 
-/** A collapsed-by-default toggle around `body` — nesting one accordion's body inside another (invitation > follow-up) is what makes these "layered". */
+/** A collapsed-by-default toggle around `body` — nesting one accordion's body inside another (a
+ * follow-up nested inside the node editor) is what makes these "layered". */
 function accordion(title: string, body: HTMLElement): HTMLElement {
   const wrap = document.createElement("div");
   wrap.className = "accordion";
@@ -144,58 +316,6 @@ function renderTriggersSection(config: AdminConfig): HTMLElement {
   card.appendChild(numberField("Retire an accepted suggestion after (days)", config.triggers.retireAfterDays, (v) => (config.triggers.retireAfterDays = v)));
 
   return card;
-}
-
-function renderRecommendationCopySection(config: AdminConfig): HTMLElement {
-  const card = document.createElement("div");
-  card.className = "card";
-  const h = document.createElement("h3");
-  h.textContent = "Invitations to swap";
-  card.appendChild(h);
-
-  const p = document.createElement("p");
-  p.className = "muted";
-  p.textContent =
-    "After a trigger fires, the user is invited to swap their question for one of these. Each invitation is four complete questions — one per block, since it can fire on whichever block the streak happened on — plus its own yes/no follow-ups. Up to 10 can fire: one per category for a yes-streak, one per category for a no-streak, and one each for a yes- or no-streak that isn't tied to any single category.";
-  card.appendChild(p);
-
-  for (const valence of ["amplify", "resolve"] as const) {
-    const label = document.createElement("p");
-    label.className = "muted";
-    label.style.marginTop = "16px";
-    label.style.fontWeight = "600";
-    label.textContent = valence === "amplify" ? "Amplify — per-category yes-streaks" : "Resolve — per-category no-streaks";
-    card.appendChild(label);
-    for (const cat of Object.keys(config.recommendationCopy[valence]) as Category[]) {
-      card.appendChild(renderInvitationEditor(config.recommendationCopy[valence][cat], CATEGORY_LABEL[cat]));
-    }
-  }
-
-  const generalLabel = document.createElement("p");
-  generalLabel.className = "muted";
-  generalLabel.style.marginTop = "16px";
-  generalLabel.style.fontWeight = "600";
-  generalLabel.textContent = "General — streak with no single category behind it";
-  card.appendChild(generalLabel);
-  card.appendChild(renderInvitationEditor(config.recommendationCopy.generalYes, "Yes-streak, mixed categories"));
-  card.appendChild(renderInvitationEditor(config.recommendationCopy.generalNo, "No-streak, mixed categories"));
-
-  return card;
-}
-
-function renderInvitationEditor(invitation: Invitation, title: string): HTMLElement {
-  const body = document.createElement("div");
-
-  for (const block of LIVE_BLOCKS) {
-    body.appendChild(fieldLabel(`${BLOCK_LABEL[block]} question`));
-    body.appendChild(textInput(invitation.texts[block], (v) => (invitation.texts[block] = v)));
-  }
-
-  for (const answer of ["yes", "no"] as const) {
-    body.appendChild(renderFollowupEditor(invitation[answer], answer === "yes" ? "Yes → WHY" : "No → WHY"));
-  }
-
-  return accordion(title, body);
 }
 
 function fieldLabel(text: string): HTMLElement {

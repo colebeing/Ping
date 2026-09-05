@@ -1,0 +1,282 @@
+{
+  "blockQuestions": {
+    "q1": "Did today start how you wanted?",
+    "q2": "Did this morning go how you wanted?",
+    "q3": "Did this afternoon go how you wanted?",
+    "q4": "Did today end how you wanted?"
+  },
+  "yes": {
+    "prompt": "Who made it work?",
+    "options": {
+      "friends": "Friends",
+      "colleagues": "Colleagues",
+      "family": "Family",
+      "me": "Me"
+    }
+  },
+  "no": {
+    "prompt": "Who had to move?",
+    "options": {
+      "friends": "Friends",
+      "colleagues": "Colleagues",
+      "family": "Family",
+      "me": "Me"
+    }
+  },
+  "children": {
+    "amplify": {
+      "friends": {
+        "question": "Would you like to focus on protecting friend time?",
+        "yes": {
+          "prompt": "Who made it work?",
+          "options": {
+            "friends": "Friends",
+            "colleagues": "Colleagues",
+            "family": "Family",
+            "me": "Me"
+          }
+        },
+        "no": {
+          "prompt": "Who had to move?",
+          "options": {
+            "friends": "Friends",
+            "colleagues": "Colleagues",
+            "family": "Family",
+            "me": "Me"
+          }
+        },
+        "children": {
+          "amplify": {},
+          "resolve": {}
+        }
+      },
+      "colleagues": {
+        "question": "Would you like to focus on leaning on your colleagues?",
+        "yes": {
+          "prompt": "Who made it work?",
+          "options": {
+            "friends": "Friends",
+            "colleagues": "Colleagues",
+            "family": "Family",
+            "me": "Me"
+          }
+        },
+        "no": {
+          "prompt": "Who had to move?",
+          "options": {
+            "friends": "Friends",
+            "colleagues": "Colleagues",
+            "family": "Family",
+            "me": "Me"
+          }
+        },
+        "children": {
+          "amplify": {},
+          "resolve": {}
+        }
+      },
+      "family": {
+        "question": "Would you like to focus on protecting family time?",
+        "yes": {
+          "prompt": "Who made it work?",
+          "options": {
+            "friends": "Friends",
+            "colleagues": "Colleagues",
+            "family": "Family",
+            "me": "Me"
+          }
+        },
+        "no": {
+          "prompt": "Who had to move?",
+          "options": {
+            "friends": "Friends",
+            "colleagues": "Colleagues",
+            "family": "Family",
+            "me": "Me"
+          }
+        },
+        "children": {
+          "amplify": {},
+          "resolve": {}
+        }
+      },
+      "me": {
+        "question": "Would you like to focus on protecting time for yourself?",
+        "yes": {
+          "prompt": "Who made it work?",
+          "options": {
+            "friends": "Friends",
+            "colleagues": "Colleagues",
+            "family": "Family",
+            "me": "Me"
+          }
+        },
+        "no": {
+          "prompt": "Who had to move?",
+          "options": {
+            "friends": "Friends",
+            "colleagues": "Colleagues",
+            "family": "Family",
+            "me": "Me"
+          }
+        },
+        "children": {
+          "amplify": {},
+          "resolve": {}
+        }
+      }
+    },
+    "resolve": {
+      "friends": {
+        "question": "Would you like to focus on making space for friends?",
+        "yes": {
+          "prompt": "Who made it work?",
+          "options": {
+            "friends": "Friends",
+            "colleagues": "Colleagues",
+            "family": "Family",
+            "me": "Me"
+          }
+        },
+        "no": {
+          "prompt": "Who had to move?",
+          "options": {
+            "friends": "Friends",
+            "colleagues": "Colleagues",
+            "family": "Family",
+            "me": "Me"
+          }
+        },
+        "children": {
+          "amplify": {},
+          "resolve": {}
+        }
+      },
+      "colleagues": {
+        "question": "Would you like to focus on getting ahead of what colleagues need?",
+        "yes": {
+          "prompt": "Who made it work?",
+          "options": {
+            "friends": "Friends",
+            "colleagues": "Colleagues",
+            "family": "Family",
+            "me": "Me"
+          }
+        },
+        "no": {
+          "prompt": "Who had to move?",
+          "options": {
+            "friends": "Friends",
+            "colleagues": "Colleagues",
+            "family": "Family",
+            "me": "Me"
+          }
+        },
+        "children": {
+          "amplify": {},
+          "resolve": {}
+        }
+      },
+      "family": {
+        "question": "Would you like to focus on making space for family?",
+        "yes": {
+          "prompt": "Who made it work?",
+          "options": {
+            "friends": "Friends",
+            "colleagues": "Colleagues",
+            "family": "Family",
+            "me": "Me"
+          }
+        },
+        "no": {
+          "prompt": "Who had to move?",
+          "options": {
+            "friends": "Friends",
+            "colleagues": "Colleagues",
+            "family": "Family",
+            "me": "Me"
+          }
+        },
+        "children": {
+          "amplify": {},
+          "resolve": {}
+        }
+      },
+      "me": {
+        "question": "Would you like to focus on protecting your own time?",
+        "yes": {
+          "prompt": "Who made it work?",
+          "options": {
+            "friends": "Friends",
+            "colleagues": "Colleagues",
+            "family": "Family",
+            "me": "Me"
+          }
+        },
+        "no": {
+          "prompt": "Who had to move?",
+          "options": {
+            "friends": "Friends",
+            "colleagues": "Colleagues",
+            "family": "Family",
+            "me": "Me"
+          }
+        },
+        "children": {
+          "amplify": {},
+          "resolve": {}
+        }
+      }
+    },
+    "generalYes": {
+      "question": "Would you like to keep doing what's working?",
+      "yes": {
+        "prompt": "Who made it work?",
+        "options": {
+          "friends": "Friends",
+          "colleagues": "Colleagues",
+          "family": "Family",
+          "me": "Me"
+        }
+      },
+      "no": {
+        "prompt": "Who had to move?",
+        "options": {
+          "friends": "Friends",
+          "colleagues": "Colleagues",
+          "family": "Family",
+          "me": "Me"
+        }
+      },
+      "children": {
+        "amplify": {},
+        "resolve": {}
+      }
+    },
+    "generalNo": {
+      "question": "Would you like to get ahead of what's pulling at you?",
+      "yes": {
+        "prompt": "Who made it work?",
+        "options": {
+          "friends": "Friends",
+          "colleagues": "Colleagues",
+          "family": "Family",
+          "me": "Me"
+        }
+      },
+      "no": {
+        "prompt": "Who had to move?",
+        "options": {
+          "friends": "Friends",
+          "colleagues": "Colleagues",
+          "family": "Family",
+          "me": "Me"
+        }
+      },
+      "children": {
+        "amplify": {},
+        "resolve": {}
+      }
+    }
+  }
+}

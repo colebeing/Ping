@@ -1,13 +1,13 @@
-import { isBlockId, type Env } from "../types";
+import { isBlockId, isLiveBlockId, type FollowupPrompt, type Env } from "../types";
 import { errorResponse, json } from "../http";
 import { getState, saveState, todayLocal, resolveDate } from "../state";
-import { getConfig, getTriggerConfig } from "../config";
+import { getConfig, getQuestionRoot, getTriggerConfig } from "../config";
 import { checkRetirement } from "../recommendations";
 
 export async function handleGetQuestion(request: Request, env: Env, userId: string): Promise<Response> {
   const url = new URL(request.url);
   const block = url.searchParams.get("block");
-  if (!isBlockId(block)) return errorResponse("block must be 1, 2, or combined", 400);
+  if (!isBlockId(block)) return errorResponse("block must be a valid block id", 400);
 
   const state = await getState(env, userId);
   const today = todayLocal(state.cadence.timezone);
@@ -18,9 +18,24 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
   checkRetirement(state, today, await getTriggerConfig(env));
   if (JSON.stringify(state.activeOverrides) !== before) await saveState(env, userId, state);
 
-  const config = await getConfig(env);
   const override = state.activeOverrides[block];
-  const question = override?.question ?? config.blocks[block].question;
+  // Live blocks (q1-q4) source their base question/follow-up from the escalation tree; the 3 frozen
+  // legacy blocks ("1"/"2"/"combined") still read from AppConfig, exactly as before this tree existed.
+  let question: string;
+  let yes: FollowupPrompt;
+  let no: FollowupPrompt;
+  if (isLiveBlockId(block)) {
+    const root = await getQuestionRoot(env);
+    question = override?.question ?? root.blockQuestions[block];
+    yes = root.yes;
+    no = root.no;
+  } else {
+    const config = await getConfig(env);
+    question = override?.question ?? config.blocks[block].question;
+    yes = config.blocks[block].yes;
+    no = config.blocks[block].no;
+  }
+
   // For a day that isn't actually today (History looking back), "today" in the question text is
   // ambiguous — say "the day" instead to disambiguate. Global replace: with no when/how boundary to
   // anchor which "today" is meant, a complete question can plausibly contain the word more than once.
@@ -29,7 +44,7 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
   const existingAnswer = state.answers.find((a) => a.date === date && a.block === block);
   let followup: { prompt: string; optionLabel: string } | undefined;
   if (existingAnswer?.category) {
-    const content = override ? override[existingAnswer.answer] : config.blocks[block][existingAnswer.answer];
+    const content = override ? override[existingAnswer.answer] : existingAnswer.answer === "yes" ? yes : no;
     followup = { prompt: content.prompt, optionLabel: content.options[existingAnswer.category] };
   }
 

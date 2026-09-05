@@ -63,28 +63,51 @@ export interface TriggerConfig {
   retireAfterDays: number;
 }
 
-/** A full invitation to swap a block's question — as fleshed out as the starter question, with its
- * own yes/no follow-ups. One complete text per canonical block, since an invitation can fire on
- * whichever block the streak happened on. */
-export interface Invitation {
-  texts: Record<LiveBlockId, string>;
+/** One step down the escalation tree: which valence-branch and which category (null = the general,
+ * mixed-category slot) was taken. A full EscalationPath is how a node is found from the root. */
+export interface EscalationStep {
+  valence: "amplify" | "resolve";
+  category: Category | null;
+}
+/** [] means the root routine question itself — not any EscalationNode. */
+export type EscalationPath = EscalationStep[];
+
+/** One node in the escalation tree — the routine question a swap invite produces once accepted (or,
+ * recursively, a swap invite one of its OWN follow-up answers produces). Complete, block-agnostic
+ * question text, its own yes/no follow-up, and its own further swap invites. An absent slot in
+ * `children` means "not yet authored" — never falls back to some default. */
+export interface EscalationNode {
+  question: string;
   yes: FollowupPrompt;
   no: FollowupPrompt;
+  children: EscalationChildren;
 }
 
-/** 10 invitations total: one per category per valence (4 x 2), plus a general
- * yes-streak and general no-streak invitation for when no single category drove the streak. */
-export interface RecommendationCopy {
-  amplify: Record<Category, Invitation>;
-  resolve: Record<Category, Invitation>;
-  generalYes: Invitation;
-  generalNo: Invitation;
+/** Up to 10 possible next swap invites from a node (root or any deeper EscalationNode): one per
+ * category per valence (4 x 2 = 8), plus a general yes-streak and general no-streak slot. Every slot
+ * starts absent — admins author only as deep as they choose to. */
+export interface EscalationChildren {
+  amplify: Partial<Record<Category, EscalationNode>>;
+  resolve: Partial<Record<Category, EscalationNode>>;
+  generalYes?: EscalationNode;
+  generalNo?: EscalationNode;
 }
 
+/** The whole live question tree: the root routine question (4 per-block formulations, one shared
+ * follow-up) plus however deep admins have actually built escalation, recursively. */
+export interface QuestionRoot {
+  blockQuestions: Record<LiveBlockId, string>;
+  yes: FollowupPrompt;
+  no: FollowupPrompt;
+  children: EscalationChildren;
+}
+
+/** Frozen legacy blocks only — "1"/"2"/"combined" content, never edited again, kept purely so History
+ * reads old answered days correctly. Live q1-q4 content lives in QuestionRoot instead. */
 export interface AdminConfig {
-  blocks: Record<BlockId, BlockContent>;
+  blocks: Record<"1" | "2" | "combined", BlockContent>;
   triggers: TriggerConfig;
-  recommendationCopy: RecommendationCopy;
+  questionRoot: QuestionRoot;
 }
 
 interface NudgeBase {
@@ -92,13 +115,17 @@ interface NudgeBase {
   createdAt: string;
 }
 
-/** A live invitation to swap a block's HOW question, proposed after a streak — renders inline per-block. */
+/** A live invitation to swap a block's question, proposed after a streak — renders inline per-block. */
 export interface RecommendationNudge extends NudgeBase {
   kind: "recommendation";
   block: LiveBlockId;
+  /** The full path this proposes moving to. */
+  path: EscalationPath;
+  /** The proposed node's own content. */
+  node: { question: string; yes: FollowupPrompt; no: FollowupPrompt };
+  /** Denormalized from path's last step — display convenience only. */
   category: Category | null;
   valence: "amplify" | "resolve";
-  invitation: Invitation;
   asOfDate: string;
 }
 
