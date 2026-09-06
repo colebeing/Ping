@@ -19,6 +19,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_ANSWER = "com.colebeing.ping.ACTION_ANSWER"
         const val ACTION_FOLLOWUP = "com.colebeing.ping.ACTION_FOLLOWUP"
+        const val ACTION_RECOMMENDATION = "com.colebeing.ping.ACTION_RECOMMENDATION"
 
         // Keep in sync with frontend/public/sw.js's API_BASE.
         private const val API_BASE = "https://ping-backend.colebeing.workers.dev"
@@ -32,6 +33,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 when (intent.action) {
                     ACTION_ANSWER -> handleAnswer(appContext, intent)
                     ACTION_FOLLOWUP -> handleFollowup(appContext, intent)
+                    ACTION_RECOMMENDATION -> handleRecommendation(appContext, intent)
                 }
             } catch (err: Exception) {
                 // Best-effort — the notification just stays as-is; the user can still open the app.
@@ -65,10 +67,40 @@ class NotificationActionReceiver : BroadcastReceiver() {
         val answer = intent.getStringExtra("answer") ?: ""
 
         val body = JSONObject().put("block", block).put("category", category)
-        post(context, "/api/followup", body) ?: return
+        val response = post(context, "/api/followup", body) ?: return
 
-        val answerLabel = if (answer == "yes") "Yes" else "No"
-        showConfirmationNotification(context, answerLabel, categoryLabel)
+        // A streak just crossed threshold for THIS block — swap straight into the invite's own yes/no
+        // confirmation instead of the plain "Logged" state, so a native install never needs the app
+        // opened to resolve it (unlike Chrome push, where the user's already in the app for the
+        // follow-up anyway). At most one recommendation is ever proposed per block per call.
+        val recommendation = findRecommendationForBlock(response, block)
+        if (recommendation != null) {
+            val (id, inviteQuestion) = recommendation
+            showRecommendationNotification(context, id, inviteQuestion)
+        } else {
+            val answerLabel = if (answer == "yes") "Yes" else "No"
+            showConfirmationNotification(context, answerLabel, categoryLabel)
+        }
+    }
+
+    private fun findRecommendationForBlock(response: JSONObject, block: String): Pair<String, String>? {
+        val recs = response.optJSONArray("newRecommendations") ?: return null
+        for (i in 0 until recs.length()) {
+            val rec = recs.getJSONObject(i)
+            if (rec.optString("block") != block) continue
+            val id = rec.optString("id").takeIf { it.isNotEmpty() } ?: continue
+            val inviteQuestion = rec.optJSONObject("node")?.optString("inviteQuestion")?.takeIf { it.isNotEmpty() } ?: continue
+            return id to inviteQuestion
+        }
+        return null
+    }
+
+    private fun handleRecommendation(context: Context, intent: Intent) {
+        val recommendationId = intent.getStringExtra("recommendationId") ?: return
+        val accept = intent.getBooleanExtra("accept", false)
+        val path = "/api/recommendations/$recommendationId/${if (accept) "accept" else "decline"}"
+        post(context, path, JSONObject()) ?: return
+        showRecommendationConfirmationNotification(context, accept)
     }
 
     /** Returns the parsed JSON body on success (2xx), or null on any failure — callers just leave the notification as-is. */

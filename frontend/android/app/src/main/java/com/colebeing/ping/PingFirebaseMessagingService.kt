@@ -173,3 +173,54 @@ fun showConfirmationNotification(context: Context, answerLabel: String, category
     (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
         .notify(PingFirebaseMessagingService.NOTIFICATION_ID, notification)
 }
+
+/**
+ * Swaps the tapped notification for the swap invite's own yes/no confirmation, proposed the moment a
+ * streak crosses threshold in the user's own answer history — reuses the same compact Yes/No layout
+ * showQuestionNotification uses, just wired to accept/decline instead of answer, so a native install
+ * never has to open the app to resolve it.
+ */
+fun showRecommendationNotification(context: Context, recommendationId: String, inviteQuestion: String) {
+    ensureChannel(context)
+    val accept = actionIntent(context, NotificationActionReceiver.ACTION_RECOMMENDATION, mapOf("recommendationId" to recommendationId, "accept" to "true"))
+    val decline = actionIntent(context, NotificationActionReceiver.ACTION_RECOMMENDATION, mapOf("recommendationId" to recommendationId, "accept" to "false"))
+
+    fun buildButtonRow(): RemoteViews {
+        val view = RemoteViews(context.packageName, R.layout.notification_yesno_buttons)
+        view.setTextViewText(R.id.yesno_title, inviteQuestion)
+        view.setOnClickPendingIntent(R.id.yesno_btn_yes, accept)
+        view.setOnClickPendingIntent(R.id.yesno_btn_no, decline)
+        view.setTextColor(R.id.yesno_btn_yes, BUTTON_TEXT_COLOR)
+        view.setTextColor(R.id.yesno_btn_no, BUTTON_TEXT_COLOR)
+        return view
+    }
+
+    val notification = NotificationCompat.Builder(context, PingFirebaseMessagingService.CHANNEL_ID)
+        .setSmallIcon(android.R.drawable.ic_dialog_info)
+        .setContentTitle("Noticed a pattern")
+        .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+        .setCustomContentView(buildButtonRow())
+        .setCustomBigContentView(buildButtonRow())
+        .setPriority(NotificationCompat.PRIORITY_HIGH)
+        .setAutoCancel(false)
+        .setOnlyAlertOnce(true)
+        .build()
+
+    (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+        .notify(PingFirebaseMessagingService.NOTIFICATION_ID, notification)
+}
+
+/** Final state after accepting/declining the swap invite — no actions, auto-dismisses on its own. */
+fun showRecommendationConfirmationNotification(context: Context, accepted: Boolean) {
+    ensureChannel(context)
+    val notification = NotificationCompat.Builder(context, PingFirebaseMessagingService.CHANNEL_ID)
+        .setSmallIcon(android.R.drawable.ic_dialog_info)
+        .setContentTitle(if (accepted) "Switched your daily question" else "Kept your current question")
+        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        .setAutoCancel(true)
+        .setTimeoutAfter(8000)
+        .build()
+
+    (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+        .notify(PingFirebaseMessagingService.NOTIFICATION_ID, notification)
+}

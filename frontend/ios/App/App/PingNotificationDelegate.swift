@@ -36,16 +36,29 @@ public class PingNotificationDelegate: NSObject, UNUserNotificationCenterDelegat
         options: []
     )
 
+    /// Fixed 2 actions regardless of which node proposed it, unlike PING_FOLLOWUP_* below (whose
+    /// options vary per follow-up) — so this can be registered once, statically, just like
+    /// questionCategory rather than rebuilt per notification.
+    private let recommendationCategory = UNNotificationCategory(
+        identifier: "PING_RECOMMENDATION",
+        actions: [
+            UNNotificationAction(identifier: "ACCEPT_ACTION", title: "Yes, make this my question", options: []),
+            UNNotificationAction(identifier: "DECLINE_ACTION", title: "No, keep mine", options: []),
+        ],
+        intentIdentifiers: [],
+        options: []
+    )
+
     override private init() {
         super.init()
-        UNUserNotificationCenter.current().setNotificationCategories([questionCategory])
+        UNUserNotificationCenter.current().setNotificationCategories([questionCategory, recommendationCategory])
     }
 
     /// setNotificationCategories replaces the *entire* registered set, not merges — every dynamic
-    /// registration below must re-include questionCategory or subsequent question pushes silently
-    /// lose their Yes/No actions.
+    /// registration below must re-include questionCategory/recommendationCategory or subsequent
+    /// question/recommendation pushes silently lose their actions.
     private func registerCategories(alsoInclude dynamic: UNNotificationCategory) {
-        UNUserNotificationCenter.current().setNotificationCategories([questionCategory, dynamic])
+        UNUserNotificationCenter.current().setNotificationCategories([questionCategory, recommendationCategory, dynamic])
     }
 
     public func userNotificationCenter(_ center: UNUserNotificationCenter,
@@ -92,8 +105,33 @@ public class PingNotificationDelegate: NSObject, UNUserNotificationCenterDelegat
             }
             let answer = content.userInfo["answer"] as? String ?? ""
             let categoryLabel = (content.userInfo["categoryLabels"] as? [String: String])?[category] ?? category
-            post(path: "/api/followup", body: ["block": block, "category": category]) { [weak self] _ in
-                self?.scheduleConfirmation(identifier: identifier, answer: answer, categoryLabel: categoryLabel)
+            post(path: "/api/followup", body: ["block": block, "category": category]) { [weak self] json in
+                defer { completionHandler() }
+                guard let self else { return }
+                // A streak just crossed threshold for THIS block — swap straight into the invite's own
+                // yes/no confirmation instead of the plain "Logged" state, so a native install never
+                // needs the app opened to resolve it (unlike Chrome push, where the user's already in
+                // the app for the follow-up anyway). At most one recommendation is ever proposed per
+                // block per call.
+                if let recs = json?["newRecommendations"] as? [[String: Any]],
+                   let rec = recs.first(where: { ($0["block"] as? String) == block }),
+                   let recId = rec["id"] as? String,
+                   let inviteQuestion = (rec["node"] as? [String: Any])?["inviteQuestion"] as? String {
+                    self.scheduleRecommendation(identifier: identifier, id: recId, inviteQuestion: inviteQuestion)
+                } else {
+                    self.scheduleConfirmation(identifier: identifier, answer: answer, categoryLabel: categoryLabel)
+                }
+            }
+
+        case "PING_RECOMMENDATION":
+            guard response.actionIdentifier == "ACCEPT_ACTION" || response.actionIdentifier == "DECLINE_ACTION",
+                  let recommendationId = content.userInfo["recommendationId"] as? String else {
+                completionHandler()
+                return
+            }
+            let accept = response.actionIdentifier == "ACCEPT_ACTION"
+            post(path: "/api/recommendations/\(recommendationId)/\(accept ? "accept" : "decline")", body: [:]) { [weak self] _ in
+                self?.scheduleRecommendationConfirmation(identifier: identifier, accepted: accept)
                 completionHandler()
             }
 
@@ -135,6 +173,28 @@ public class PingNotificationDelegate: NSObject, UNUserNotificationCenterDelegat
         let content = UNMutableNotificationContent()
         content.title = "Logged: \(answerLabel)"
         content.body = categoryLabel
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
+        }
+    }
+
+    /// Swaps the tapped notification for the swap invite's own yes/no confirmation, proposed the
+    /// moment a streak crosses threshold in the user's own answer history.
+    private func scheduleRecommendation(identifier: String, id: String, inviteQuestion: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Noticed a pattern"
+        content.body = inviteQuestion
+        content.categoryIdentifier = "PING_RECOMMENDATION"
+        content.userInfo = ["recommendationId": id]
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
+    }
+
+    /// Final state after accepting/declining the swap invite — no actions, clears itself after ~8s.
+    private func scheduleRecommendationConfirmation(identifier: String, accepted: Bool) {
+        let content = UNMutableNotificationContent()
+        content.title = accepted ? "Switched your daily question" : "Kept your current question"
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
