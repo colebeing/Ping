@@ -1,4 +1,4 @@
-import type { Env } from "../types";
+import type { Env, UserRecord } from "../types";
 import { errorResponse, json, readJson } from "../http";
 import {
   claimAccount,
@@ -6,6 +6,7 @@ import {
   createSession,
   destroySession,
   getSessionToken,
+  getUser,
   hashPassword,
   sessionCookieHeader,
 } from "../auth";
@@ -52,6 +53,13 @@ interface ClaimGoogleBody {
  * Native-only for now — the web Google flow is a full-page redirect that never hands the frontend
  * an ID token to POST here, unlike the native picker's signInWithGoogle(). Web users can still claim
  * with email+password, which works everywhere.
+ *
+ * Unlike password-claim below, a taken email here isn't a conflict to reject: verifyGoogleIdToken
+ * already cryptographically proves the user owns this email (a freely-typed password proves nothing
+ * of the kind), so if an account already exists under it — e.g. they signed in with this same Google
+ * account from another device before — this is just a login, exactly like the plain sign-in screen's
+ * own get-or-create. Only actually claim (migrate this anonymous session onto the email) when no
+ * account exists yet.
  */
 export async function handleClaimWithGoogle(request: Request, env: Env, userId: string): Promise<Response> {
   if (!googleConfigured(env)) return errorResponse("Google sign-in isn't configured on the server", 501);
@@ -64,7 +72,8 @@ export async function handleClaimWithGoogle(request: Request, env: Env, userId: 
   if (!info.email_verified) return errorResponse("That Google account's email isn't verified", 401);
 
   try {
-    const user = await claimAccount(env, userId, info.email, null);
+    const existing = await getUser(env, info.email);
+    const user: UserRecord = existing ?? (await claimAccount(env, userId, info.email, null));
     const oldToken = getSessionToken(request);
     if (oldToken) await destroySession(env, oldToken);
     const token = await createSession(env, user.id);
