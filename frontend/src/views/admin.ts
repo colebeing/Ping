@@ -128,6 +128,10 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
     root.appendChild(treeCard);
 
     let currentPath: EscalationPath = [];
+    // Collapsed by default — a wide table that isn't needed on most visits shouldn't sit open in the
+    // way. Lives here (not inside renderQuestionMap) so it survives renderBoth tearing the map card
+    // down and rebuilding it on every navigation, instead of silently re-collapsing on each click.
+    let mapExpanded = false;
     // Re-renders both cards — the map's own rows/gaps change the moment a new node is created via the
     // tree editor's "add a swap invite" affordance, so it needs to stay in sync with every navigation,
     // not just the tree editor itself.
@@ -141,9 +145,13 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
       navigate(path);
       treeCard.scrollIntoView({ behavior: "smooth", block: "start" });
     };
+    const toggleMap = () => {
+      mapExpanded = !mapExpanded;
+      renderBoth();
+    };
     const renderBoth = () => {
       mapCard.innerHTML = "";
-      mapCard.appendChild(renderQuestionMap(config.questionRoot, navigateFromMap));
+      mapCard.appendChild(renderQuestionMap(config.questionRoot, navigateFromMap, mapExpanded, toggleMap));
       treeCard.innerHTML = "";
       treeCard.appendChild(renderNodeEditor(config.questionRoot, currentPath, navigate));
     };
@@ -183,21 +191,31 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
  * 10 possible child slots — the same fixed slot order the tree editor's two branch groups use. Purely
  * informational for now (per decision: no inline creation here yet, that may come later) — every
  * button just navigates the tree editor below to that path, reusing its existing create-on-demand
- * "Not yet configured" affordance rather than duplicating it.
+ * "Not yet configured" affordance rather than duplicating it. Collapsible (default collapsed) since a
+ * wide table isn't needed on every visit — `expanded`/`onToggle` are owned by renderAdmin, not this
+ * function, so the state survives this card being torn down and rebuilt on every navigation.
  */
-function renderQuestionMap(root: QuestionRoot, navigate: (path: EscalationPath) => void): HTMLElement {
+function renderQuestionMap(root: QuestionRoot, navigate: (path: EscalationPath) => void, expanded: boolean, onToggle: () => void): HTMLElement {
   const card = document.createElement("div");
   card.className = "card";
 
-  const h = document.createElement("h3");
-  h.textContent = "Question map";
-  card.appendChild(h);
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "accordion-toggle" + (expanded ? " expanded" : "");
+  toggle.innerHTML = `<span>Question map</span><span class="chev">▾</span>`;
+  toggle.addEventListener("click", onToggle);
+  card.appendChild(toggle);
+
+  if (!expanded) return card;
+
+  const body = document.createElement("div");
+  body.className = "accordion-body";
 
   const note = document.createElement("p");
   note.className = "muted";
   note.textContent =
     "Every question authored so far, and which of its own swap invites are filled in versus still open. Click a row's path to open it, or a slot directly to jump straight to that gap.";
-  card.appendChild(note);
+  body.appendChild(note);
 
   const scroller = document.createElement("div");
   scroller.className = "map-scroll";
@@ -256,7 +274,8 @@ function renderQuestionMap(root: QuestionRoot, navigate: (path: EscalationPath) 
   }
   table.appendChild(tbody);
   scroller.appendChild(table);
-  card.appendChild(scroller);
+  body.appendChild(scroller);
+  card.appendChild(body);
 
   return card;
 }
