@@ -10,10 +10,21 @@ export async function handleListRecommendations(_request: Request, env: Env, use
   return json({ pending, active: state.activeOverride ?? null, retired: state.retiredOverrides });
 }
 
-export async function handleAcceptRecommendation(_request: Request, env: Env, userId: string, id: string): Promise<Response> {
+interface AcceptRecommendationBody {
+  /** Required only when the invitation's own node has a digIn — see DigIn's doc comment. Ignored
+   * otherwise. */
+  digInChoice?: number;
+}
+
+export async function handleAcceptRecommendation(request: Request, env: Env, userId: string, id: string): Promise<Response> {
+  // Every caller sends at least `{}` now (both native platforms already did, from the immediately-prior
+  // notification feature) — a genuinely empty body is treated the same as a stale/incompatible request.
+  const body = await readJson<AcceptRecommendationBody>(request);
   const state = await getState(env, userId);
-  const ok = acceptRecommendation(state, id);
-  if (!ok) return errorResponse("Recommendation not found", 404);
+  const outcome = acceptRecommendation(state, id, body.digInChoice);
+  if (outcome === "not-found") return errorResponse("Recommendation not found", 404);
+  if (outcome === "digin-choice-required") return errorResponse("This swap invite needs a choice picked first", 400);
+  if (outcome === "invalid-digin-choice") return errorResponse("That choice isn't available", 400);
   await saveState(env, userId, state);
   return json({ ok: true, active: state.activeOverride ?? null });
 }

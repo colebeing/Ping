@@ -146,7 +146,7 @@ export function detectStreaks(state: UserState, thresholds: TriggerConfig, root:
       kind: "recommendation",
       block,
       path: candidatePath,
-      node: { inviteQuestion: child.inviteQuestion, blockQuestions: child.blockQuestions, yes: child.yes, no: child.no },
+      node: { inviteQuestion: child.inviteQuestion, blockQuestions: child.blockQuestions, yes: child.yes, no: child.no, digIn: child.digIn },
       category: runCategory,
       valence,
       asOfDate: lastEntry.date,
@@ -157,18 +157,34 @@ export function detectStreaks(state: UserState, thresholds: TriggerConfig, root:
   return newRecs;
 }
 
-export function acceptRecommendation(state: UserState, recommendationId: string): boolean {
-  const idx = state.pendingNudges.findIndex((n) => n.kind === "recommendation" && n.id === recommendationId);
-  if (idx === -1) return false;
-  const rec = state.pendingNudges[idx] as RecommendationNudge;
-  state.pendingNudges.splice(idx, 1);
+export type AcceptOutcome = "ok" | "not-found" | "digin-choice-required" | "invalid-digin-choice";
 
+/**
+ * `digInChoice` is required (and must index a non-blank option) when the node being accepted has its
+ * own `digIn` — see DigIn's doc comment. yes/no always come from the node itself regardless of which
+ * digIn option (if any) was picked; only blockQuestions is superseded by the option's own.
+ */
+export function acceptRecommendation(state: UserState, recommendationId: string, digInChoice?: number): AcceptOutcome {
+  const idx = state.pendingNudges.findIndex((n) => n.kind === "recommendation" && n.id === recommendationId);
+  if (idx === -1) return "not-found";
+  const rec = state.pendingNudges[idx] as RecommendationNudge;
+
+  let blockQuestions = rec.node.blockQuestions;
+  if (rec.node.digIn) {
+    if (digInChoice === undefined) return "digin-choice-required";
+    const option = rec.node.digIn.options[digInChoice];
+    if (!option || !option.label) return "invalid-digin-choice";
+    blockQuestions = option.blockQuestions;
+  }
+
+  state.pendingNudges.splice(idx, 1);
   state.activeOverride = {
     path: rec.path,
-    blockQuestions: rec.node.blockQuestions,
+    blockQuestions,
     yes: rec.node.yes,
     no: rec.node.no,
     category: rec.category,
+    digInChoice: rec.node.digIn ? digInChoice! : null,
     acceptedAt: new Date().toISOString(),
   };
   // The account's tree position just moved for every block — any other still-pending recommendation
@@ -178,7 +194,7 @@ export function acceptRecommendation(state: UserState, recommendationId: string)
   // Same reason: a decline's meaning is tied to the tree position it was declined at, which just
   // moved for the whole account, not just the one block that produced this accepted invitation.
   state.declinedStreaks = {};
-  return true;
+  return "ok";
 }
 
 /** The user said no — dismiss it, and remember the exact streak declined so

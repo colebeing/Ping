@@ -26,6 +26,9 @@ type Step =
   // a streak just crossed threshold: the invitation's own question, answered
   // Yes to swap the block's HOW going forward or No to keep things as-is.
   | { kind: "recommendation"; recommendation: RecommendationNudge; next: DoneStep }
+  // Only reached from "recommendation" when the invitation's own node has a digIn — a one-time pick
+  // among up to 4 admin-defined options before the swap actually takes effect. See DigIn's doc comment.
+  | { kind: "digIn"; recommendation: RecommendationNudge; next: DoneStep }
   | DoneStep;
 
 /**
@@ -138,6 +141,31 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
         wrap.appendChild(row);
 
         card.appendChild(wrap);
+      } else if (step.kind === "digIn") {
+        const digIn = step.recommendation.node.digIn!;
+        const wrap = document.createElement("div");
+        wrap.className = "recommendation-prompt";
+
+        const badge = document.createElement("span");
+        badge.className = "pill recommendation-badge";
+        badge.textContent = "Noticed a pattern";
+        wrap.appendChild(badge);
+
+        const prompt = document.createElement("p");
+        prompt.className = "followup-prompt";
+        prompt.textContent = digIn.prompt;
+        wrap.appendChild(prompt);
+
+        const grid = document.createElement("div");
+        grid.className = "option-grid";
+        const current = step as Extract<Step, { kind: "digIn" }>;
+        digIn.options.forEach((option, index) => {
+          if (!option.label) return;
+          grid.appendChild(button(option.label, "btn", () => chooseDigIn(current, index)));
+        });
+        wrap.appendChild(grid);
+
+        card.appendChild(wrap);
       } else {
         const answerRow = document.createElement("div");
         answerRow.className = "answer-row";
@@ -187,8 +215,26 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
     };
 
     const resolveRecommendation = async (current: Extract<Step, { kind: "recommendation" }>, accept: boolean) => {
-      if (accept) await api.acceptRecommendation(current.recommendation.id);
-      else await api.declineRecommendation(current.recommendation.id);
+      if (!accept) {
+        await api.declineRecommendation(current.recommendation.id);
+        step = current.next;
+        paint();
+        return;
+      }
+      // A digIn node can't be accepted blindly — ask which of its up to 4 options first, the actual
+      // accept only happens once one is picked (chooseDigIn below).
+      if (current.recommendation.node.digIn) {
+        step = { kind: "digIn", recommendation: current.recommendation, next: current.next };
+        paint();
+        return;
+      }
+      await api.acceptRecommendation(current.recommendation.id);
+      step = current.next;
+      paint();
+    };
+
+    const chooseDigIn = async (current: Extract<Step, { kind: "digIn" }>, index: number) => {
+      await api.acceptRecommendation(current.recommendation.id, index);
       step = current.next;
       paint();
     };

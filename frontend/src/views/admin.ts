@@ -2,6 +2,8 @@ import {
   api,
   type AdminConfig,
   type Category,
+  type DigIn,
+  type DigInOption,
   type EscalationChildren,
   type EscalationNode,
   type EscalationPath,
@@ -31,6 +33,14 @@ function emptyNode(): EscalationNode {
     no: emptyFollowup(),
     children: { amplify: {}, resolve: {} },
   };
+}
+
+function emptyDigInOption(): DigInOption {
+  return { label: "", blockQuestions: { q1: "", q2: "", q3: "", q4: "" } };
+}
+
+function emptyDigIn(): DigIn {
+  return { prompt: "", options: [emptyDigInOption(), emptyDigInOption(), emptyDigInOption(), emptyDigInOption()] };
 }
 
 function childAt(children: EscalationChildren, step: EscalationStep): EscalationNode | undefined {
@@ -344,21 +354,28 @@ function renderNodeEditor(root: QuestionRoot, path: EscalationPath, navigate: (p
     card.appendChild(inviteNote);
     card.appendChild(fieldLabel("Swap invite"));
     card.appendChild(textInput(node!.inviteQuestion, (v) => (node!.inviteQuestion = v)));
+
+    card.appendChild(renderDigInSection(node!, path, navigate));
   }
 
-  const blockQuestionsNote = document.createElement("p");
-  blockQuestionsNote.className = "muted";
-  blockQuestionsNote.style.marginTop = "16px";
-  blockQuestionsNote.textContent =
-    path.length === 0
-      ? "Each block's question is its own complete, independent sentence — write it exactly as it should read, since a user who's skipped the other three might see only this one on a given day."
-      : "Once accepted, this becomes the routine question on every block going forward — its own complete, independent sentence per time of day, just like the routine question above.";
-  card.appendChild(blockQuestionsNote);
+  // Once a follow-up (digIn) picks among up to 4 options, THIS node's own timed questions are
+  // superseded by whichever option ends up chosen — showing them here would just be dead inputs.
+  const showBlockQuestions = path.length === 0 || !node!.digIn;
+  if (showBlockQuestions) {
+    const blockQuestionsNote = document.createElement("p");
+    blockQuestionsNote.className = "muted";
+    blockQuestionsNote.style.marginTop = "16px";
+    blockQuestionsNote.textContent =
+      path.length === 0
+        ? "Each block's question is its own complete, independent sentence — write it exactly as it should read, since a user who's skipped the other three might see only this one on a given day."
+        : "Once accepted, this becomes the routine question on every block going forward — its own complete, independent sentence per time of day, just like the routine question above.";
+    card.appendChild(blockQuestionsNote);
 
-  const blockQuestions = path.length === 0 ? root.blockQuestions : node!.blockQuestions;
-  for (const [label, block] of ROOT_BLOCK_FIELDS) {
-    card.appendChild(fieldLabel(`${label} question`));
-    card.appendChild(textInput(blockQuestions[block], (v) => (blockQuestions[block] = v)));
+    const blockQuestions = path.length === 0 ? root.blockQuestions : node!.blockQuestions;
+    for (const [label, block] of ROOT_BLOCK_FIELDS) {
+      card.appendChild(fieldLabel(`${label} question`));
+      card.appendChild(textInput(blockQuestions[block], (v) => (blockQuestions[block] = v)));
+    }
   }
 
   const followupNote = document.createElement("p");
@@ -377,6 +394,66 @@ function renderNodeEditor(root: QuestionRoot, path: EscalationPath, navigate: (p
   card.appendChild(renderBranchGroup("No-path swap invites", "resolve", no, children, path, navigate));
 
   return card;
+}
+
+/**
+ * Optional per node — most swap invites don't need this. When present, asks digIn.prompt once, right
+ * after the invite is accepted, and waits for one of up to 4 admin-defined options before the override
+ * actually takes effect (see DigIn's doc comment in api.ts). Options deliberately carry only a label +
+ * their own 4 timed questions, not a full WHY follow-up of their own — keeping this manageable in
+ * admin: ~20 fields per follow-up instead of ~50.
+ */
+function renderDigInSection(node: EscalationNode, path: EscalationPath, navigate: (path: EscalationPath) => void): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.style.marginTop = "16px";
+
+  if (!node.digIn) {
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "link-btn";
+    addBtn.textContent = "Add a follow-up — let the user pick from up to 4 options before this takes effect";
+    addBtn.addEventListener("click", () => {
+      node.digIn = emptyDigIn();
+      navigate(path);
+    });
+    wrap.appendChild(addBtn);
+    return wrap;
+  }
+
+  const digIn = node.digIn;
+
+  const groupLabel = document.createElement("p");
+  groupLabel.className = "muted";
+  groupLabel.style.fontWeight = "600";
+  groupLabel.textContent = "Follow-up";
+  wrap.appendChild(groupLabel);
+
+  wrap.appendChild(fieldLabel("Prompt — asked once, right after accepting"));
+  wrap.appendChild(textInput(digIn.prompt, (v) => (digIn.prompt = v)));
+
+  digIn.options.forEach((option, index) => {
+    const body = document.createElement("div");
+    body.appendChild(fieldLabel("Label"));
+    body.appendChild(textInput(option.label, (v) => (option.label = v), `Option ${index + 1}`));
+    for (const [timedLabel, block] of ROOT_BLOCK_FIELDS) {
+      body.appendChild(fieldLabel(`${timedLabel} question`));
+      body.appendChild(textInput(option.blockQuestions[block], (v) => (option.blockQuestions[block] = v)));
+    }
+    wrap.appendChild(accordion(option.label || `Option ${index + 1}`, body));
+  });
+
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "link-btn";
+  removeBtn.style.marginTop = "8px";
+  removeBtn.textContent = "Remove follow-up";
+  removeBtn.addEventListener("click", () => {
+    node.digIn = undefined;
+    navigate(path);
+  });
+  wrap.appendChild(removeBtn);
+
+  return wrap;
 }
 
 function breadcrumb(label: string, isCurrent: boolean, onClick: () => void): HTMLElement {

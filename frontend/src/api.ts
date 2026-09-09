@@ -72,6 +72,23 @@ export interface EscalationStep {
 /** [] means the root routine question itself — not any EscalationNode. */
 export type EscalationPath = EscalationStep[];
 
+/** One of up to 4 named choices a node's "dig in" follow-up can offer — e.g. "Would you like to focus
+ * on a specific relationship?" -> Alex/Sam/Jordan/Taylor. No yes/no of its own — the picked option only
+ * changes which relationship the routine question is about, not the WHY categorization, which stays
+ * whatever the parent node's own yes/no already says. A blank label means the slot is unused. */
+export interface DigInOption {
+  label: string;
+  blockQuestions: Record<LiveBlockId, string>;
+}
+
+/** A one-time clarifying follow-up shown right after accepting a swap invite, before the override
+ * takes effect — asked once, at accept time, to pick which of up to 4 admin-defined variants becomes
+ * the new routine question. Always exactly 4 slots (a blank label means unused). Optional per node. */
+export interface DigIn {
+  prompt: string;
+  options: [DigInOption, DigInOption, DigInOption, DigInOption];
+}
+
 /** One node in the escalation tree — the routine question a swap invite produces once accepted (or,
  * recursively, a swap invite one of its OWN follow-up answers produces). Its own yes/no follow-up, and
  * its own further swap invites. An absent slot in `children` means "not yet authored" — never falls
@@ -80,10 +97,14 @@ export interface EscalationNode {
   /** The one-time "would you like to switch?" confirmation shown when the swap invite fires. */
   inviteQuestion: string;
   /** Ongoing daily phrasing once accepted — same shape as QuestionRoot.blockQuestions: accepting
-   * changes the routine question on all four blocks at once, not just the one that streaked. */
+   * changes the routine question on all four blocks at once, not just the one that streaked.
+   * Superseded by the picked option's own blockQuestions when `digIn` is set. */
   blockQuestions: Record<LiveBlockId, string>;
   yes: FollowupPrompt;
   no: FollowupPrompt;
+  /** When set, accepting doesn't take effect immediately — it first asks digIn.prompt and waits for
+   * one of up to 4 choices. */
+  digIn?: DigIn;
   children: EscalationChildren;
 }
 
@@ -126,7 +147,7 @@ export interface RecommendationNudge extends NudgeBase {
   /** The full path this proposes moving to. */
   path: EscalationPath;
   /** The proposed node's own content. */
-  node: { inviteQuestion: string; blockQuestions: Record<LiveBlockId, string>; yes: FollowupPrompt; no: FollowupPrompt };
+  node: { inviteQuestion: string; blockQuestions: Record<LiveBlockId, string>; yes: FollowupPrompt; no: FollowupPrompt; digIn?: DigIn };
   /** Denormalized from path's last step — display convenience only. */
   category: Category | null;
   valence: "amplify" | "resolve";
@@ -232,7 +253,10 @@ export const api = {
       body: JSON.stringify({ block, category, date }),
     }),
 
-  acceptRecommendation: (id: string) => request<{ ok: true }>(`/api/recommendations/${id}/accept`, { method: "POST" }),
+  /** `digInChoice` is required only when the invitation's own node has a digIn — see DigIn's doc
+   * comment; omitted, it serializes away to `{}` for the ordinary no-digIn case. */
+  acceptRecommendation: (id: string, digInChoice?: number) =>
+    request<{ ok: true }>(`/api/recommendations/${id}/accept`, { method: "POST", body: JSON.stringify({ digInChoice }) }),
   declineRecommendation: (id: string) => request<{ ok: true }>(`/api/recommendations/${id}/decline`, { method: "POST" }),
   dismissNudge: (id: string) => request<{ ok: true }>(`/api/nudges/${id}/dismiss`, { method: "POST" }),
 

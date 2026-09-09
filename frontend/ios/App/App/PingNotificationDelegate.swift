@@ -116,16 +116,46 @@ public class PingNotificationDelegate: NSObject, UNUserNotificationCenterDelegat
                 if let recs = json?["newRecommendations"] as? [[String: Any]],
                    let rec = recs.first(where: { ($0["block"] as? String) == block }),
                    let recId = rec["id"] as? String,
-                   let inviteQuestion = (rec["node"] as? [String: Any])?["inviteQuestion"] as? String {
-                    self.scheduleRecommendation(identifier: identifier, id: recId, inviteQuestion: inviteQuestion)
+                   let node = rec["node"] as? [String: Any],
+                   let inviteQuestion = node["inviteQuestion"] as? String {
+                    let digIn = node["digIn"] as? [String: Any]
+                    let digInPrompt = digIn?["prompt"] as? String
+                    let digInOptions = (digIn?["options"] as? [[String: Any]])?.enumerated().compactMap { index, option -> DigInOption? in
+                        guard let label = option["label"] as? String, !label.isEmpty else { return nil }
+                        return DigInOption(index: index, label: label)
+                    }
+                    self.scheduleRecommendation(
+                        identifier: identifier,
+                        id: recId,
+                        inviteQuestion: inviteQuestion,
+                        digInPrompt: digInPrompt,
+                        digInOptions: digInOptions
+                    )
                 } else {
                     self.scheduleConfirmation(identifier: identifier, answer: answer, categoryLabel: categoryLabel)
                 }
             }
 
         case "PING_RECOMMENDATION":
-            guard response.actionIdentifier == "ACCEPT_ACTION" || response.actionIdentifier == "DECLINE_ACTION",
-                  let recommendationId = content.userInfo["recommendationId"] as? String else {
+            guard let recommendationId = content.userInfo["recommendationId"] as? String else {
+                completionHandler()
+                return
+            }
+            // "Yes" tapped on an invite whose node has its own follow-up — show the chooser instead of
+            // accepting yet; the actual accept only happens once a specific option is picked, handled
+            // by the PING_DIGIN_ case below.
+            if response.actionIdentifier == "ACCEPT_ACTION",
+               let digInPrompt = content.userInfo["digInPrompt"] as? String,
+               let digInOptionsRaw = content.userInfo["digInOptions"] as? [[String: Any]] {
+                let options = digInOptionsRaw.compactMap { dict -> DigInOption? in
+                    guard let index = dict["index"] as? Int, let label = dict["label"] as? String else { return nil }
+                    return DigInOption(index: index, label: label)
+                }
+                scheduleRecommendationDigIn(identifier: identifier, recommendationId: recommendationId, prompt: digInPrompt, options: options)
+                completionHandler()
+                return
+            }
+            guard response.actionIdentifier == "ACCEPT_ACTION" || response.actionIdentifier == "DECLINE_ACTION" else {
                 completionHandler()
                 return
             }
@@ -135,9 +165,26 @@ public class PingNotificationDelegate: NSObject, UNUserNotificationCenterDelegat
                 completionHandler()
             }
 
+        case let categoryId where categoryId.hasPrefix("PING_DIGIN_"):
+            guard let recommendationId = content.userInfo["recommendationId"] as? String,
+                  response.actionIdentifier.hasPrefix("DIGIN_OPTION_"),
+                  let index = Int(response.actionIdentifier.dropFirst("DIGIN_OPTION_".count)) else {
+                completionHandler()
+                return
+            }
+            post(path: "/api/recommendations/\(recommendationId)/accept", body: ["digInChoice": index]) { [weak self] _ in
+                self?.scheduleRecommendationConfirmation(identifier: identifier, accepted: true)
+                completionHandler()
+            }
+
         default:
             completionHandler()
         }
+    }
+
+    private struct DigInOption {
+        let index: Int
+        let label: String
     }
 
     /// Swaps the tapped notification for the 4-option WHY follow-up. `answer` and each option's own
@@ -181,13 +228,44 @@ public class PingNotificationDelegate: NSObject, UNUserNotificationCenterDelegat
     }
 
     /// Swaps the tapped notification for the swap invite's own yes/no confirmation, proposed the
-    /// moment a streak crosses threshold in the user's own answer history.
-    private func scheduleRecommendation(identifier: String, id: String, inviteQuestion: String) {
+    /// moment a streak crosses threshold in the user's own answer history. `digInPrompt`/`digInOptions`
+    /// (both non-nil together, or both nil) are threaded into userInfo when this node has its own
+    /// follow-up — the PING_RECOMMENDATION case above reads them back to show the chooser instead of
+    /// accepting immediately.
+    private func scheduleRecommendation(
+        identifier: String,
+        id: String,
+        inviteQuestion: String,
+        digInPrompt: String? = nil,
+        digInOptions: [DigInOption]? = nil
+    ) {
         let content = UNMutableNotificationContent()
         content.title = "Noticed a pattern"
         content.body = inviteQuestion
         content.categoryIdentifier = "PING_RECOMMENDATION"
-        content.userInfo = ["recommendationId": id]
+        var userInfo: [String: Any] = ["recommendationId": id]
+        if let digInPrompt, let digInOptions {
+            userInfo["digInPrompt"] = digInPrompt
+            userInfo["digInOptions"] = digInOptions.map { ["index": $0.index, "label": $0.label] }
+        }
+        content.userInfo = userInfo
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
+    }
+
+    /// Shown when "Yes" is tapped on a swap invite whose node has its own follow-up — a dynamic
+    /// per-notification category, same pattern as PING_FOLLOWUP_<block> above, since which options
+    /// exist varies per invitation. Picking one posts accept with a digInChoice instead of posting
+    /// accept directly.
+    private func scheduleRecommendationDigIn(identifier: String, recommendationId: String, prompt: String, options: [DigInOption]) {
+        let actions = options.map { UNNotificationAction(identifier: "DIGIN_OPTION_\($0.index)", title: $0.label, options: []) }
+        let categoryId = "PING_DIGIN_\(recommendationId)"
+        registerCategories(alsoInclude: UNNotificationCategory(identifier: categoryId, actions: actions, intentIdentifiers: [], options: []))
+
+        let content = UNMutableNotificationContent()
+        content.title = prompt
+        content.body = "Tap to choose"
+        content.categoryIdentifier = categoryId
+        content.userInfo = ["recommendationId": recommendationId]
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
     }
 
@@ -203,8 +281,9 @@ public class PingNotificationDelegate: NSObject, UNUserNotificationCenterDelegat
     }
 
     /// Returns the parsed JSON body on success (2xx), or nil on any failure — callers just leave the
-    /// notification as-is, same contract as NotificationActionReceiver.kt's `post`.
-    private func post(path: String, body: [String: String], completion: @escaping ([String: Any]?) -> Void) {
+    /// notification as-is, same contract as NotificationActionReceiver.kt's `post`. `[String: Any]` (not
+    /// `[String: String]`) since digInChoice needs to send a real JSON number, not a string.
+    private func post(path: String, body: [String: Any], completion: @escaping ([String: Any]?) -> Void) {
         guard let deviceToken = DeviceTokenStore.read(), let url = URL(string: apiBase + path) else {
             completion(nil)
             return

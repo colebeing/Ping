@@ -178,11 +178,25 @@ fun showConfirmationNotification(context: Context, answerLabel: String, category
  * Swaps the tapped notification for the swap invite's own yes/no confirmation, proposed the moment a
  * streak crosses threshold in the user's own answer history — reuses the same compact Yes/No layout
  * showQuestionNotification uses, just wired to accept/decline instead of answer, so a native install
- * never has to open the app to resolve it.
+ * never has to open the app to resolve it. `digInPrompt`/`digInOptions` (both non-null together, or
+ * both null) are threaded onto the "Yes" button's own extras when this node has its own follow-up —
+ * NotificationActionReceiver's handleRecommendation reads them back to show the chooser instead of
+ * accepting immediately. `digInOptions` pairs each non-blank option with its ORIGINAL slot index (0-3).
  */
-fun showRecommendationNotification(context: Context, recommendationId: String, inviteQuestion: String) {
+fun showRecommendationNotification(
+    context: Context,
+    recommendationId: String,
+    inviteQuestion: String,
+    digInPrompt: String? = null,
+    digInOptions: List<Pair<Int, String>>? = null,
+) {
     ensureChannel(context)
-    val accept = actionIntent(context, NotificationActionReceiver.ACTION_RECOMMENDATION, mapOf("recommendationId" to recommendationId, "accept" to "true"))
+    val yesExtras = mutableMapOf("recommendationId" to recommendationId, "accept" to "true")
+    if (digInPrompt != null && digInOptions != null) {
+        yesExtras["digInPrompt"] = digInPrompt
+        for ((index, label) in digInOptions) yesExtras["digInLabel$index"] = label
+    }
+    val accept = actionIntent(context, NotificationActionReceiver.ACTION_RECOMMENDATION, yesExtras)
     val decline = actionIntent(context, NotificationActionReceiver.ACTION_RECOMMENDATION, mapOf("recommendationId" to recommendationId, "accept" to "false"))
 
     fun buildButtonRow(): RemoteViews {
@@ -198,6 +212,45 @@ fun showRecommendationNotification(context: Context, recommendationId: String, i
     val notification = NotificationCompat.Builder(context, PingFirebaseMessagingService.CHANNEL_ID)
         .setSmallIcon(android.R.drawable.ic_dialog_info)
         .setContentTitle("Noticed a pattern")
+        .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+        .setCustomContentView(buildButtonRow())
+        .setCustomBigContentView(buildButtonRow())
+        .setPriority(NotificationCompat.PRIORITY_HIGH)
+        .setAutoCancel(false)
+        .setOnlyAlertOnce(true)
+        .build()
+
+    (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+        .notify(PingFirebaseMessagingService.NOTIFICATION_ID, notification)
+}
+
+/**
+ * Shown when "Yes" is tapped on a swap invite whose node has its own follow-up — reuses the same
+ * 4-button layout the WHY category follow-up uses (showFollowupNotification), just wired to accept
+ * with a digInChoice instead of a category. `options` pairs each non-blank option's ORIGINAL slot
+ * index (0-3) with its label — zip against the fixed button-id list naturally handles fewer than 4.
+ */
+fun showRecommendationDigInNotification(context: Context, recommendationId: String, prompt: String, options: List<Pair<Int, String>>) {
+    ensureChannel(context)
+    val buttonIds = listOf(R.id.followup_btn1, R.id.followup_btn2, R.id.followup_btn3, R.id.followup_btn4)
+
+    fun buildButtonRow(): RemoteViews {
+        val view = RemoteViews(context.packageName, R.layout.notification_followup_buttons)
+        view.setTextViewText(R.id.followup_title, prompt)
+        for ((buttonId, option) in buttonIds.zip(options)) {
+            val (index, label) = option
+            val extras = mapOf("recommendationId" to recommendationId, "accept" to "true", "digInChoice" to index.toString())
+            val pending = actionIntent(context, NotificationActionReceiver.ACTION_RECOMMENDATION, extras)
+            view.setTextViewText(buttonId, label)
+            view.setTextColor(buttonId, BUTTON_TEXT_COLOR)
+            view.setOnClickPendingIntent(buttonId, pending)
+        }
+        return view
+    }
+
+    val notification = NotificationCompat.Builder(context, PingFirebaseMessagingService.CHANNEL_ID)
+        .setSmallIcon(android.R.drawable.ic_dialog_info)
+        .setContentTitle(prompt)
         .setStyle(NotificationCompat.DecoratedCustomViewStyle())
         .setCustomContentView(buildButtonRow())
         .setCustomBigContentView(buildButtonRow())

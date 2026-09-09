@@ -115,6 +115,13 @@ export async function getState(env: Env, userId: string): Promise<UserState> {
   // reconstruct 4 timed phrasings from 1 flat string), so it's dropped the same way.
   if (stored.activeOverride && !("blockQuestions" in stored.activeOverride)) stored.activeOverride = undefined;
   if (stored.retiredOverrides.some((o) => !("blockQuestions" in o))) stored.retiredOverrides = [];
+  // digInChoice is new but, unlike the fields above, safely backfillable rather than a drop-worthy
+  // incompatibility: an override missing it simply predates the dig-in feature, so it certainly never
+  // came from a digIn choice — null is the correct value, not a guess. `?? null` (not an `in` check)
+  // since TS's declared type already claims this field is always present, which would narrow an `in`
+  // check's "absent" branch to `never` — the field can still genuinely be missing at runtime.
+  if (stored.activeOverride) stored.activeOverride.digInChoice = stored.activeOverride.digInChoice ?? null;
+  stored.retiredOverrides = stored.retiredOverrides.map((o) => ({ ...o, digInChoice: o.digInChoice ?? null }));
   // A pending (not-yet-accepted) recommendation snapshots its own path/node at creation time — an
   // old-shaped one (carrying `invitation` instead, or a `node` built before the blockQuestions split)
   // can't be salvaged (there's no tree to resolve it against retroactively), so it's dropped like any

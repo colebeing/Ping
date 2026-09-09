@@ -85,6 +85,29 @@ export interface EscalationStep {
 /** [] means the root routine question itself — not any EscalationNode. */
 export type EscalationPath = EscalationStep[];
 
+/** One of up to 4 named choices a node's "dig in" follow-up can offer — e.g. "Would you like to focus
+ * on a specific relationship?" -> Alex/Sam/Jordan/Taylor. A free-text label, not a fixed Category:
+ * what's being distinguished here is admin-defined, not one of the 4 standing categories. No `yes`/`no`
+ * of its own — the picked option only changes which relationship the routine question is about, not
+ * the WHY categorization, which stays whatever the parent node's own yes/no already says. Terminal: no
+ * `children` of its own, so a picked option doesn't get further streak-based escalation. A blank label
+ * means the slot is unused, same convention as FollowupPrompt.options. */
+export interface DigInOption {
+  label: string;
+  blockQuestions: Record<LiveBlockId, string>;
+}
+
+/** A one-time clarifying follow-up shown right after accepting a swap invite, before the override
+ * actually takes effect — distinct from the routine yes/no FollowupPrompt (asked every day after
+ * answering the routine question), this is asked once, at accept time, to pick which of up to 4
+ * admin-defined variants becomes the new routine question. Always exactly 4 slots (a blank label means
+ * unused), matching the WHY follow-up's own fixed-4 pattern for the same reason: predictable to author
+ * and to render. Optional per node — most swap invites don't need this. */
+export interface DigIn {
+  prompt: string;
+  options: [DigInOption, DigInOption, DigInOption, DigInOption];
+}
+
 /** One node in the escalation tree — the routine question a swap invite produces once accepted (or,
  * recursively, a swap invite ONE of ITS OWN follow-up answers produces). Its own yes/no follow-up, and
  * its own set of further swap invites. An absent slot in `children` means "not yet authored" — never
@@ -95,10 +118,14 @@ export interface EscalationNode {
   /** Ongoing daily phrasing once accepted — same shape as QuestionRoot.blockQuestions: accepting
    * changes the routine question on ALL FOUR blocks at once (one shared "current position" for the
    * whole account, not a per-block override), so this node needs its own 4 timed phrasings just like
-   * the root does. */
+   * the root does. Superseded by the picked option's own blockQuestions when `digIn` is set — see
+   * DigInOption. */
   blockQuestions: Record<LiveBlockId, string>;
   yes: FollowupPrompt;
   no: FollowupPrompt;
+  /** When set, accepting this invite doesn't take effect immediately — it first asks digIn.prompt and
+   * waits for one of up to 4 choices before the override is actually set, see acceptRecommendation. */
+  digIn?: DigIn;
   children: EscalationChildren;
 }
 
@@ -140,6 +167,11 @@ export interface QuestionOverride {
   no: FollowupPrompt;
   /** Denormalized from path's last step — null when it came from a generalYes/generalNo slot. */
   category: Category | null;
+  /** Which of the originating node's digIn options is active, if it had one — informational only
+   * (index into that node's digIn.options), never used by any resolution logic: `path` still means
+   * exactly what it means without digIn, and children/streak resolution is unaffected by which option
+   * was picked. Null when the node had no digIn. */
+  digInChoice: number | null;
   acceptedAt: string; // ISO date
 }
 
@@ -161,7 +193,7 @@ export interface RecommendationNudge extends NudgeBase {
    * accepting sets activeOverride.path to exactly this. */
   path: EscalationPath;
   /** The proposed node's own content — no tree/config lookup needed to accept. */
-  node: { inviteQuestion: string; blockQuestions: Record<LiveBlockId, string>; yes: FollowupPrompt; no: FollowupPrompt };
+  node: { inviteQuestion: string; blockQuestions: Record<LiveBlockId, string>; yes: FollowupPrompt; no: FollowupPrompt; digIn?: DigIn };
   /** Denormalized from path's last step — display/logging convenience only, never used for dedup
    * (two different nodes can share a trailing step; only a full-path compare tells them apart). */
   category: Category | null;

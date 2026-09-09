@@ -75,22 +75,44 @@ class NotificationActionReceiver : BroadcastReceiver() {
         // follow-up anyway). At most one recommendation is ever proposed per block per call.
         val recommendation = findRecommendationForBlock(response, block)
         if (recommendation != null) {
-            val (id, inviteQuestion) = recommendation
-            showRecommendationNotification(context, id, inviteQuestion)
+            showRecommendationNotification(
+                context,
+                recommendation.id,
+                recommendation.inviteQuestion,
+                recommendation.digInPrompt,
+                recommendation.digInOptions,
+            )
         } else {
             val answerLabel = if (answer == "yes") "Yes" else "No"
             showConfirmationNotification(context, answerLabel, categoryLabel)
         }
     }
 
-    private fun findRecommendationForBlock(response: JSONObject, block: String): Pair<String, String>? {
+    /** `digInOptions` pairs each non-blank option with its ORIGINAL slot index (0-3) — the index the
+     * backend's digIn.options array expects back, not the filtered list's own position. */
+    private data class RecommendationInfo(
+        val id: String,
+        val inviteQuestion: String,
+        val digInPrompt: String?,
+        val digInOptions: List<Pair<Int, String>>?,
+    )
+
+    private fun findRecommendationForBlock(response: JSONObject, block: String): RecommendationInfo? {
         val recs = response.optJSONArray("newRecommendations") ?: return null
         for (i in 0 until recs.length()) {
             val rec = recs.getJSONObject(i)
             if (rec.optString("block") != block) continue
             val id = rec.optString("id").takeIf { it.isNotEmpty() } ?: continue
-            val inviteQuestion = rec.optJSONObject("node")?.optString("inviteQuestion")?.takeIf { it.isNotEmpty() } ?: continue
-            return id to inviteQuestion
+            val node = rec.optJSONObject("node") ?: continue
+            val inviteQuestion = node.optString("inviteQuestion").takeIf { it.isNotEmpty() } ?: continue
+            val digIn = node.optJSONObject("digIn")
+            val digInPrompt = digIn?.optString("prompt")?.takeIf { it.isNotEmpty() }
+            val digInOptions = digIn?.optJSONArray("options")?.let { opts ->
+                (0 until opts.length()).mapNotNull { idx ->
+                    opts.optJSONObject(idx)?.optString("label")?.takeIf { it.isNotEmpty() }?.let { idx to it }
+                }
+            }
+            return RecommendationInfo(id, inviteQuestion, digInPrompt, digInOptions)
         }
         return null
     }
@@ -98,8 +120,21 @@ class NotificationActionReceiver : BroadcastReceiver() {
     private fun handleRecommendation(context: Context, intent: Intent) {
         val recommendationId = intent.getStringExtra("recommendationId") ?: return
         val accept = intent.getBooleanExtra("accept", false)
+        val digInChoice = if (intent.hasExtra("digInChoice")) intent.getIntExtra("digInChoice", -1) else null
+
+        if (accept && digInChoice == null && intent.hasExtra("digInPrompt")) {
+            // "Yes" tapped on an invite whose node has its own follow-up — show the chooser instead of
+            // accepting yet; the actual accept only happens once a specific option is picked below.
+            val prompt = intent.getStringExtra("digInPrompt") ?: return
+            val options = (0..3).mapNotNull { idx -> intent.getStringExtra("digInLabel$idx")?.let { idx to it } }
+            showRecommendationDigInNotification(context, recommendationId, prompt, options)
+            return
+        }
+
         val path = "/api/recommendations/$recommendationId/${if (accept) "accept" else "decline"}"
-        post(context, path, JSONObject()) ?: return
+        val body = JSONObject()
+        if (digInChoice != null) body.put("digInChoice", digInChoice)
+        post(context, path, body) ?: return
         showRecommendationConfirmationNotification(context, accept)
     }
 
