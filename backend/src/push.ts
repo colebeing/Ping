@@ -1,6 +1,7 @@
 import { buildPushPayload, type PushMessage, type PushSubscription as WebPushSubscription, type VapidKeys } from "@block65/webcrypto-web-push";
 import { LIVE_BLOCKS, isLiveBlockId, type BlockId, type Cadence, type Env, type LiveBlockId, type PushSubscriptionJSON } from "./types";
 import { getState, saveState, todayLocal } from "./state";
+import { getConfig, getQuestionRoot } from "./config";
 import { sendFcmPush, type SendOutcome } from "./fcm";
 
 /** Which of q1-q4 are actually live for this user right now (not skipped), and what time each is due. */
@@ -31,21 +32,20 @@ export async function sendPush(env: Env, subscription: PushSubscriptionJSON, mes
   }
 }
 
-const BLOCK_PROMPTS: Record<BlockId, string> = {
-  "1": "Did today start how you wanted?",
-  "2": "Did today end how you wanted?",
-  combined: "Did today go how you wanted?",
-  q1: "Did today start how you wanted?",
-  q2: "Did this morning go how you wanted?",
-  q3: "Did this afternoon go how you wanted?",
-  q4: "Did today end how you wanted?",
-};
-
-function blockPushBody(state: Awaited<ReturnType<typeof getState>>, block: BlockId): string {
-  // The account's single active override (if any) applies across all four live blocks — irrelevant to
-  // a legacy block, which never had one.
-  if (isLiveBlockId(block) && state.activeOverride) return state.activeOverride.blockQuestions[block];
-  return BLOCK_PROMPTS[block];
+/**
+ * The actual live question text for a push, mirroring routes/question.ts's handleGetQuestion exactly
+ * — `root`/`config` are fetched once per caller (not per block) since a single notify pass can cover
+ * more than one due block. Live blocks (q1-q4) source from the escalation tree's root (or the
+ * account's active override, if any); the 3 frozen legacy blocks still read from AppConfig.
+ */
+function blockPushBody(
+  state: Awaited<ReturnType<typeof getState>>,
+  block: BlockId,
+  root: Awaited<ReturnType<typeof getQuestionRoot>>,
+  config: Awaited<ReturnType<typeof getConfig>>,
+): string {
+  if (isLiveBlockId(block)) return state.activeOverride?.blockQuestions[block] ?? root.blockQuestions[block];
+  return config.blocks[block].question;
 }
 
 interface PushOutcome {
@@ -133,6 +133,7 @@ export async function checkAndNotifyUser(env: Env, userId: string): Promise<void
   if (state.pushSubscriptions.length === 0 && state.fcmTokens.length === 0) return;
 
   const today = todayLocal(state.cadence.timezone);
+  const [root, config] = await Promise.all([getQuestionRoot(env), getConfig(env)]);
 
   for (const { block, time } of activeBlockTimes(state.cadence)) {
     if (state.lastNotified[block] === today) continue;
@@ -141,7 +142,7 @@ export async function checkAndNotifyUser(env: Env, userId: string): Promise<void
     // interrupt for, so sending would just be noise.
     if (state.answers.some((a) => a.date === today && a.block === block)) continue;
 
-    const body = blockPushBody(state, block);
+    const body = blockPushBody(state, block, root, config);
     const result = await sendBlockPush(env, body, block, state.pushSubscriptions, state.fcmTokens);
     await applyPushOutcome(env, userId, block, result, /* markNotifiedIfSent */ true);
   }
@@ -154,7 +155,8 @@ export async function sendTestPush(env: Env, userId: string, block: BlockId): Pr
   if (state.pushSubscriptions.length === 0 && state.fcmTokens.length === 0) {
     return { ok: false, reason: "No push subscription on this device yet" };
   }
-  const body = blockPushBody(state, block);
+  const [root, config] = await Promise.all([getQuestionRoot(env), getConfig(env)]);
+  const body = blockPushBody(state, block, root, config);
   const result = await sendBlockPush(env, body, block, state.pushSubscriptions, state.fcmTokens);
   await applyPushOutcome(env, userId, block, result, /* markNotifiedIfSent */ false);
   if (!result.anySent) return { ok: false, reason: "The push service rejected it — try disabling and re-enabling notifications on this device" };
