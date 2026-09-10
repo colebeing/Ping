@@ -29,3 +29,5 @@ new_sqlite_classes = ["PushScheduler"]
 # Secrets (set via `wrangler secret put <NAME>`, not stored here):
 #   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT (e.g. "mailto:you@example.com")
 #   SESSION_SECRET (any random string, used to namespace/rotate sessions if needed)
+#   SHEETS_SPREADSHEET_ID (the Google Sheet Admin's Push/Pull buttons use — create a blank sheet,
+#     share it with FCM_SERVICE_ACCOUNT_JSON's client_email as an Editor, paste the sheet's id here)

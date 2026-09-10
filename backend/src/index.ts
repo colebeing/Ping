@@ -8,6 +8,7 @@ import { handleAnswer, handleFollowup } from "./routes/answer";
 import { handleListRecommendations, handleAcceptRecommendation, handleDeclineRecommendation, handleUpdateCadence } from "./routes/recommendations";
 import { handleSubscribe, handleGetVapidPublicKey, handleTestPush, handleRegisterFcmToken, handleNotificationClicked, handleDismissNudge } from "./routes/push";
 import { handleGetAdminConfig, handleSaveAdminConfig, handleGetConfigAuditLog } from "./routes/admin";
+import { handlePushToSheet, handlePullFromSheet } from "./routes/sheets";
 import { handleGetAnalytics } from "./routes/analytics";
 import { handleGoogleStart, handleGoogleCallback, handleGoogleTokenSignIn } from "./routes/googleAuth";
 import { handleStartAnonymous, handleClaimWithPassword, handleClaimWithGoogle } from "./routes/account";
@@ -78,6 +79,16 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === "/api/admin/analytics") {
     if (!(await isAdmin(env, userId))) return errorResponse("Admin access required", 403);
     if (method === "GET") return handleGetAnalytics(request, env);
+  }
+
+  if (pathname === "/api/admin/sheets/push") {
+    if (!(await isAdmin(env, userId))) return errorResponse("Admin access required", 403);
+    if (method === "POST") return handlePushToSheet(request, env);
+  }
+
+  if (pathname === "/api/admin/sheets/pull") {
+    if (!(await isAdmin(env, userId))) return errorResponse("Admin access required", 403);
+    if (method === "GET") return handlePullFromSheet(request, env);
   }
 
   return errorResponse("Not found", 404);

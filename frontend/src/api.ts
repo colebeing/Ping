@@ -280,6 +280,19 @@ export const api = {
     request<{ ok: true }>("/api/admin/config", { method: "PUT", body: JSON.stringify(config) }),
 
   getAnalytics: () => request<AnalyticsResponse>("/api/admin/analytics"),
+
+  pushQuestionsToSheet: () => request<{ ok: true }>("/api/admin/sheets/push", { method: "POST" }),
+  /** A 422 here carries specific validation errors (`{errors: string[]}`), not the usual single
+   * `{error}` shape every other endpoint uses — surfaced as data, not an ApiError throw, so Admin can
+   * show the whole list instead of just the first/only message. Never writes to KV — see the route's
+   * own doc comment (backend/src/routes/sheets.ts). */
+  pullQuestionsFromSheet: async (): Promise<{ root: QuestionRoot } | { errors: string[] }> => {
+    const res = await fetch(`${API_BASE}/api/admin/sheets/pull`, { credentials: "include" });
+    const body = await res.json().catch(() => ({}));
+    if (res.ok) return body as { root: QuestionRoot };
+    if (Array.isArray(body.errors)) return { errors: body.errors };
+    throw new ApiError(body.error ?? "Request failed", res.status);
+  },
 };
 
 export { ApiError };

@@ -364,4 +364,7 @@ export interface Env {
   GOOGLE_CLIENT_SECRET?: string;
   /** Firebase service account JSON (as a string), used to sign FCM HTTP v1 API requests for the Android wrapper. */
   FCM_SERVICE_ACCOUNT_JSON?: string;
+  /** The Google Sheet the question tree pushes/pulls to — same service account as FCM_SERVICE_ACCOUNT_JSON,
+   * shared with that account's email as an Editor. See sheets.ts. */
+  SHEETS_SPREADSHEET_ID?: string;
 }

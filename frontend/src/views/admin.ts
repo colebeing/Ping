@@ -116,6 +116,207 @@ function collectRows(root: QuestionRoot): MapRow[] {
   return rows;
 }
 
+interface DiffEntry {
+  path: EscalationPath;
+  label: string;
+  kind: "added" | "removed" | "changed";
+  changes: string[];
+}
+
+function diffField(label: string, from: string, to: string, changes: string[]): void {
+  if (from !== to) changes.push(`${label}: "${from || "(blank)"}" → "${to || "(blank)"}"`);
+}
+
+function diffFollowup(prefix: string, from: FollowupPrompt, to: FollowupPrompt, changes: string[]): void {
+  diffField(`${prefix} prompt`, from.prompt, to.prompt, changes);
+  for (const cat of CATEGORY_ORDER) diffField(`${prefix} ${CATEGORY_LABEL[cat]}`, from.options[cat], to.options[cat], changes);
+}
+
+function diffBlockQuestions(prefix: string, from: Record<string, string>, to: Record<string, string>, changes: string[]): void {
+  for (const [label, block] of ROOT_BLOCK_FIELDS) diffField(`${prefix}${label}`, from[block], to[block], changes);
+}
+
+/** Field-level diff for one node — blockQuestions is skipped when either side has a digIn (superseded
+ * by whichever option is picked, comparing it would just be noise), compared per-option instead. */
+function diffNode(from: EscalationNode, to: EscalationNode): string[] {
+  const changes: string[] = [];
+  diffField("Swap invite", from.inviteQuestion, to.inviteQuestion, changes);
+  if (!from.digIn && !to.digIn) {
+    diffBlockQuestions("", from.blockQuestions, to.blockQuestions, changes);
+  } else if (!from.digIn && to.digIn) {
+    changes.push("Follow-up: added");
+  } else if (from.digIn && !to.digIn) {
+    changes.push("Follow-up: removed");
+  } else if (from.digIn && to.digIn) {
+    diffField("Follow-up prompt", from.digIn.prompt, to.digIn.prompt, changes);
+    from.digIn.options.forEach((option, i) => {
+      const toOption = to.digIn!.options[i];
+      diffField(`Option ${i + 1} label`, option.label, toOption.label, changes);
+      diffBlockQuestions(`Option ${i + 1} `, option.blockQuestions, toOption.blockQuestions, changes);
+    });
+  }
+  diffFollowup("Yes", from.yes, to.yes, changes);
+  diffFollowup("No", from.no, to.no, changes);
+  return changes;
+}
+
+/**
+ * Every path present in either tree, one entry per node that's new, removed, or has at least one
+ * changed field — same SLOTS-based walk collectRows uses, just comparing two trees in lockstep instead
+ * of reading one. An added/removed node is reported once, not recursed into (everything under it is
+ * implicitly new/gone too — keeping the review list itself reviewable).
+ */
+function diffQuestionRoots(current: QuestionRoot, candidate: QuestionRoot): DiffEntry[] {
+  const entries: DiffEntry[] = [];
+
+  const rootChanges: string[] = [];
+  diffBlockQuestions("", current.blockQuestions, candidate.blockQuestions, rootChanges);
+  diffFollowup("Yes", current.yes, candidate.yes, rootChanges);
+  diffFollowup("No", current.no, candidate.no, rootChanges);
+  if (rootChanges.length > 0) entries.push({ path: [], label: "Routine question", kind: "changed", changes: rootChanges });
+
+  const walk = (
+    curChildren: EscalationChildren,
+    candChildren: EscalationChildren,
+    path: EscalationPath,
+    curParentYes: FollowupPrompt,
+    curParentNo: FollowupPrompt,
+    priorLabels: string[],
+  ) => {
+    for (const step of SLOTS) {
+      const curNode = childAt(curChildren, step);
+      const candNode = childAt(candChildren, step);
+      if (!curNode && !candNode) continue;
+      const labels = [...priorLabels, dynamicStepLabel(step, curParentYes, curParentNo)];
+      const childPath = [...path, step];
+      if (curNode && candNode) {
+        const changes = diffNode(curNode, candNode);
+        if (changes.length > 0) entries.push({ path: childPath, label: labels.join(" → "), kind: "changed", changes });
+        walk(curNode.children, candNode.children, childPath, curNode.yes, curNode.no, labels);
+      } else if (candNode) {
+        entries.push({ path: childPath, label: labels.join(" → "), kind: "added", changes: [] });
+      } else if (curNode) {
+        entries.push({ path: childPath, label: labels.join(" → "), kind: "removed", changes: [] });
+      }
+    }
+  };
+  walk(current.children, candidate.children, [], current.yes, current.no, []);
+  return entries;
+}
+
+/** Push writes the whole live tree out (a full replace, KV is always the source of truth on that
+ * direction); Pull reads it back but never writes to KV itself — it hands back a candidate tree the
+ * admin reviews via diffQuestionRoots before "Apply" replaces config.questionRoot in memory, same as
+ * any other edit (still needs the page's own "Save all changes" to actually go live). */
+function renderSheetSyncSection(
+  pushStatus: string,
+  pullStatus: string,
+  pullPreview: { root: QuestionRoot; diff: DiffEntry[] } | null,
+  handlers: { onPush: () => void; onPull: () => void; onApply: () => void; onCancel: () => void },
+): HTMLElement {
+  const card = document.createElement("div");
+  card.className = "card";
+
+  const h = document.createElement("h3");
+  h.textContent = "Google Sheet sync";
+  card.appendChild(h);
+
+  const note = document.createElement("p");
+  note.className = "muted";
+  note.textContent =
+    "Push writes the current tree out to the configured Google Sheet. Pull reads it back and shows exactly what would change before anything here is touched.";
+  card.appendChild(note);
+
+  const pushRow = document.createElement("div");
+  const pushBtn = document.createElement("button");
+  pushBtn.type = "button";
+  pushBtn.className = "btn";
+  pushBtn.textContent = "Push to Sheet";
+  pushBtn.addEventListener("click", handlers.onPush);
+  pushRow.appendChild(pushBtn);
+  const pushStatusEl = document.createElement("span");
+  pushStatusEl.className = "muted";
+  pushStatusEl.style.marginLeft = "8px";
+  pushStatusEl.textContent = pushStatus;
+  pushRow.appendChild(pushStatusEl);
+  card.appendChild(pushRow);
+
+  const pullRow = document.createElement("div");
+  pullRow.style.marginTop = "10px";
+  const pullBtn = document.createElement("button");
+  pullBtn.type = "button";
+  pullBtn.className = "btn";
+  pullBtn.textContent = "Pull from Sheet";
+  pullBtn.addEventListener("click", handlers.onPull);
+  pullRow.appendChild(pullBtn);
+  const pullStatusEl = document.createElement("span");
+  pullStatusEl.className = "muted";
+  pullStatusEl.style.marginLeft = "8px";
+  pullStatusEl.textContent = pullStatus;
+  pullRow.appendChild(pullStatusEl);
+  card.appendChild(pullRow);
+
+  if (pullPreview) {
+    const preview = document.createElement("div");
+    preview.style.marginTop = "16px";
+
+    if (pullPreview.diff.length === 0) {
+      const p = document.createElement("p");
+      p.className = "muted";
+      p.textContent = "No differences — the Sheet matches what's already live.";
+      preview.appendChild(p);
+    } else {
+      const summary = document.createElement("p");
+      summary.className = "muted";
+      summary.style.fontWeight = "600";
+      summary.textContent = `${pullPreview.diff.length} node${pullPreview.diff.length === 1 ? "" : "s"} would change:`;
+      preview.appendChild(summary);
+
+      for (const entry of pullPreview.diff) {
+        const body = document.createElement("div");
+        if (entry.changes.length > 0) {
+          for (const change of entry.changes) {
+            const p = document.createElement("p");
+            p.className = "muted";
+            p.textContent = change;
+            body.appendChild(p);
+          }
+        } else {
+          const p = document.createElement("p");
+          p.className = "muted";
+          p.textContent = entry.kind === "added" ? "This whole node is new." : "This whole node would be removed.";
+          body.appendChild(p);
+        }
+        const titlePrefix = entry.kind === "added" ? "New: " : entry.kind === "removed" ? "Removed: " : "";
+        preview.appendChild(accordion(`${titlePrefix}${entry.label}`, body));
+      }
+    }
+
+    const actionRow = document.createElement("div");
+    actionRow.className = "btn-row";
+    actionRow.style.marginTop = "10px";
+    if (pullPreview.diff.length > 0) {
+      const applyBtn = document.createElement("button");
+      applyBtn.type = "button";
+      applyBtn.className = "btn btn-primary";
+      applyBtn.textContent = "Apply";
+      applyBtn.addEventListener("click", handlers.onApply);
+      actionRow.appendChild(applyBtn);
+    }
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "btn";
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.addEventListener("click", handlers.onCancel);
+    actionRow.appendChild(cancelBtn);
+    preview.appendChild(actionRow);
+
+    card.appendChild(preview);
+  }
+
+  return card;
+}
+
 export async function renderAdmin(root: HTMLElement): Promise<void> {
   root.innerHTML = `<h2>Admin</h2><div class="card">Loading…</div>`;
   try {
@@ -168,6 +369,62 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
     renderBoth();
 
     root.appendChild(renderTriggersSection(config));
+
+    const sheetCard = document.createElement("div");
+    root.appendChild(sheetCard);
+    let pushStatus = "";
+    let pullStatus = "";
+    let pullPreview: { root: QuestionRoot; diff: DiffEntry[] } | null = null;
+    const renderSheetCard = () => {
+      sheetCard.innerHTML = "";
+      sheetCard.appendChild(
+        renderSheetSyncSection(pushStatus, pullStatus, pullPreview, {
+          onPush: async () => {
+            pushStatus = "Pushing…";
+            renderSheetCard();
+            try {
+              await api.pushQuestionsToSheet();
+              pushStatus = "Pushed.";
+            } catch (err) {
+              pushStatus = err instanceof Error ? err.message : "Push failed.";
+            }
+            renderSheetCard();
+          },
+          onPull: async () => {
+            pullStatus = "Pulling…";
+            pullPreview = null;
+            renderSheetCard();
+            try {
+              const result = await api.pullQuestionsFromSheet();
+              if ("errors" in result) {
+                pullStatus = result.errors.join(" ");
+              } else {
+                pullStatus = "";
+                pullPreview = { root: result.root, diff: diffQuestionRoots(config.questionRoot, result.root) };
+              }
+            } catch (err) {
+              pullStatus = err instanceof Error ? err.message : "Pull failed.";
+            }
+            renderSheetCard();
+          },
+          onApply: () => {
+            if (!pullPreview) return;
+            config.questionRoot = pullPreview.root;
+            pullPreview = null;
+            pullStatus = "Applied — click Save all changes below to make it live.";
+            currentPath = [];
+            renderBoth();
+            renderSheetCard();
+          },
+          onCancel: () => {
+            pullPreview = null;
+            pullStatus = "";
+            renderSheetCard();
+          },
+        }),
+      );
+    };
+    renderSheetCard();
 
     const status = document.createElement("p");
     status.className = "muted";
