@@ -99,7 +99,7 @@ export async function handleFollowup(request: Request, env: Env, userId: string)
 
   const [thresholds, root, user] = await Promise.all([getTriggerConfig(env), getQuestionRoot(env), getUser(env, userId)]);
 
-  const newRecs = detectStreaks(state, thresholds, root);
+  const newRecs = detectStreaks(state, thresholds, root, { block: body.block, answer: record.answer, category: body.category, timestamp: record.timestamp });
   state.pendingNudges.push(...newRecs);
   runCheckpointTriggers(state, user);
 

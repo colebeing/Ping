@@ -192,8 +192,10 @@ export interface RecommendationNudge extends NudgeBase {
    * (two different nodes can share a trailing step; only a full-path compare tells them apart). */
   category: Category | null;
   valence: "amplify" | "resolve";
-  /** Date of the most recent answer counted into the streak that produced this — the floor a fresh streak must clear after a decline, see DeclinedStreak. */
-  asOfDate: string;
+  /** Timestamp of the response that crossed the threshold and produced this — the floor a fresh streak
+   * must clear after a decline, see DeclinedStreak. A timestamp, not a date: responses are counted
+   * globally across all four blocks now, so same-day responses need to be told apart precisely. */
+  asOfTimestamp: string;
 }
 
 /** Asks to enable push notifications — triggered by a global follow-up-count checkpoint, not tied to
@@ -214,14 +216,14 @@ export interface SaveAccountNudge extends NudgeBase {
 // variant here (and a row in backend/src/routes/answer.ts's CHECKPOINT_TRIGGERS) once that flow does.
 export type Nudge = RecommendationNudge | NotificationPermissionNudge | SaveAccountNudge;
 
-/** Marks "the user already said no to this exact streak" so detectStreaks doesn't re-propose it
- * every single day the pattern continues. Only entries strictly after asOfDate count toward a
- * fresh run for this block+category+valence — the user's own framing: decline a streak of 2
- * family answers, and it needs 2 *new* family answers before it can ask again. */
+/** Marks "the user already said no to this exact streak" so detectStreaks doesn't re-propose it every
+ * single response the pattern continues. Only responses strictly after asOfTimestamp count toward a
+ * fresh streak — the user's own framing: decline a streak of 2 family answers, and it needs 2 *new*
+ * family answers (any block, any day) before it can ask again. Keyed globally by
+ * "<valence>:<category-or-'general'>" (see recommendations.ts's declinedStreakKey), not by block —
+ * responses across all four blocks count toward the same streak now. */
 export interface DeclinedStreak {
-  category: Category | null;
-  valence: "amplify" | "resolve";
-  asOfDate: string;
+  asOfTimestamp: string;
 }
 
 export interface AnswerRecord {
@@ -281,7 +283,8 @@ export interface UserState {
   /** Every kind of earned in-flow prompt — swap invitations, notification/save-account asks, and
    * whatever's added later — one queue, one dismiss endpoint. See types.ts's Nudge union. */
   pendingNudges: Nudge[];
-  declinedStreaks: Partial<Record<BlockId, DeclinedStreak>>;
+  /** Keyed by "<valence>:<category-or-'general'>", see DeclinedStreak's own doc comment. */
+  declinedStreaks: Partial<Record<string, DeclinedStreak>>;
   /** Lifetime count of completed follow-ups (category picked), incremented once per handleFollowup
    * call. Deliberately NOT decremented on edit — this exists purely to trigger nudge checkpoints once
    * each, not to stay an accurate "current" count. Do not derive

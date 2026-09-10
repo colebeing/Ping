@@ -1,10 +1,13 @@
 import {
   LIVE_BLOCKS,
+  isLiveBlockId,
+  type Answer,
   type Category,
   type EscalationChildren,
   type EscalationNode,
   type EscalationPath,
   type EscalationStep,
+  type LiveBlockId,
   type QuestionRoot,
   type RecommendationNudge,
   type TriggerConfig,
@@ -16,8 +19,11 @@ function daysBetween(a: string, b: string): number {
   return Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / msPerDay);
 }
 
-function isPrevCalendarDay(earlier: string, later: string): boolean {
-  return daysBetween(earlier, later) === 1;
+/** Global key for a declined streak — "<valence>:<category>" or "<valence>:general" for the
+ * mixed-category slot. Not scoped by block: responses across all four blocks count toward the same
+ * streak now (see detectStreaks), so a decline has to reset the same global count. */
+function declinedStreakKey(valence: "amplify" | "resolve", category: Category | null): string {
+  return `${valence}:${category ?? "general"}`;
 }
 
 /** Walks the escalation tree from the root along `path`, step by step. `[]` means "the root" — callers
@@ -42,120 +48,95 @@ function pathsEqual(a: EscalationPath, b: EscalationPath): boolean {
 }
 
 /**
- * Looks for a trailing run (most recent N consecutive days, same block, same
- * yes/no valence) and proposes a recommendation. Amplify for yes-streaks (do
- * more of what's working), resolve for no-streaks — symmetric per spec.
+ * Checks whether the response just recorded (`justAnswered`) has pushed a streak's total response count
+ * to threshold, and if so proposes a recommendation. Amplify for yes-streaks (do more of what's
+ * working), resolve for no-streaks — symmetric per spec.
  *
- * If the run also shares a single category throughout, that's the specific
- * per-category invitation (8 of the 10 slots). If the valence-only run holds
- * but the category varies day to day, it's a "no underlying pattern" streak
- * — the general yes/no invitation (the remaining 2 slots).
+ * Counts *responses*, not consecutive days, and globally across all four live blocks, not per block —
+ * three blocks all answered "yes, family" on the same day count as 3 toward that streak, same as 3
+ * spread across 3 separate days. Only the two counts this one response could have just moved (its own
+ * exact category, and the general/mixed one) are checked — a call only ever evaluates one response, so
+ * at most one recommendation is ever produced per call.
  *
- * The invitation itself is resolved against the block's CURRENT node in the escalation tree (root, or
+ * If the count shares a single category throughout, that's the specific per-category invitation (8 of
+ * the 10 slots). The general yes/no invitation (the remaining 2 slots) counts every response of that
+ * valence regardless of category.
+ *
+ * The invitation itself is resolved against the account's CURRENT node in the escalation tree (root, or
  * wherever an already-accepted override has advanced to) — if that node has no child authored at this
  * (valence, category) slot, nothing is proposed at all. Escalation only ever goes as deep as an admin
  * has actually built it; there's no fallback to some default set.
  */
-export function detectStreaks(state: UserState, thresholds: TriggerConfig, root: QuestionRoot): RecommendationNudge[] {
+export function detectStreaks(
+  state: UserState,
+  thresholds: TriggerConfig,
+  root: QuestionRoot,
+  justAnswered: { block: LiveBlockId; answer: Answer; category: Category; timestamp: string },
+): RecommendationNudge[] {
   const newRecs: RecommendationNudge[] = [];
 
   // One shared tree position for the whole account now (accepting a swap invite moves every block at
-  // once) — computed once, not per block.
+  // once).
   const currentPath = state.activeOverride?.path ?? [];
   const children = currentPath.length === 0 ? root.children : (resolveNode(root, currentPath)?.children ?? root.children);
 
-  for (const block of LIVE_BLOCKS) {
-    const entries = state.answers.filter((a) => a.block === block && a.category).sort((a, b) => a.date.localeCompare(b.date));
-    if (entries.length === 0) continue;
+  const valence: "amplify" | "resolve" = justAnswered.answer === "yes" ? "amplify" : "resolve";
 
-    const lastEntry = entries[entries.length - 1];
-    const runValence = lastEntry.answer;
-    const lastCategory = lastEntry.category as Category;
-    const valence: "amplify" | "resolve" = runValence === "yes" ? "amplify" : "resolve";
+  // A decline's asOfTimestamp is a floor: responses at or before it don't count toward a fresh streak,
+  // so a declined invitation needs genuinely new responses (not the same count continuing) before
+  // anything is proposed again — whether that next proposal would be the same per-category invitation,
+  // or the general one built from the same underlying responses reworded under different copy.
+  const categoryFloor = state.declinedStreaks[declinedStreakKey(valence, justAnswered.category)]?.asOfTimestamp;
+  const categoryCount = state.answers.filter(
+    (a) =>
+      isLiveBlockId(a.block) &&
+      a.answer === justAnswered.answer &&
+      a.category === justAnswered.category &&
+      (!categoryFloor || a.timestamp > categoryFloor),
+  ).length;
 
-    // A declined streak's asOfDate is a floor: entries at or before it don't
-    // count toward a fresh run in this same valence direction, so a declined
-    // invitation needs genuinely new days (not the same streak continuing)
-    // before anything is proposed again for this block — whether that next
-    // proposal would've been the same per-category invitation, or a general
-    // one for the exact same underlying days reworded under different copy.
-    const declined = state.declinedStreaks[block];
-    const floor = declined && declined.valence === valence ? declined.asOfDate : undefined;
+  const generalFloor = state.declinedStreaks[declinedStreakKey(valence, null)]?.asOfTimestamp;
+  const generalCount = state.answers.filter(
+    (a) => isLiveBlockId(a.block) && a.answer === justAnswered.answer && a.category && (!generalFloor || a.timestamp > generalFloor),
+  ).length;
 
-    let categoryRunLen = 0;
-    if (!floor || lastEntry.date > floor) {
-      categoryRunLen = 1;
-      let prevDate = lastEntry.date;
-      for (let i = entries.length - 2; i >= 0; i--) {
-        const e = entries[i];
-        if (floor && e.date <= floor) break;
-        if (e.category === lastCategory && e.answer === runValence && isPrevCalendarDay(e.date, prevDate)) {
-          categoryRunLen++;
-          prevDate = e.date;
-        } else {
-          break;
-        }
-      }
-    }
+  const categoryThreshold = valence === "amplify" ? thresholds.categoryYesThreshold : thresholds.categoryNoThreshold;
+  const generalThreshold = valence === "amplify" ? thresholds.generalYesThreshold : thresholds.generalNoThreshold;
 
-    let valenceRunLen = 0;
-    if (!floor || lastEntry.date > floor) {
-      valenceRunLen = 1;
-      let prevDate = lastEntry.date;
-      for (let i = entries.length - 2; i >= 0; i--) {
-        const e = entries[i];
-        if (floor && e.date <= floor) break;
-        if (e.answer === runValence && isPrevCalendarDay(e.date, prevDate)) {
-          valenceRunLen++;
-          prevDate = e.date;
-        } else {
-          break;
-        }
-      }
-    }
-
-    const categoryThreshold = valence === "amplify" ? thresholds.categoryYesThreshold : thresholds.categoryNoThreshold;
-    const generalThreshold = valence === "amplify" ? thresholds.generalYesThreshold : thresholds.generalNoThreshold;
-
-    let runCategory: Category | null = null;
-    let step: EscalationStep;
-    if (categoryRunLen >= categoryThreshold) {
-      runCategory = lastCategory;
-      step = { valence, category: lastCategory };
-    } else if (valenceRunLen >= generalThreshold) {
-      step = { valence, category: null };
-    } else {
-      continue;
-    }
-
-    const child = step.category === null ? (step.valence === "amplify" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
-    if (!child) continue; // nothing authored at this slot — no swap invite offered, no error
-
-    const candidatePath = [...currentPath, step];
-
-    // Dedup compares the FULL path, not just the trailing {valence, category} — two structurally
-    // distinct nodes at different depths can share the same trailing step (e.g. a depth-1 node and
-    // some depth-3 descendant that also happens to end in the same category/valence).
-    const alreadyPending = state.pendingNudges.some((n) => n.kind === "recommendation" && pathsEqual(n.path, candidatePath));
-    const alreadyActive = Boolean(state.activeOverride && pathsEqual(state.activeOverride.path, candidatePath));
-    // Every block now shares the same tree position, so two DIFFERENT blocks can independently cross
-    // threshold in this same call and propose the identical candidatePath — check against newRecs
-    // pushed so far this pass too, or the same accept-target gets proposed twice in one response.
-    const alreadyProposedThisPass = newRecs.some((r) => pathsEqual(r.path, candidatePath));
-    if (alreadyPending || alreadyActive || alreadyProposedThisPass) continue;
-
-    newRecs.push({
-      id: crypto.randomUUID(),
-      kind: "recommendation",
-      block,
-      path: candidatePath,
-      node: { inviteQuestion: child.inviteQuestion, blockQuestions: child.blockQuestions, yes: child.yes, no: child.no, digIn: child.digIn },
-      category: runCategory,
-      valence,
-      asOfDate: lastEntry.date,
-      createdAt: new Date().toISOString(),
-    });
+  let runCategory: Category | null = null;
+  let step: EscalationStep;
+  if (categoryCount >= categoryThreshold) {
+    runCategory = justAnswered.category;
+    step = { valence, category: justAnswered.category };
+  } else if (generalCount >= generalThreshold) {
+    step = { valence, category: null };
+  } else {
+    return newRecs;
   }
+
+  const child = step.category === null ? (step.valence === "amplify" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
+  if (!child) return newRecs; // nothing authored at this slot — no swap invite offered, no error
+
+  const candidatePath = [...currentPath, step];
+
+  // Dedup compares the FULL path, not just the trailing {valence, category} — two structurally
+  // distinct nodes at different depths can share the same trailing step (e.g. a depth-1 node and
+  // some depth-3 descendant that also happens to end in the same category/valence).
+  const alreadyPending = state.pendingNudges.some((n) => n.kind === "recommendation" && pathsEqual(n.path, candidatePath));
+  const alreadyActive = Boolean(state.activeOverride && pathsEqual(state.activeOverride.path, candidatePath));
+  if (alreadyPending || alreadyActive) return newRecs;
+
+  newRecs.push({
+    id: crypto.randomUUID(),
+    kind: "recommendation",
+    block: justAnswered.block,
+    path: candidatePath,
+    node: { inviteQuestion: child.inviteQuestion, blockQuestions: child.blockQuestions, yes: child.yes, no: child.no, digIn: child.digIn },
+    category: runCategory,
+    valence,
+    asOfTimestamp: justAnswered.timestamp,
+    createdAt: new Date().toISOString(),
+  });
 
   return newRecs;
 }
@@ -207,7 +188,7 @@ export function declineRecommendation(state: UserState, recommendationId: string
   if (idx === -1) return false;
   const rec = state.pendingNudges[idx] as RecommendationNudge;
   state.pendingNudges.splice(idx, 1);
-  state.declinedStreaks[rec.block] = { category: rec.category, valence: rec.valence, asOfDate: rec.asOfDate };
+  state.declinedStreaks[declinedStreakKey(rec.valence, rec.category)] = { asOfTimestamp: rec.asOfTimestamp };
   return true;
 }
 

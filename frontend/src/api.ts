@@ -155,7 +155,7 @@ export interface RecommendationNudge extends NudgeBase {
   /** Denormalized from path's last step — display convenience only. */
   category: Category | null;
   valence: "amplify" | "resolve";
-  asOfDate: string;
+  asOfTimestamp: string;
 }
 
 /** Earned at follow-up totals 1/3/10 while push is off — renders at most one at a time on Home. */
