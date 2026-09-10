@@ -178,6 +178,9 @@ export interface FollowupResponse {
 }
 
 export interface AnalyticsUserSummary {
+  /** The raw KV user id (an email or "anon:<uuid>") — not shown, just the key for drilling into a
+   * user's profile view. */
+  id: string;
   email: string | null;
   createdAt: string;
   totalAnswers: number;
@@ -194,6 +197,18 @@ export interface AnalyticsResponse {
   dailyActivity: { date: string; count: number }[];
   notificationTotals: { sent30d: number; failed30d: number };
   users: AnalyticsUserSummary[];
+}
+
+export interface UserProfileResponse {
+  email: string | null;
+  createdAt: string;
+  timezone: string;
+  totalAnswers: number;
+  activeDayStreak: number;
+  activeQuestion: { text: Record<LiveBlockId, string>; category: Category | null; acceptedAt: string } | null;
+  categoryTrend: Record<Category, { last14: { yes: number; no: number }; prior14: { yes: number; no: number }; allTime: { yes: number; no: number } }>;
+  overrideHistory: { question: string; category: Category | null; valence: "amplify" | "resolve"; acceptedAt: string; status: "active" | "retired" }[];
+  recentAnswers: { date: string; block: BlockId; answer: Answer; category: Category | null }[];
 }
 
 class ApiError extends Error {
@@ -284,6 +299,7 @@ export const api = {
     request<{ ok: true }>("/api/admin/config", { method: "PUT", body: JSON.stringify(config) }),
 
   getAnalytics: () => request<AnalyticsResponse>("/api/admin/analytics"),
+  getUserProfile: (id: string) => request<UserProfileResponse>(`/api/admin/analytics/users/${encodeURIComponent(id)}`),
 
   pushQuestionsToSheet: () => request<{ ok: true }>("/api/admin/sheets/push", { method: "POST" }),
   /** A 422 here carries specific validation errors (`{errors: string[]}`), not the usual single

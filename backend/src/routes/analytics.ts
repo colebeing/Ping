@@ -1,9 +1,12 @@
-import type { AnswerRecord, BlockId, Category, Env, NotificationEvent, UserRecord } from "../types";
+import type { Answer, AnswerRecord, BlockId, Category, Env, NotificationEvent, QuestionOverride, UserRecord } from "../types";
 import { CATEGORIES } from "../types";
-import { json } from "../http";
+import { errorResponse, json } from "../http";
 import { getState } from "../state";
 
 export interface AnalyticsUserSummary {
+  /** The raw KV user id (an email or "anon:<uuid>") — not shown, just the key for drilling into
+   * handleGetUserProfile below. */
+  id: string;
   email: string | null;
   createdAt: string;
   totalAnswers: number;
@@ -126,6 +129,7 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
     }
 
     users.push({
+      id: userId,
       email: user.email ?? null,
       createdAt: user.createdAt,
       totalAnswers: state.answers.length,
@@ -150,6 +154,108 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
     dailyActivity,
     notificationTotals: { sent30d, failed30d },
     users,
+  };
+  return json(response);
+}
+
+export interface UserProfileResponse {
+  email: string | null;
+  createdAt: string;
+  timezone: string;
+  totalAnswers: number;
+  activeDayStreak: number;
+  /** The account's current routine question, if a swap invite has been accepted — same denormalized
+   * per-block text QuestionOverride already carries, no tree lookup needed. */
+  activeQuestion: { text: Record<string, string>; category: Category | null; acceptedAt: string } | null;
+  /** yes/no counts per category, this 14-day window vs the previous one, plus all-time — lets the admin
+   * read a direction themselves rather than trusting a synthesized trend score over a small sample. */
+  categoryTrend: Record<Category, { last14: { yes: number; no: number }; prior14: { yes: number; no: number }; allTime: { yes: number; no: number } }>;
+  /** What this user has actually accepted, most recent first — shows which content changes actually
+   * landed, not just what was offered. No distinct "retired at" timestamp exists in the data (only
+   * acceptedAt is ever recorded), so retirement is a status, not a date. */
+  overrideHistory: { question: string; category: Category | null; valence: "amplify" | "resolve"; acceptedAt: string; status: "active" | "retired" }[];
+  /** Last 20 answers, most recent first, for literally scanning recent behavior. */
+  recentAnswers: { date: string; block: BlockId; answer: Answer; category: Category | null }[];
+}
+
+function emptyCategoryTrend(): UserProfileResponse["categoryTrend"] {
+  const empty = () => ({ yes: 0, no: 0 });
+  return {
+    friends: { last14: empty(), prior14: empty(), allTime: empty() },
+    colleagues: { last14: empty(), prior14: empty(), allTime: empty() },
+    family: { last14: empty(), prior14: empty(), allTime: empty() },
+    me: { last14: empty(), prior14: empty(), allTime: empty() },
+  };
+}
+
+/** Denormalizes an override's 4-block question into one representative string for a human-scannable
+ * history list — overrideHistory isn't the tree editor, it doesn't need the full per-block shape. */
+function overrideQuestionSummary(override: QuestionOverride): string {
+  return override.blockQuestions.q1 || Object.values(override.blockQuestions).find((q) => q) || "(no question text)";
+}
+
+/** Valence isn't stored directly on QuestionOverride — it's the last step of the path that produced it. */
+function overrideValence(override: QuestionOverride): "amplify" | "resolve" {
+  return override.path[override.path.length - 1]?.valence ?? "amplify";
+}
+
+export async function handleGetUserProfile(_request: Request, env: Env, id: string): Promise<Response> {
+  const user = await env.STATE_KV.get<UserRecord>(`user:${id}`, "json");
+  if (!user) return errorResponse("User not found", 404);
+  const state = await getState(env, id);
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const cutoff14 = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
+  const cutoff28 = new Date(Date.now() - 28 * 86400000).toISOString().slice(0, 10);
+
+  const categoryTrend = emptyCategoryTrend();
+  for (const a of state.answers) {
+    // Guard against stale category values from before a category rename, same as handleGetAnalytics.
+    if (!a.category || !categoryTrend[a.category]) continue;
+    const bucket = categoryTrend[a.category];
+    bucket.allTime[a.answer]++;
+    if (a.date >= cutoff14) bucket.last14[a.answer]++;
+    else if (a.date >= cutoff28) bucket.prior14[a.answer]++;
+  }
+
+  const overrideHistory: UserProfileResponse["overrideHistory"] = [
+    ...(state.activeOverride
+      ? [
+          {
+            question: overrideQuestionSummary(state.activeOverride),
+            category: state.activeOverride.category,
+            valence: overrideValence(state.activeOverride),
+            acceptedAt: state.activeOverride.acceptedAt,
+            status: "active" as const,
+          },
+        ]
+      : []),
+    ...state.retiredOverrides.map((o) => ({
+      question: overrideQuestionSummary(o),
+      category: o.category,
+      valence: overrideValence(o),
+      acceptedAt: o.acceptedAt,
+      status: "retired" as const,
+    })),
+  ].sort((a, b) => b.acceptedAt.localeCompare(a.acceptedAt));
+
+  const recentAnswers = [...state.answers]
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+    .slice(0, 20)
+    .map((a) => ({ date: a.date, block: a.block, answer: a.answer, category: a.category ?? null }));
+
+  const response: UserProfileResponse = {
+    email: user.email ?? null,
+    createdAt: user.createdAt,
+    timezone: state.cadence.timezone,
+    totalAnswers: state.answers.length,
+    activeDayStreak: activeDayStreak(state.answers, todayStr),
+    activeQuestion: state.activeOverride
+      ? { text: state.activeOverride.blockQuestions, category: state.activeOverride.category, acceptedAt: state.activeOverride.acceptedAt }
+      : null,
+    categoryTrend,
+    overrideHistory,
+    recentAnswers,
   };
   return json(response);
 }

@@ -9,7 +9,7 @@ import { handleListRecommendations, handleAcceptRecommendation, handleDeclineRec
 import { handleSubscribe, handleGetVapidPublicKey, handleTestPush, handleRegisterFcmToken, handleNotificationClicked, handleDismissNudge } from "./routes/push";
 import { handleGetAdminConfig, handleSaveAdminConfig, handleGetConfigAuditLog } from "./routes/admin";
 import { handlePushToSheet, handlePullFromSheet } from "./routes/sheets";
-import { handleGetAnalytics } from "./routes/analytics";
+import { handleGetAnalytics, handleGetUserProfile } from "./routes/analytics";
 import { handleGoogleStart, handleGoogleCallback, handleGoogleTokenSignIn } from "./routes/googleAuth";
 import { handleStartAnonymous, handleClaimWithPassword, handleClaimWithGoogle } from "./routes/account";
 import { PushScheduler } from "./scheduler";
@@ -79,6 +79,12 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === "/api/admin/analytics") {
     if (!(await isAdmin(env, userId))) return errorResponse("Admin access required", 403);
     if (method === "GET") return handleGetAnalytics(request, env);
+  }
+
+  const userProfileMatch = pathname.match(/^\/api\/admin\/analytics\/users\/([^/]+)$/);
+  if (userProfileMatch && method === "GET") {
+    if (!(await isAdmin(env, userId))) return errorResponse("Admin access required", 403);
+    return handleGetUserProfile(request, env, decodeURIComponent(userProfileMatch[1]));
   }
 
   if (pathname === "/api/admin/sheets/push") {
