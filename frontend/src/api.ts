@@ -56,10 +56,14 @@ export interface BlockContent {
   no: FollowupPrompt;
 }
 
+/** Consecutive-day run lengths that make a swap invite get proposed — split by valence (no-patterns are
+ * expected to get interesting faster than yes-patterns) and by whether the run held a single category
+ * or varied (categoryX = same category every day, generalX = any category). */
 export interface TriggerConfig {
-  exactPathThreshold: number;
-  categoryVolumeThreshold: number;
-  streakThreshold: number;
+  categoryYesThreshold: number;
+  categoryNoThreshold: number;
+  generalYesThreshold: number;
+  generalNoThreshold: number;
   retireAfterDays: number;
 }
 

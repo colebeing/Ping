@@ -7,8 +7,6 @@ const DEFAULT_TIMES: Record<LiveBlockId, string> = { q1: "08:00", q2: "12:00", q
 
 export function defaultState(): UserState {
   return {
-    pathCounts: {},
-    categoryCounts: { friends: 0, colleagues: 0, family: 0, me: 0 },
     answers: [],
     answerEdits: [],
     retiredOverrides: [],
@@ -82,9 +80,12 @@ export async function getState(env: Env, userId: string): Promise<UserState> {
   // friends/colleagues/family/me) and WHAT was dropped entirely — old
   // path/category counts and answer categories are no longer meaningful
   // under the new scheme, so a stale shape resets all answer history.
-  if (!("colleagues" in stored.categoryCounts)) {
-    stored.categoryCounts = { friends: 0, colleagues: 0, family: 0, me: 0 };
-    stored.pathCounts = {};
+  // pathCounts/categoryCounts themselves were removed entirely later (the branch-event mechanism they
+  // fed was dead code — see TriggerConfig's yes/no split), so this is no longer a typed UserState field;
+  // read via a raw cast purely to detect this one legacy case. A blob with no categoryCounts at all
+  // (every blob saved after that removal) correctly skips the reset below.
+  const rawCategoryCounts = (stored as unknown as { categoryCounts?: Record<string, number> }).categoryCounts;
+  if (rawCategoryCounts && !("colleagues" in rawCategoryCounts)) {
     stored.answers = [];
     stored.activeOverride = undefined;
     stored.retiredOverrides = [];

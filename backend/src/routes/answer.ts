@@ -2,7 +2,6 @@ import { CATEGORIES, isLiveBlockId, type Answer, type AnswerRecord, type BlockId
 import { errorResponse, json, readJson } from "../http";
 import { getState, saveState, resolveDate, hasPushEnabled } from "../state";
 import { getQuestionRoot, getTriggerConfig } from "../config";
-import { decrementFollowupEvent, recordFollowupEvent } from "../escalation";
 import { detectStreaks } from "../recommendations";
 import { getUser } from "../auth";
 
@@ -48,7 +47,6 @@ export async function handleAnswer(request: Request, env: Env, userId: string): 
   if (existingIdx !== -1) {
     // Editing an existing answer (today or backfilling a past day): undo any prior follow-up count before overwriting.
     const prev = state.answers[existingIdx];
-    if (prev.category) decrementFollowupEvent(state, prev.block, prev.answer, prev.category);
     // Only a genuine change is an edit — resuming an in-progress card
     // (blockCard's "resume" step) re-posts this same answer as a safe
     // no-op, which shouldn't read as the user having changed their mind.
@@ -91,11 +89,8 @@ export async function handleFollowup(request: Request, env: Env, userId: string)
   if (idx === -1) return errorResponse("Answer the block's yes/no question first", 409);
 
   const record = state.answers[idx];
-  if (record.category) {
-    decrementFollowupEvent(state, record.block, record.answer, record.category);
-    if (record.category !== body.category) {
-      state.answerEdits.push({ date, block: body.block, previousAnswer: record.answer, previousCategory: record.category, editedAt: new Date().toISOString() });
-    }
+  if (record.category && record.category !== body.category) {
+    state.answerEdits.push({ date, block: body.block, previousAnswer: record.answer, previousCategory: record.category, editedAt: new Date().toISOString() });
   }
   record.category = body.category;
   // Lifetime, never decremented on edit — see UserState.totalFollowupsAnswered's doc comment for why
@@ -103,7 +98,6 @@ export async function handleFollowup(request: Request, env: Env, userId: string)
   state.totalFollowupsAnswered++;
 
   const [thresholds, root, user] = await Promise.all([getTriggerConfig(env), getQuestionRoot(env), getUser(env, userId)]);
-  const { triggers, primary } = recordFollowupEvent(state, record.block, record.answer, body.category, thresholds);
 
   const newRecs = detectStreaks(state, thresholds, root);
   state.pendingNudges.push(...newRecs);
@@ -112,8 +106,6 @@ export async function handleFollowup(request: Request, env: Env, userId: string)
   await saveState(env, userId, state);
 
   return json({
-    triggers,
-    primary,
     newRecommendations: newRecs,
     pendingRecommendations: state.pendingNudges.filter((n) => n.kind === "recommendation"),
   });

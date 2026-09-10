@@ -59,9 +59,10 @@ export async function getConfig(env: Env): Promise<AppConfig> {
 // npm run seed, scripts/generate-config-seed.ts) can never clobber admin-edited triggers/question-tree
 // content, and vice versa.
 export const DEFAULT_TRIGGERS: TriggerConfig = {
-  exactPathThreshold: 3,
-  categoryVolumeThreshold: 6,
-  streakThreshold: 3,
+  categoryYesThreshold: 3,
+  categoryNoThreshold: 3,
+  generalYesThreshold: 3,
+  generalNoThreshold: 3,
   retireAfterDays: 7,
 };
 
@@ -233,9 +234,26 @@ export async function getFullAdminConfig(env: Env): Promise<FullAdminConfig> {
   return { blocks: config.blocks, triggers, questionRoot };
 }
 
+/**
+ * No write-on-read, same convention as getQuestionRoot. A stored blob from before the single
+ * streakThreshold split into 4 (categoryYes/categoryNo/generalYes/generalNo) is migrated in memory —
+ * an admin's already-tuned threshold is real data, so it's carried into all 4 new slots rather than
+ * reset to the default, mechanically lossless (same trigger behavior until deliberately split apart).
+ */
 export async function getTriggerConfig(env: Env): Promise<TriggerConfig> {
-  const stored = await env.CONFIG_KV.get("config:triggers", "json");
-  return (stored as TriggerConfig | null) ?? DEFAULT_TRIGGERS;
+  const stored = await env.CONFIG_KV.get<TriggerConfig>("config:triggers", "json");
+  if (!stored) return DEFAULT_TRIGGERS;
+  if ("categoryYesThreshold" in stored) return stored;
+
+  const old = stored as unknown as { streakThreshold?: number; retireAfterDays?: number };
+  const legacy = old.streakThreshold ?? DEFAULT_TRIGGERS.categoryYesThreshold;
+  return {
+    categoryYesThreshold: legacy,
+    categoryNoThreshold: legacy,
+    generalYesThreshold: legacy,
+    generalNoThreshold: legacy,
+    retireAfterDays: old.retireAfterDays ?? DEFAULT_TRIGGERS.retireAfterDays,
+  };
 }
 
 const CONFIG_AUDIT_LOG_LIMIT = 50;

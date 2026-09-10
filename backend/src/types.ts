@@ -1,13 +1,5 @@
 export type Category = "friends" | "colleagues" | "family" | "me";
 
-// Path-key letter codes, per spec notation {block}{y/n}{category}.
-export const CATEGORY_CODE: Record<Category, string> = {
-  friends: "a",
-  colleagues: "b",
-  family: "c",
-  me: "d",
-};
-
 export const CATEGORIES: Category[] = ["friends", "colleagues", "family", "me"];
 
 export type NeedQuadrant = "be" | "become" | "believe" | "belong";
@@ -65,13 +57,15 @@ export interface ConfigAuditEntry {
   editedAt: string; // ISO
 }
 
+/** Consecutive-day run lengths that make detectStreaks propose a swap invite — split by valence
+ * (no-patterns are expected to get interesting faster than yes-patterns) and by whether the run held a
+ * single category or varied (categoryX = same category every day, generalX = any category, matching
+ * EscalationChildren's own generalYes/generalNo naming for the mixed-category slots). */
 export interface TriggerConfig {
-  /** Same exact path (block+answer+category) repeats this many times → branch trigger. */
-  exactPathThreshold: number;
-  /** Same category hit this many times total across different paths → branch trigger. */
-  categoryVolumeThreshold: number;
-  /** Consecutive same-category, same-valence days → a recommendation is proposed. */
-  streakThreshold: number;
+  categoryYesThreshold: number;
+  categoryNoThreshold: number;
+  generalYesThreshold: number;
+  generalNoThreshold: number;
   /** Days an accepted recommendation must hold (no "no" answer) before it retires. */
   retireAfterDays: number;
 }
@@ -247,13 +241,6 @@ export interface AnswerEditRecord {
   editedAt: string; // ISO
 }
 
-export interface BranchEvent {
-  kind: "exact-path" | "category-volume";
-  pathKey?: string;
-  category: Category;
-  count: number;
-}
-
 /** One send/click outcome for a single device/channel — lets Analytics tell "sent but never delivered/tapped" apart from "never even sent". */
 export interface NotificationEvent {
   block: BlockId;
@@ -285,8 +272,6 @@ export interface Cadence {
 }
 
 export interface UserState {
-  pathCounts: Record<string, number>;
-  categoryCounts: Record<Category, number>;
   answers: AnswerRecord[];
   /** Append-only — never read by app logic, purely a trail for analytics. */
   answerEdits: AnswerEditRecord[];
@@ -298,8 +283,8 @@ export interface UserState {
   pendingNudges: Nudge[];
   declinedStreaks: Partial<Record<BlockId, DeclinedStreak>>;
   /** Lifetime count of completed follow-ups (category picked), incremented once per handleFollowup
-   * call. Deliberately NOT decremented on edit — unlike pathCounts/categoryCounts, this exists purely
-   * to trigger nudge checkpoints once each, not to stay an accurate "current" count. Do not derive
+   * call. Deliberately NOT decremented on edit — this exists purely to trigger nudge checkpoints once
+   * each, not to stay an accurate "current" count. Do not derive
    * this from answers.filter(a => a.category).length instead: handleAnswer wipes an existing record's
    * category on every re-post (including the harmless "resume" case), which would make a derived
    * count non-monotonic and let an already-fired checkpoint re-fire after an edit. */

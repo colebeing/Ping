@@ -114,12 +114,15 @@ export function detectStreaks(state: UserState, thresholds: TriggerConfig, root:
       }
     }
 
+    const categoryThreshold = valence === "amplify" ? thresholds.categoryYesThreshold : thresholds.categoryNoThreshold;
+    const generalThreshold = valence === "amplify" ? thresholds.generalYesThreshold : thresholds.generalNoThreshold;
+
     let runCategory: Category | null = null;
     let step: EscalationStep;
-    if (categoryRunLen >= thresholds.streakThreshold) {
+    if (categoryRunLen >= categoryThreshold) {
       runCategory = lastCategory;
       step = { valence, category: lastCategory };
-    } else if (valenceRunLen >= thresholds.streakThreshold) {
+    } else if (valenceRunLen >= generalThreshold) {
       step = { valence, category: null };
     } else {
       continue;
