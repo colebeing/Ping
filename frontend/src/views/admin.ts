@@ -629,10 +629,7 @@ function renderNodeEditor(root: QuestionRoot, path: EscalationPath, navigate: (p
     card.appendChild(blockQuestionsNote);
 
     const blockQuestions = path.length === 0 ? root.blockQuestions : node!.blockQuestions;
-    for (const [label, block] of ROOT_BLOCK_FIELDS) {
-      card.appendChild(fieldLabel(`${label} question`));
-      card.appendChild(textInput(blockQuestions[block], (v) => (blockQuestions[block] = v)));
-    }
+    card.appendChild(renderBlockQuestionsFields(blockQuestions));
   }
 
   const followupNote = document.createElement("p");
@@ -692,10 +689,7 @@ function renderDigInSection(node: EscalationNode, path: EscalationPath, navigate
     const body = document.createElement("div");
     body.appendChild(fieldLabel("Label"));
     body.appendChild(textInput(option.label, (v) => (option.label = v), `Option ${index + 1}`));
-    for (const [timedLabel, block] of ROOT_BLOCK_FIELDS) {
-      body.appendChild(fieldLabel(`${timedLabel} question`));
-      body.appendChild(textInput(option.blockQuestions[block], (v) => (option.blockQuestions[block] = v)));
-    }
+    body.appendChild(renderBlockQuestionsFields(option.blockQuestions));
     wrap.appendChild(accordion(option.label || `Option ${index + 1}`, body));
   });
 
@@ -872,6 +866,48 @@ function textInput(value: string, onChange: (v: string) => void, placeholder?: s
   if (placeholder) input.placeholder = placeholder;
   input.addEventListener("input", () => onChange(input.value));
   return input;
+}
+
+/**
+ * The four timed-question fields (Morning/Midday/Afternoon/Evening), each with its own "Copy to all"
+ * button — writes that one field's current text into the other three instantly, so a question that's
+ * identical across timeslots only has to be typed once. Purely a one-time copy, not a standing link:
+ * every field stays independently editable afterward for whichever slot should read differently. Used
+ * identically for the root question, an escalation node's own timed questions, and a dig-in option's.
+ */
+function renderBlockQuestionsFields(blockQuestions: Record<string, string>): HTMLElement {
+  const wrap = document.createElement("div");
+  const inputs: Partial<Record<string, HTMLInputElement>> = {};
+
+  for (const [label, block] of ROOT_BLOCK_FIELDS) {
+    wrap.appendChild(fieldLabel(`${label} question`));
+    const row = document.createElement("div");
+    row.className = "block-question-row";
+
+    const input = textInput(blockQuestions[block], (v) => (blockQuestions[block] = v));
+    inputs[block] = input;
+    row.appendChild(input);
+
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "link-btn";
+    copyBtn.textContent = "Copy to all";
+    copyBtn.title = "Copy this question into the other three timeslots — each stays editable afterward if one should read differently.";
+    copyBtn.addEventListener("click", () => {
+      const value = blockQuestions[block];
+      for (const [, otherBlock] of ROOT_BLOCK_FIELDS) {
+        if (otherBlock === block) continue;
+        blockQuestions[otherBlock] = value;
+        const otherInput = inputs[otherBlock];
+        if (otherInput) otherInput.value = value;
+      }
+    });
+    row.appendChild(copyBtn);
+
+    wrap.appendChild(row);
+  }
+
+  return wrap;
 }
 
 function numberField(label: string, value: number, onChange: (v: number) => void): HTMLElement {
