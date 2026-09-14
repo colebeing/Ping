@@ -1,10 +1,8 @@
 import {
-  CATEGORIES,
   CATEGORY_LABEL,
   LIVE_BLOCKS,
   type AppConfig,
   type BlockContent,
-  type Category,
   type ConfigAuditEntry,
   type Env,
   type EscalationChildren,
@@ -14,6 +12,7 @@ import {
   type QuestionRoot,
   type TriggerConfig,
 } from "./types";
+import { CATEGORY_RENAME, migrateFollowupPromptCategories } from "./category-migration";
 
 // This is the fallback used only if CONFIG_KV is empty. The Admin UI is the canonical, sole place to
 // edit live content — see scripts/generate-config-seed.ts for regenerating scripts/config-seed.json
@@ -81,16 +80,19 @@ function leaf(question: string): EscalationNode {
 
 const DEFAULT_ESCALATION_CHILDREN: EscalationChildren = {
   amplify: {
-    friends: leaf("Would you like to focus on protecting friend time?"),
-    colleagues: leaf("Would you like to focus on leaning on your colleagues?"),
-    family: leaf("Would you like to focus on protecting family time?"),
-    me: leaf("Would you like to focus on protecting time for yourself?"),
+    // Wording carried over verbatim from the old friends/colleagues/family/me set — only the keys
+    // renamed to their EPIC equivalents (see category-migration.ts). Fallback-only content (never
+    // touched again once CONFIG_KV has real content), so it's not worth rewriting the phrasing itself.
+    environment: leaf("Would you like to focus on protecting friend time?"),
+    impact: leaf("Would you like to focus on leaning on your colleagues?"),
+    people: leaf("Would you like to focus on protecting family time?"),
+    capacity: leaf("Would you like to focus on protecting time for yourself?"),
   },
   resolve: {
-    friends: leaf("Would you like to focus on making space for friends?"),
-    colleagues: leaf("Would you like to focus on getting ahead of what colleagues need?"),
-    family: leaf("Would you like to focus on making space for family?"),
-    me: leaf("Would you like to focus on protecting your own time?"),
+    environment: leaf("Would you like to focus on making space for friends?"),
+    impact: leaf("Would you like to focus on getting ahead of what colleagues need?"),
+    people: leaf("Would you like to focus on making space for family?"),
+    capacity: leaf("Would you like to focus on protecting your own time?"),
   },
   generalYes: leaf("Would you like to keep doing what's working?"),
   generalNo: leaf("Would you like to get ahead of what's pulling at you?"),
@@ -132,11 +134,13 @@ function migrateEscalationChildren(rawCopy: Record<string, unknown> | null): Esc
   if (!rawCopy) return children;
   const amplify = rawCopy.amplify as Record<string, unknown> | undefined;
   const resolve = rawCopy.resolve as Record<string, unknown> | undefined;
-  for (const cat of CATEGORIES) {
-    const aText = amplify && extractLegacyInvitationText(amplify[cat]);
-    if (aText) children.amplify[cat] = leaf(aText);
-    const rText = resolve && extractLegacyInvitationText(resolve[cat]);
-    if (rText) children.resolve[cat] = leaf(rText);
+  // This raw blob predates the EPIC rename entirely, so its keys are still friends/colleagues/family/
+  // me — read via CATEGORY_RENAME's old keys, write under the new ones (same as everywhere else).
+  for (const [oldCat, newCat] of Object.entries(CATEGORY_RENAME)) {
+    const aText = amplify && extractLegacyInvitationText(amplify[oldCat]);
+    if (aText) children.amplify[newCat] = leaf(aText);
+    const rText = resolve && extractLegacyInvitationText(resolve[oldCat]);
+    if (rText) children.resolve[newCat] = leaf(rText);
   }
   const generalYesText = extractLegacyInvitationText(rawCopy.generalYes);
   if (generalYesText) children.generalYes = leaf(generalYesText);
@@ -160,18 +164,27 @@ function migrateNodeShape(node: EscalationNode): EscalationNode {
         no: node.no,
         children: node.children,
       };
-  return { ...upgraded, children: migrateChildrenShape(upgraded.children) };
+  return {
+    ...upgraded,
+    yes: migrateFollowupPromptCategories(upgraded.yes),
+    no: migrateFollowupPromptCategories(upgraded.no),
+    children: migrateChildrenShape(upgraded.children),
+  };
 }
 
+/** Renames pre-EPIC category keys (friends/colleagues/family/me) to their EPIC equivalents wherever
+ * they appear as EscalationChildren's own amplify/resolve slots — see category-migration.ts. Reads via
+ * both the new key and CATEGORY_RENAME's old key so this is idempotent: already-migrated data (only
+ * the new key present) passes straight through untouched. */
 function migrateChildrenShape(children: EscalationChildren): EscalationChildren {
   const migrated: EscalationChildren = { amplify: {}, resolve: {} };
-  for (const cat of Object.keys(children.amplify) as Category[]) {
-    const c = children.amplify[cat];
-    if (c) migrated.amplify[cat] = migrateNodeShape(c);
-  }
-  for (const cat of Object.keys(children.resolve) as Category[]) {
-    const c = children.resolve[cat];
-    if (c) migrated.resolve[cat] = migrateNodeShape(c);
+  const rawAmplify = children.amplify as Partial<Record<string, EscalationNode>>;
+  const rawResolve = children.resolve as Partial<Record<string, EscalationNode>>;
+  for (const [oldCat, newCat] of Object.entries(CATEGORY_RENAME)) {
+    const a = rawAmplify[newCat] ?? rawAmplify[oldCat];
+    if (a) migrated.amplify[newCat] = migrateNodeShape(a);
+    const r = rawResolve[newCat] ?? rawResolve[oldCat];
+    if (r) migrated.resolve[newCat] = migrateNodeShape(r);
   }
   if (children.generalYes) migrated.generalYes = migrateNodeShape(children.generalYes);
   if (children.generalNo) migrated.generalNo = migrateNodeShape(children.generalNo);
@@ -190,7 +203,14 @@ function migrateChildrenShape(children: EscalationChildren): EscalationChildren 
  */
 export async function getQuestionRoot(env: Env): Promise<QuestionRoot> {
   const stored = await env.CONFIG_KV.get<QuestionRoot>("config:question-root", "json");
-  if (stored) return { ...stored, children: migrateChildrenShape(stored.children) };
+  if (stored) {
+    return {
+      ...stored,
+      yes: migrateFollowupPromptCategories(stored.yes),
+      no: migrateFollowupPromptCategories(stored.no),
+      children: migrateChildrenShape(stored.children),
+    };
+  }
 
   // Nothing saved under the new key yet — seed from whatever's sitting in the older "config"/
   // "config:recommendation-copy" keys, if anything. Read the RAW blob: AppConfig's type no longer

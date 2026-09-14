@@ -5,19 +5,19 @@
       "yes": {
         "prompt": "Who made it work?",
         "options": {
-          "friends": "Friends",
-          "colleagues": "Colleagues",
-          "family": "Family",
-          "me": "Me"
+          "environment": "Environment",
+          "people": "People",
+          "impact": "Impact",
+          "capacity": "Capacity"
         }
       },
       "no": {
         "prompt": "Who had to move?",
         "options": {
-          "friends": "Friends",
-          "colleagues": "Colleagues",
-          "family": "Family",
-          "me": "Me"
+          "environment": "Environment",
+          "people": "People",
+          "impact": "Impact",
+          "capacity": "Capacity"
         }
       }
     },
@@ -26,19 +26,19 @@
       "yes": {
         "prompt": "Who made it work?",
         "options": {
-          "friends": "Friends",
-          "colleagues": "Colleagues",
-          "family": "Family",
-          "me": "Me"
+          "environment": "Environment",
+          "people": "People",
+          "impact": "Impact",
+          "capacity": "Capacity"
         }
       },
       "no": {
         "prompt": "Who had to move?",
         "options": {
-          "friends": "Friends",
-          "colleagues": "Colleagues",
-          "family": "Family",
-          "me": "Me"
+          "environment": "Environment",
+          "people": "People",
+          "impact": "Impact",
+          "capacity": "Capacity"
         }
       }
     },
@@ -47,19 +47,19 @@
       "yes": {
         "prompt": "Who made it work?",
         "options": {
-          "friends": "Friends",
-          "colleagues": "Colleagues",
-          "family": "Family",
-          "me": "Me"
+          "environment": "Environment",
+          "people": "People",
+          "impact": "Impact",
+          "capacity": "Capacity"
         }
       },
       "no": {
         "prompt": "Who had to move?",
         "options": {
-          "friends": "Friends",
-          "colleagues": "Colleagues",
-          "family": "Family",
-          "me": "Me"
+          "environment": "Environment",
+          "people": "People",
+          "impact": "Impact",
+          "capacity": "Capacity"
         }
       }
     }

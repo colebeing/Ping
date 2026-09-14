@@ -1,6 +1,9 @@
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8787";
 
-export type Category = "friends" | "colleagues" | "family" | "me";
+/** The EPIC set — Environment/People/Impact/Capacity — replacing the original friends/colleagues/
+ * family/me naming; see backend/src/category-migration.ts for the old -> new mapping. Always presented
+ * in this exact order (see blockCard.ts's CATEGORY_ORDER). */
+export type Category = "environment" | "people" | "impact" | "capacity";
 
 /** The only four blocks live going forward — fixed morning/midday/afternoon/evening identities. */
 export type LiveBlockId = "q1" | "q2" | "q3" | "q4";

@@ -1,20 +1,26 @@
-export type Category = "friends" | "colleagues" | "family" | "me";
+/** The EPIC set — Environment/People/Impact/Capacity — replacing the original friends/colleagues/
+ * family/me naming; see category-migration.ts for the old -> new mapping and how existing stored data
+ * (KV config and every user's own state) transparently upgrades on read. Always presented in this exact
+ * order, everywhere — CATEGORIES below IS that order, not just the set. */
+export type Category = "environment" | "people" | "impact" | "capacity";
 
-export const CATEGORIES: Category[] = ["friends", "colleagues", "family", "me"];
+export const CATEGORIES: Category[] = ["environment", "people", "impact", "capacity"];
 
 /** The one source of truth for how each category displays, backend-side (sheets.ts's Sheet headers
  * and breadcrumbs, config.ts's seed content) — mirrored by frontend/src/blockCard.ts's own copy,
  * since the two projects don't share a module. Keep both in sync if this ever changes. */
-export const CATEGORY_LABEL: Record<Category, string> = { friends: "Friends", colleagues: "Colleagues", family: "Family", me: "Me" };
+export const CATEGORY_LABEL: Record<Category, string> = { environment: "Environment", people: "People", impact: "Impact", capacity: "Capacity" };
 
 export type NeedQuadrant = "be" | "become" | "believe" | "belong";
 
-// Backend-only. Users never see quadrant names, only who labels.
+// Backend-only. Users never see quadrant names, only who labels. Currently dead code — nothing reads
+// this map — carried forward under the renamed keys (environment=friends, people=family, impact=
+// colleagues, capacity=me) purely so it isn't silently wrong if it's ever wired up later.
 export const DOMAIN_NEED_MAP: Record<Category, NeedQuadrant[]> = {
-  friends: ["belong"],
-  colleagues: ["become", "be", "believe", "belong"],
-  family: ["be", "belong"],
-  me: ["be", "become", "believe", "belong"],
+  environment: ["belong"],
+  people: ["be", "belong"],
+  impact: ["become", "be", "believe", "belong"],
+  capacity: ["be", "become", "believe", "belong"],
 };
 
 /** The only four blocks live going forward — fixed morning/midday/afternoon/evening identities. */

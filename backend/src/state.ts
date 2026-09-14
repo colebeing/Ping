@@ -1,4 +1,5 @@
 import type { Env, LiveBlockId, UserState } from "./types";
+import { migrateCategoryValue, migrateFollowupPromptCategories } from "./category-migration";
 
 // Four hours apart, clearing MIN_GAP_MINUTES's 2-hour spacing rule with room to spare. Shared between
 // a brand-new account and the legacy-cadence migration below (for whichever slots a migrating user
@@ -131,7 +132,54 @@ export async function getState(env: Env, userId: string): Promise<UserState> {
   stored.pendingNudges = stored.pendingNudges.filter(
     (n) => n.kind !== "recommendation" || ("path" in n && "node" in n && "blockQuestions" in n.node),
   );
+  migrateCategories(stored);
   return stored;
+}
+
+/** Renames pre-EPIC category values (friends/colleagues/family/me) to their EPIC equivalents
+ * (environment/people/impact/capacity) everywhere a Category appears in this user's own state —
+ * answer history, overrides (including their own yes/no follow-up options), pending recommendation
+ * nudges, and declined-streak keys. See category-migration.ts; idempotent, so safe to run on every
+ * read regardless of whether this particular blob has already been touched since the rename. */
+function migrateCategories(stored: UserState): void {
+  for (const a of stored.answers) {
+    if (a.category) a.category = migrateCategoryValue(a.category) ?? a.category;
+  }
+  for (const e of stored.answerEdits) {
+    if (e.previousCategory) e.previousCategory = migrateCategoryValue(e.previousCategory) ?? e.previousCategory;
+  }
+  if (stored.activeOverride) {
+    const o = stored.activeOverride;
+    if (o.category) o.category = migrateCategoryValue(o.category) ?? o.category;
+    o.yes = migrateFollowupPromptCategories(o.yes);
+    o.no = migrateFollowupPromptCategories(o.no);
+  }
+  stored.retiredOverrides = stored.retiredOverrides.map((o) => ({
+    ...o,
+    category: o.category ? (migrateCategoryValue(o.category) ?? o.category) : o.category,
+    yes: migrateFollowupPromptCategories(o.yes),
+    no: migrateFollowupPromptCategories(o.no),
+  }));
+  stored.pendingNudges = stored.pendingNudges.map((n) => {
+    if (n.kind !== "recommendation") return n;
+    return {
+      ...n,
+      category: n.category ? (migrateCategoryValue(n.category) ?? n.category) : n.category,
+      node: { ...n.node, yes: migrateFollowupPromptCategories(n.node.yes), no: migrateFollowupPromptCategories(n.node.no) },
+    };
+  });
+  // Keyed "<valence>:<category-or-'general'>" (see recommendations.ts's declinedStreakKey) — "general"
+  // itself never changes, only a real category name after the colon needs remapping.
+  const migratedDeclined: UserState["declinedStreaks"] = {};
+  for (const [key, value] of Object.entries(stored.declinedStreaks)) {
+    if (!value) continue;
+    const sep = key.indexOf(":");
+    const valence = key.slice(0, sep);
+    const cat = key.slice(sep + 1);
+    const newCat = cat === "general" ? "general" : (migrateCategoryValue(cat) ?? cat);
+    migratedDeclined[`${valence}:${newCat}`] = value;
+  }
+  stored.declinedStreaks = migratedDeclined;
 }
 
 export async function saveState(env: Env, userId: string, state: UserState): Promise<void> {

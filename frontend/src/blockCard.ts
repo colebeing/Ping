@@ -9,7 +9,7 @@ export const BLOCK_LABEL: Record<BlockId, string> = {
   q3: "Afternoon",
   q4: "Evening",
 };
-export const CATEGORY_LABEL: Record<Category, string> = { friends: "Friends", colleagues: "Colleagues", family: "Family", me: "Me" };
+export const CATEGORY_LABEL: Record<Category, string> = { environment: "Environment", people: "People", impact: "Impact", capacity: "Capacity" };
 /** The one place category display order is decided — derived from CATEGORY_LABEL above so there's
  * only one list to keep in sync, not a second copy of the four keys elsewhere in the frontend. */
 export const CATEGORY_ORDER: Category[] = Object.keys(CATEGORY_LABEL) as Category[];

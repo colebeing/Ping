@@ -8,24 +8,24 @@
   "yes": {
     "prompt": "Who made it work?",
     "options": {
-      "friends": "Friends",
-      "colleagues": "Colleagues",
-      "family": "Family",
-      "me": "Me"
+      "environment": "Environment",
+      "people": "People",
+      "impact": "Impact",
+      "capacity": "Capacity"
     }
   },
   "no": {
     "prompt": "Who had to move?",
     "options": {
-      "friends": "Friends",
-      "colleagues": "Colleagues",
-      "family": "Family",
-      "me": "Me"
+      "environment": "Environment",
+      "people": "People",
+      "impact": "Impact",
+      "capacity": "Capacity"
     }
   },
   "children": {
     "amplify": {
-      "friends": {
+      "environment": {
         "inviteQuestion": "Would you like to focus on protecting friend time?",
         "blockQuestions": {
           "q1": "Would you like to focus on protecting friend time?",
@@ -36,19 +36,19 @@
         "yes": {
           "prompt": "Who made it work?",
           "options": {
-            "friends": "Friends",
-            "colleagues": "Colleagues",
-            "family": "Family",
-            "me": "Me"
+            "environment": "Environment",
+            "people": "People",
+            "impact": "Impact",
+            "capacity": "Capacity"
           }
         },
         "no": {
           "prompt": "Who had to move?",
           "options": {
-            "friends": "Friends",
-            "colleagues": "Colleagues",
-            "family": "Family",
-            "me": "Me"
+            "environment": "Environment",
+            "people": "People",
+            "impact": "Impact",
+            "capacity": "Capacity"
           }
         },
         "children": {
@@ -56,7 +56,7 @@
           "resolve": {}
         }
       },
-      "colleagues": {
+      "impact": {
         "inviteQuestion": "Would you like to focus on leaning on your colleagues?",
         "blockQuestions": {
           "q1": "Would you like to focus on leaning on your colleagues?",
@@ -67,19 +67,19 @@
         "yes": {
           "prompt": "Who made it work?",
           "options": {
-            "friends": "Friends",
-            "colleagues": "Colleagues",
-            "family": "Family",
-            "me": "Me"
+            "environment": "Environment",
+            "people": "People",
+            "impact": "Impact",
+            "capacity": "Capacity"
           }
         },
         "no": {
           "prompt": "Who had to move?",
           "options": {
-            "friends": "Friends",
-            "colleagues": "Colleagues",
-            "family": "Family",
-            "me": "Me"
+            "environment": "Environment",
+            "people": "People",
+            "impact": "Impact",
+            "capacity": "Capacity"
           }
         },
         "children": {
@@ -87,7 +87,7 @@
           "resolve": {}
         }
       },
-      "family": {
+      "people": {
         "inviteQuestion": "Would you like to focus on protecting family time?",
         "blockQuestions": {
           "q1": "Would you like to focus on protecting family time?",
@@ -98,19 +98,19 @@
         "yes": {
           "prompt": "Who made it work?",
           "options": {
-            "friends": "Friends",
-            "colleagues": "Colleagues",
-            "family": "Family",
-            "me": "Me"
+            "environment": "Environment",
+            "people": "People",
+            "impact": "Impact",
+            "capacity": "Capacity"
           }
         },
         "no": {
           "prompt": "Who had to move?",
           "options": {
-            "friends": "Friends",
-            "colleagues": "Colleagues",
-            "family": "Family",
-            "me": "Me"
+            "environment": "Environment",
+            "people": "People",
+            "impact": "Impact",
+            "capacity": "Capacity"
           }
         },
         "children": {
@@ -118,7 +118,7 @@
           "resolve": {}
         }
       },
-      "me": {
+      "capacity": {
         "inviteQuestion": "Would you like to focus on protecting time for yourself?",
         "blockQuestions": {
           "q1": "Would you like to focus on protecting time for yourself?",
@@ -129,19 +129,19 @@
         "yes": {
           "prompt": "Who made it work?",
           "options": {
-            "friends": "Friends",
-            "colleagues": "Colleagues",
-            "family": "Family",
-            "me": "Me"
+            "environment": "Environment",
+            "people": "People",
+            "impact": "Impact",
+            "capacity": "Capacity"
           }
         },
         "no": {
           "prompt": "Who had to move?",
           "options": {
-            "friends": "Friends",
-            "colleagues": "Colleagues",
-            "family": "Family",
-            "me": "Me"
+            "environment": "Environment",
+            "people": "People",
+            "impact": "Impact",
+            "capacity": "Capacity"
           }
         },
         "children": {
@@ -151,7 +151,7 @@
       }
     },
     "resolve": {
-      "friends": {
+      "environment": {
         "inviteQuestion": "Would you like to focus on making space for friends?",
         "blockQuestions": {
           "q1": "Would you like to focus on making space for friends?",
@@ -162,19 +162,19 @@
         "yes": {
           "prompt": "Who made it work?",
           "options": {
-            "friends": "Friends",
-            "colleagues": "Colleagues",
-            "family": "Family",
-            "me": "Me"
+            "environment": "Environment",
+            "people": "People",
+            "impact": "Impact",
+            "capacity": "Capacity"
           }
         },
         "no": {
           "prompt": "Who had to move?",
           "options": {
-            "friends": "Friends",
-            "colleagues": "Colleagues",
-            "family": "Family",
-            "me": "Me"
+            "environment": "Environment",
+            "people": "People",
+            "impact": "Impact",
+            "capacity": "Capacity"
           }
         },
         "children": {
@@ -182,7 +182,7 @@
           "resolve": {}
         }
       },
-      "colleagues": {
+      "impact": {
         "inviteQuestion": "Would you like to focus on getting ahead of what colleagues need?",
         "blockQuestions": {
           "q1": "Would you like to focus on getting ahead of what colleagues need?",
@@ -193,19 +193,19 @@
         "yes": {
           "prompt": "Who made it work?",
           "options": {
-            "friends": "Friends",
-            "colleagues": "Colleagues",
-            "family": "Family",
-            "me": "Me"
+            "environment": "Environment",
+            "people": "People",
+            "impact": "Impact",
+            "capacity": "Capacity"
           }
         },
         "no": {
           "prompt": "Who had to move?",
           "options": {
-            "friends": "Friends",
-            "colleagues": "Colleagues",
-            "family": "Family",
-            "me": "Me"
+            "environment": "Environment",
+            "people": "People",
+            "impact": "Impact",
+            "capacity": "Capacity"
           }
         },
         "children": {
@@ -213,7 +213,7 @@
           "resolve": {}
         }
       },
-      "family": {
+      "people": {
         "inviteQuestion": "Would you like to focus on making space for family?",
         "blockQuestions": {
           "q1": "Would you like to focus on making space for family?",
@@ -224,19 +224,19 @@
         "yes": {
           "prompt": "Who made it work?",
           "options": {
-            "friends": "Friends",
-            "colleagues": "Colleagues",
-            "family": "Family",
-            "me": "Me"
+            "environment": "Environment",
+            "people": "People",
+            "impact": "Impact",
+            "capacity": "Capacity"
           }
         },
         "no": {
           "prompt": "Who had to move?",
           "options": {
-            "friends": "Friends",
-            "colleagues": "Colleagues",
-            "family": "Family",
-            "me": "Me"
+            "environment": "Environment",
+            "people": "People",
+            "impact": "Impact",
+            "capacity": "Capacity"
           }
         },
         "children": {
@@ -244,7 +244,7 @@
           "resolve": {}
         }
       },
-      "me": {
+      "capacity": {
         "inviteQuestion": "Would you like to focus on protecting your own time?",
         "blockQuestions": {
           "q1": "Would you like to focus on protecting your own time?",
@@ -255,19 +255,19 @@
         "yes": {
           "prompt": "Who made it work?",
           "options": {
-            "friends": "Friends",
-            "colleagues": "Colleagues",
-            "family": "Family",
-            "me": "Me"
+            "environment": "Environment",
+            "people": "People",
+            "impact": "Impact",
+            "capacity": "Capacity"
           }
         },
         "no": {
           "prompt": "Who had to move?",
           "options": {
-            "friends": "Friends",
-            "colleagues": "Colleagues",
-            "family": "Family",
-            "me": "Me"
+            "environment": "Environment",
+            "people": "People",
+            "impact": "Impact",
+            "capacity": "Capacity"
           }
         },
         "children": {
@@ -287,19 +287,19 @@
       "yes": {
         "prompt": "Who made it work?",
         "options": {
-          "friends": "Friends",
-          "colleagues": "Colleagues",
-          "family": "Family",
-          "me": "Me"
+          "environment": "Environment",
+          "people": "People",
+          "impact": "Impact",
+          "capacity": "Capacity"
         }
       },
       "no": {
         "prompt": "Who had to move?",
         "options": {
-          "friends": "Friends",
-          "colleagues": "Colleagues",
-          "family": "Family",
-          "me": "Me"
+          "environment": "Environment",
+          "people": "People",
+          "impact": "Impact",
+          "capacity": "Capacity"
         }
       },
       "children": {
@@ -318,19 +318,19 @@
       "yes": {
         "prompt": "Who made it work?",
         "options": {
-          "friends": "Friends",
-          "colleagues": "Colleagues",
-          "family": "Family",
-          "me": "Me"
+          "environment": "Environment",
+          "people": "People",
+          "impact": "Impact",
+          "capacity": "Capacity"
         }
       },
       "no": {
         "prompt": "Who had to move?",
         "options": {
-          "friends": "Friends",
-          "colleagues": "Colleagues",
-          "family": "Family",
-          "me": "Me"
+          "environment": "Environment",
+          "people": "People",
+          "impact": "Impact",
+          "capacity": "Capacity"
         }
       },
       "children": {
