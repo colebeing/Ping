@@ -1,8 +1,8 @@
 import { buildPushPayload, type PushMessage, type PushSubscription as WebPushSubscription, type VapidKeys } from "@block65/webcrypto-web-push";
-import { LIVE_BLOCKS, isLiveBlockId, type BlockId, type Cadence, type Env, type LiveBlockId, type PushSubscriptionJSON } from "./types";
+import { LIVE_BLOCKS, isLiveBlockId, type BlockId, type Cadence, type Env, type LiveBlockId, type PushSubscriptionJSON, type RecommendationNudge } from "./types";
 import { getState, saveState, todayLocal } from "./state";
 import { getConfig, getQuestionRoot } from "./config";
-import { sendFcmPush, type SendOutcome } from "./fcm";
+import { sendFcmPush, fcmConfigured, type SendOutcome } from "./fcm";
 
 /** Which of q1-q4 are actually live for this user right now (not skipped), and what time each is due. */
 function activeBlockTimes(cadence: Cadence): { block: LiveBlockId; time: string }[] {
@@ -112,6 +112,44 @@ async function applyPushOutcome(env: Env, userId: string, block: BlockId, result
   if (markNotifiedIfSent && result.anySent) state.lastNotified[block] = todayLocal(state.cadence.timezone);
 
   await saveState(env, userId, state);
+}
+
+/**
+ * Sends a dedicated push the moment a swap invite is created (called from routes/answer.ts's
+ * handleFollowup right after detectStreaks produces one) — independent of the notification-tap chain
+ * (NotificationActionReceiver.kt / PingNotificationDelegate.swift), which only ever shows a
+ * recommendation notification as a side effect of the user resolving the routine question AND its WHY
+ * follow-up entirely via notification button taps, never opening the app. Any other path (opening the
+ * app, answering the WHY follow-up in-app) previously left the nudge sitting silently in
+ * pendingNudges — surfaced inline next time a block card is opened (blockCard.ts), but never pushed.
+ *
+ * Native only (FCM), same reasoning as sendBlockPush's data-only Android send: Chrome's web push
+ * already lands the user in-app for the WHY follow-up, where a pending recommendation is already
+ * shown inline, so a webpush notification here would just be redundant.
+ */
+export async function sendRecommendationPush(env: Env, tokens: string[], nudge: RecommendationNudge): Promise<{ token: string; outcome: SendOutcome }[]> {
+  if (!fcmConfigured(env) || tokens.length === 0) return [];
+
+  const data: Record<string, string> = {
+    kind: "recommendation",
+    // title/body drive iOS's real APNs alert directly (see fcm.ts) — Android ignores them and builds
+    // its own interactive layout instead, reading inviteQuestion below.
+    title: "Noticed a pattern",
+    body: nudge.node.inviteQuestion,
+    recommendationId: nudge.id,
+    inviteQuestion: nudge.node.inviteQuestion,
+  };
+  const digIn = nudge.node.digIn;
+  if (digIn) {
+    data.digInPrompt = digIn.prompt;
+    data.digInOptions = JSON.stringify(digIn.options.map((o, index) => ({ index, label: o.label })).filter((o) => o.label));
+  }
+
+  const outcomes: { token: string; outcome: SendOutcome }[] = [];
+  for (const token of tokens) {
+    outcomes.push({ token, outcome: await sendFcmPush(env, token, data) });
+  }
+  return outcomes;
 }
 
 /** Called from the service worker's notificationclick — logs the tap itself, distinct from whether it went on to record an answer, so delivery and interaction can be measured separately. */

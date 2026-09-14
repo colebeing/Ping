@@ -37,7 +37,7 @@ export async function sendFcmPush(env: Env, token: string, data: Record<string, 
               aps: {
                 alert: { title: data.title ?? "Ping", body: data.body ?? "" },
                 sound: "default",
-                category: "PING_QUESTION",
+                category: data.kind === "recommendation" ? "PING_RECOMMENDATION" : "PING_QUESTION",
               },
             },
           },

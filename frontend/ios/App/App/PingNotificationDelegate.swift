@@ -146,11 +146,7 @@ public class PingNotificationDelegate: NSObject, UNUserNotificationCenterDelegat
             // by the PING_DIGIN_ case below.
             if response.actionIdentifier == "ACCEPT_ACTION",
                let digInPrompt = content.userInfo["digInPrompt"] as? String,
-               let digInOptionsRaw = content.userInfo["digInOptions"] as? [[String: Any]] {
-                let options = digInOptionsRaw.compactMap { dict -> DigInOption? in
-                    guard let index = dict["index"] as? Int, let label = dict["label"] as? String else { return nil }
-                    return DigInOption(index: index, label: label)
-                }
+               let options = Self.parseDigInOptions(content.userInfo["digInOptions"]) {
                 scheduleRecommendationDigIn(identifier: identifier, recommendationId: recommendationId, prompt: digInPrompt, options: options)
                 completionHandler()
                 return
@@ -185,6 +181,26 @@ public class PingNotificationDelegate: NSObject, UNUserNotificationCenterDelegat
     private struct DigInOption {
         let index: Int
         let label: String
+    }
+
+    /// `digInOptions` arrives as a native `[[String: Any]]` when this app itself scheduled the local
+    /// notification (see scheduleRecommendation, reached via the notification-tap chain) but as a
+    /// JSON-encoded string when it comes straight off an incoming push (backend/src/push.ts's
+    /// sendRecommendationPush — FCM's `data` payload only ever carries strings) — accept either.
+    private static func parseDigInOptions(_ raw: Any?) -> [DigInOption]? {
+        let array: [[String: Any]]?
+        if let native = raw as? [[String: Any]] {
+            array = native
+        } else if let jsonString = raw as? String, let data = jsonString.data(using: .utf8) {
+            array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+        } else {
+            array = nil
+        }
+        guard let array else { return nil }
+        return array.compactMap { dict in
+            guard let index = dict["index"] as? Int, let label = dict["label"] as? String else { return nil }
+            return DigInOption(index: index, label: label)
+        }
     }
 
     /// Swaps the tapped notification for the 4-option WHY follow-up. `answer` and each option's own

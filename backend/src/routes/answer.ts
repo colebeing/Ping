@@ -4,6 +4,7 @@ import { getState, saveState, resolveDate, hasPushEnabled } from "../state";
 import { getQuestionRoot, getTriggerConfig } from "../config";
 import { detectStreaks } from "../recommendations";
 import { getUser } from "../auth";
+import { sendRecommendationPush } from "../push";
 
 /**
  * Checkpoint-triggered nudges — a global follow-up-count table, deliberately a different shape from
@@ -102,6 +103,18 @@ export async function handleFollowup(request: Request, env: Env, userId: string)
   const newRecs = detectStreaks(state, thresholds, root, { block: body.block, answer: record.answer, category: body.category, timestamp: record.timestamp });
   state.pendingNudges.push(...newRecs);
   runCheckpointTriggers(state, user);
+
+  // Fire a dedicated push for each new swap invite — otherwise a native install only ever sees one via
+  // the notification-tap chain (see sendRecommendationPush's doc comment), which silently drops it the
+  // moment the user opens the app or answers in-app instead of tapping through notification buttons.
+  if (newRecs.length > 0 && state.fcmTokens.length > 0) {
+    const outcomes = (await Promise.all(newRecs.map((nudge) => sendRecommendationPush(env, state.fcmTokens, nudge)))).flat();
+    for (const { outcome } of outcomes) {
+      state.notificationEvents.push({ block: body.block, kind: outcome === "sent" ? "sent" : "failed", channel: "fcm", timestamp: new Date().toISOString() });
+    }
+    const goneTokens = new Set(outcomes.filter((o) => o.outcome === "gone").map((o) => o.token));
+    if (goneTokens.size > 0) state.fcmTokens = state.fcmTokens.filter((t) => !goneTokens.has(t));
+  }
 
   await saveState(env, userId, state);
 

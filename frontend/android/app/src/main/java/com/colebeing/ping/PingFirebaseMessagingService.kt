@@ -11,6 +11,7 @@ import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import org.json.JSONArray
 
 // Matches the web app's --accent CSS variable — chosen there for contrast against its own dark
 // background, which happens to match most notification shades (light or dark, on this and other
@@ -37,11 +38,35 @@ class PingFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
+        ensureChannel(this)
+        // Sent directly from backend/src/routes/answer.ts's handleFollowup the moment a streak
+        // trigger fires — a separate flow from the routine block push below, and the only place a
+        // swap invite reaches this app without the notification-tap chain already having run.
+        if (message.data["kind"] == "recommendation") {
+            val recommendationId = message.data["recommendationId"] ?: return
+            val inviteQuestion = message.data["inviteQuestion"] ?: return
+            val digInPrompt = message.data["digInPrompt"]
+            val digInOptions = message.data["digInOptions"]?.let(::parseDigInOptions)
+            showRecommendationNotification(this, recommendationId, inviteQuestion, digInPrompt, digInOptions)
+            return
+        }
+
         val block = message.data["block"] ?: return
         val title = message.data["title"] ?: "Ping"
         val body = message.data["body"] ?: "Did today go how you wanted?"
-        ensureChannel(this)
         showQuestionNotification(this, block, title, body)
+    }
+}
+
+/** Parses sendRecommendationPush's `[{"index":N,"label":"..."}]` JSON into the same
+ * (original slot index, label) pairs showRecommendationNotification already expects from the
+ * notification-tap chain's own JSON parsing in NotificationActionReceiver.kt. */
+private fun parseDigInOptions(json: String): List<Pair<Int, String>> {
+    val array = JSONArray(json)
+    return (0 until array.length()).mapNotNull { i ->
+        val obj = array.optJSONObject(i) ?: return@mapNotNull null
+        val label = obj.optString("label").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+        obj.optInt("index", -1).takeIf { it >= 0 }?.let { it to label }
     }
 }
 
