@@ -242,6 +242,15 @@ export interface AnswerRecord {
   block: BlockId;
   answer: Answer;
   category?: Category;
+  /** Which escalation-tree node was this account's routine question at the moment this was answered —
+   * [] for the root routine question, same shape QuestionOverride.path/RecommendationNudge.path use.
+   * Set fresh on every write (a same-day edit gets the CURRENTLY active path, not whatever was active
+   * when the day was first answered), so a swap mid-history is reflected exactly at the day it happened.
+   * Absent on any answer recorded before this field existed — treat as [] (routine question) when
+   * reading; that's the correct assumption for the near-entirety of pre-tracking history, since a swap
+   * followed immediately by another swap (skipping the natural retirement that would have populated
+   * retiredOverrides) was always the rare case, not the common one. */
+  path?: EscalationPath;
   timestamp: string; // ISO
 }
 

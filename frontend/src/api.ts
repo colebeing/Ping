@@ -202,6 +202,17 @@ export interface AnalyticsResponse {
   users: AnalyticsUserSummary[];
 }
 
+/** One entry per distinct escalation-tree path this user has actually answered under — routine question
+ * ([]) always first, then whichever swapped-in questions they've experienced, most recently active
+ * first. Drives the per-user page's question-path dropdown. */
+export interface QuestionPathBreakdown {
+  path: EscalationPath;
+  label: string;
+  totalAnswers: number;
+  categoryTrend: Record<Category, { last14: { yes: number; no: number }; prior14: { yes: number; no: number }; allTime: { yes: number; no: number } }>;
+  recentAnswers: { date: string; block: BlockId; answer: Answer; category: Category | null }[];
+}
+
 export interface UserProfileResponse {
   email: string | null;
   createdAt: string;
@@ -209,9 +220,8 @@ export interface UserProfileResponse {
   totalAnswers: number;
   activeDayStreak: number;
   activeQuestion: { text: Record<LiveBlockId, string>; category: Category | null; acceptedAt: string } | null;
-  categoryTrend: Record<Category, { last14: { yes: number; no: number }; prior14: { yes: number; no: number }; allTime: { yes: number; no: number } }>;
   overrideHistory: { question: string; category: Category | null; valence: "amplify" | "resolve"; acceptedAt: string; status: "active" | "retired" }[];
-  recentAnswers: { date: string; block: BlockId; answer: Answer; category: Category | null }[];
+  questionPaths: QuestionPathBreakdown[];
 }
 
 class ApiError extends Error {

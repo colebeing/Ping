@@ -1,4 +1,4 @@
-import { api, type AnalyticsResponse, type AnalyticsUserSummary, type BlockId, type Category, type UserProfileResponse } from "../api";
+import { api, type AnalyticsResponse, type AnalyticsUserSummary, type BlockId, type Category, type QuestionPathBreakdown, type UserProfileResponse } from "../api";
 import { BLOCK_LABEL, CATEGORY_LABEL } from "../blockCard";
 
 /** Two views in one tab — the all-users list, and drilling into one person's own trend/history —
@@ -303,18 +303,50 @@ function renderUserProfile(data: UserProfileResponse, onBack: () => void): HTMLE
   }
   wrap.appendChild(idCard);
 
-  wrap.appendChild(renderCategoryTrendCard(data));
   wrap.appendChild(renderOverrideHistoryCard(data));
-  wrap.appendChild(renderRecentAnswersCard(data));
+
+  // A user's answer history can span several distinct "current questions" over time (the routine
+  // question, then whatever it's been swapped to since) — mixing them would blur the read, since the
+  // same "yes, environment" answer means something different depending on which question produced it.
+  // Routine question is always questionPaths[0], per the backend's own ordering.
+  const pathCard = document.createElement("div");
+  pathCard.className = "card";
+  const pathLabelEl = document.createElement("label");
+  pathLabelEl.className = "muted";
+  pathLabelEl.textContent = "Question";
+  pathLabelEl.style.display = "block";
+  pathLabelEl.style.marginBottom = "8px";
+  pathCard.appendChild(pathLabelEl);
+  const select = document.createElement("select");
+  data.questionPaths.forEach((qp, i) => {
+    const opt = document.createElement("option");
+    opt.value = String(i);
+    opt.textContent = `${qp.label} (${qp.totalAnswers})`;
+    select.appendChild(opt);
+  });
+  pathCard.appendChild(select);
+  wrap.appendChild(pathCard);
+
+  const detail = document.createElement("div");
+  wrap.appendChild(detail);
+
+  const paintDetail = () => {
+    const selected = data.questionPaths[Number(select.value)] ?? data.questionPaths[0];
+    detail.innerHTML = "";
+    detail.appendChild(renderCategoryTrendCard(selected));
+    detail.appendChild(renderRecentAnswersCard(selected));
+  };
+  select.addEventListener("change", paintDetail);
+  paintDetail();
 
   return wrap;
 }
 
-function renderCategoryTrendCard(data: UserProfileResponse): HTMLElement {
+function renderCategoryTrendCard(data: QuestionPathBreakdown): HTMLElement {
   const card = document.createElement("div");
   card.className = "card";
   const h = document.createElement("h3");
-  h.textContent = "Category trend";
+  h.textContent = `Category trend — ${data.label}`;
   card.appendChild(h);
   const note = document.createElement("p");
   note.className = "muted";
@@ -405,7 +437,7 @@ function renderOverrideHistoryCard(data: UserProfileResponse): HTMLElement {
   return card;
 }
 
-function renderRecentAnswersCard(data: UserProfileResponse): HTMLElement {
+function renderRecentAnswersCard(data: QuestionPathBreakdown): HTMLElement {
   const card = document.createElement("div");
   card.className = "card";
   const h = document.createElement("h3");

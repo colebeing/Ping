@@ -1,7 +1,21 @@
-import type { Answer, AnswerRecord, BlockId, Category, Env, NotificationEvent, QuestionOverride, UserRecord } from "../types";
-import { CATEGORIES } from "../types";
+import type {
+  Answer,
+  AnswerRecord,
+  BlockId,
+  Category,
+  EscalationPath,
+  EscalationStep,
+  Env,
+  FollowupPrompt,
+  NotificationEvent,
+  QuestionOverride,
+  QuestionRoot,
+  UserRecord,
+} from "../types";
+import { CATEGORIES, CATEGORY_LABEL } from "../types";
 import { errorResponse, json } from "../http";
 import { getState } from "../state";
+import { getQuestionRoot } from "../config";
 
 export interface AnalyticsUserSummary {
   /** The raw KV user id (an email or "anon:<uuid>") — not shown, just the key for drilling into
@@ -159,6 +173,27 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
   return json(response);
 }
 
+/** yes/no counts per category, this 14-day window vs the previous one, plus all-time — lets the admin
+ * read a direction themselves rather than trusting a synthesized trend score over a small sample. */
+type CategoryTrend = Record<Category, { last14: { yes: number; no: number }; prior14: { yes: number; no: number }; allTime: { yes: number; no: number } }>;
+
+/**
+ * One entry per distinct escalation-tree path this user has actually answered under — the routine
+ * question ([]) always first, since every account starts there and it's the natural default view, then
+ * whichever swapped-in questions they've experienced, most recently active first. Mixing responses to
+ * different questions together would blur the read: a stretch of "yes, environment" answers to the
+ * original routine question means something different from the same stretch once the routine question
+ * itself has been swapped to something environment-specific. label mirrors the same breadcrumb text
+ * admin.ts's tree editor shows for this path, so an admin can find it in the tree from either side.
+ */
+interface QuestionPathBreakdown {
+  path: EscalationPath;
+  label: string;
+  totalAnswers: number;
+  categoryTrend: CategoryTrend;
+  recentAnswers: { date: string; block: BlockId; answer: Answer; category: Category | null }[];
+}
+
 export interface UserProfileResponse {
   email: string | null;
   createdAt: string;
@@ -168,20 +203,55 @@ export interface UserProfileResponse {
   /** The account's current routine question, if a swap invite has been accepted — same denormalized
    * per-block text QuestionOverride already carries, no tree lookup needed. */
   activeQuestion: { text: Record<string, string>; category: Category | null; acceptedAt: string } | null;
-  /** yes/no counts per category, this 14-day window vs the previous one, plus all-time — lets the admin
-   * read a direction themselves rather than trusting a synthesized trend score over a small sample. */
-  categoryTrend: Record<Category, { last14: { yes: number; no: number }; prior14: { yes: number; no: number }; allTime: { yes: number; no: number } }>;
   /** What this user has actually accepted, most recent first — shows which content changes actually
    * landed, not just what was offered. No distinct "retired at" timestamp exists in the data (only
    * acceptedAt is ever recorded), so retirement is a status, not a date. */
   overrideHistory: { question: string; category: Category | null; valence: "amplify" | "resolve"; acceptedAt: string; status: "active" | "retired" }[];
-  /** Last 20 answers, most recent first, for literally scanning recent behavior. */
-  recentAnswers: { date: string; block: BlockId; answer: Answer; category: Category | null }[];
+  /** For the Admin per-user page's question-path dropdown — see QuestionPathBreakdown's own doc comment. */
+  questionPaths: QuestionPathBreakdown[];
 }
 
-function emptyCategoryTrend(): UserProfileResponse["categoryTrend"] {
+function emptyCategoryTrend(): CategoryTrend {
   const empty = () => ({ yes: 0, no: 0 });
   return zeroPerCategory(() => ({ last14: empty(), prior14: empty(), allTime: empty() }));
+}
+
+/** JSON-stable key for an EscalationPath, for dedup/grouping — same convention sheets.ts's own
+ * (unexported, separately-kept) pathKey uses. */
+function pathKey(path: EscalationPath): string {
+  return JSON.stringify(path);
+}
+
+/** A step's real label is whatever the PARENT node's own yes/no option text says for that category
+ * (the literal button an end user tapped), falling back to CATEGORY_LABEL only while that text is
+ * genuinely still blank — same rule frontend/src/views/admin.ts's dynamicStepLabel applies, kept as a
+ * separate backend copy since the two projects share no module. */
+function stepLabel(step: EscalationStep, parentYes: FollowupPrompt, parentNo: FollowupPrompt): string {
+  if (step.category === null) return step.valence === "amplify" ? "Mixed (yes-streak)" : "Mixed (no-streak)";
+  const prompt = step.valence === "amplify" ? parentYes : parentNo;
+  return prompt.options[step.category] || CATEGORY_LABEL[step.category];
+}
+
+/** Breadcrumb-style label for a path, e.g. "Friends → Mixed (no-streak)" — walks the LIVE tree from the
+ * root, so it reads exactly like admin.ts's own breadcrumbs. If the tree has since been restructured and
+ * a step along the way no longer resolves, stops there rather than guessing at deeper steps — the path
+ * itself (returned alongside the label) still uniquely identifies which answers belong to it regardless
+ * of whether the tree still has a live node at that position. */
+function pathLabel(root: QuestionRoot, path: EscalationPath): string {
+  if (path.length === 0) return "Routine question";
+  const labels: string[] = [];
+  let parentYes = root.yes;
+  let parentNo = root.no;
+  let children = root.children;
+  for (const step of path) {
+    labels.push(stepLabel(step, parentYes, parentNo));
+    const node = step.category === null ? (step.valence === "amplify" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
+    if (!node) break;
+    parentYes = node.yes;
+    parentNo = node.no;
+    children = node.children;
+  }
+  return labels.join(" → ");
 }
 
 /** Denormalizes an override's 4-block question into one representative string for a human-scannable
@@ -198,21 +268,57 @@ function overrideValence(override: QuestionOverride): "amplify" | "resolve" {
 export async function handleGetUserProfile(_request: Request, env: Env, id: string): Promise<Response> {
   const user = await env.STATE_KV.get<UserRecord>(`user:${id}`, "json");
   if (!user) return errorResponse("User not found", 404);
-  const state = await getState(env, id);
+  const [state, root] = await Promise.all([getState(env, id), getQuestionRoot(env)]);
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const cutoff14 = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
   const cutoff28 = new Date(Date.now() - 28 * 86400000).toISOString().slice(0, 10);
 
-  const categoryTrend = emptyCategoryTrend();
-  for (const a of state.answers) {
-    // Guard against stale category values from before a category rename, same as handleGetAnalytics.
-    if (!a.category || !categoryTrend[a.category]) continue;
-    const bucket = categoryTrend[a.category];
-    bucket.allTime[a.answer]++;
-    if (a.date >= cutoff14) bucket.last14[a.answer]++;
-    else if (a.date >= cutoff28) bucket.prior14[a.answer]++;
+  // Every distinct path this user has actually answered under, or currently/previously had active —
+  // [] (routine question) always first regardless of whether it has answers of its own, since every
+  // account starts there and it's the natural default view. The rest ordered most-recently-active
+  // first, so a currently-swapped-in question sits right under routine.
+  const pathOrder: { path: EscalationPath; acceptedAt: string }[] = [];
+  if (state.activeOverride) pathOrder.push({ path: state.activeOverride.path, acceptedAt: state.activeOverride.acceptedAt });
+  for (const o of state.retiredOverrides) pathOrder.push({ path: o.path, acceptedAt: o.acceptedAt });
+  const seen = new Map<string, { path: EscalationPath; acceptedAt: string }>();
+  for (const entry of pathOrder) {
+    const key = pathKey(entry.path);
+    const existing = seen.get(key);
+    if (!existing || entry.acceptedAt > existing.acceptedAt) seen.set(key, entry);
   }
+  const distinctPaths: EscalationPath[] = [
+    [],
+    ...Array.from(seen.values())
+      .sort((a, b) => b.acceptedAt.localeCompare(a.acceptedAt))
+      .map((e) => e.path),
+  ];
+
+  const answersByPath = new Map<string, AnswerRecord[]>();
+  for (const a of state.answers) {
+    const key = pathKey(a.path ?? []);
+    const list = answersByPath.get(key);
+    if (list) list.push(a);
+    else answersByPath.set(key, [a]);
+  }
+
+  const questionPaths: QuestionPathBreakdown[] = distinctPaths.map((path) => {
+    const answers = answersByPath.get(pathKey(path)) ?? [];
+    const categoryTrend = emptyCategoryTrend();
+    for (const a of answers) {
+      // Guard against stale category values from before a category rename, same as handleGetAnalytics.
+      if (!a.category || !categoryTrend[a.category]) continue;
+      const bucket = categoryTrend[a.category];
+      bucket.allTime[a.answer]++;
+      if (a.date >= cutoff14) bucket.last14[a.answer]++;
+      else if (a.date >= cutoff28) bucket.prior14[a.answer]++;
+    }
+    const recentAnswers = [...answers]
+      .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+      .slice(0, 20)
+      .map((a) => ({ date: a.date, block: a.block, answer: a.answer, category: a.category ?? null }));
+    return { path, label: pathLabel(root, path), totalAnswers: answers.length, categoryTrend, recentAnswers };
+  });
 
   const overrideHistory: UserProfileResponse["overrideHistory"] = [
     ...(state.activeOverride
@@ -235,11 +341,6 @@ export async function handleGetUserProfile(_request: Request, env: Env, id: stri
     })),
   ].sort((a, b) => b.acceptedAt.localeCompare(a.acceptedAt));
 
-  const recentAnswers = [...state.answers]
-    .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
-    .slice(0, 20)
-    .map((a) => ({ date: a.date, block: a.block, answer: a.answer, category: a.category ?? null }));
-
   const response: UserProfileResponse = {
     email: user.email ?? null,
     createdAt: user.createdAt,
@@ -249,9 +350,8 @@ export async function handleGetUserProfile(_request: Request, env: Env, id: stri
     activeQuestion: state.activeOverride
       ? { text: state.activeOverride.blockQuestions, category: state.activeOverride.category, acceptedAt: state.activeOverride.acceptedAt }
       : null,
-    categoryTrend,
     overrideHistory,
-    recentAnswers,
+    questionPaths,
   };
   return json(response);
 }

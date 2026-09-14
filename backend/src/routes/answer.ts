@@ -45,18 +45,29 @@ export async function handleAnswer(request: Request, env: Env, userId: string): 
   const date = resolveDate(state.cadence.timezone, body.date);
 
   const existingIdx = state.answers.findIndex((a) => a.date === date && a.block === body.block);
-  if (existingIdx !== -1) {
-    // Editing an existing answer (today or backfilling a past day): undo any prior follow-up count before overwriting.
-    const prev = state.answers[existingIdx];
-    // Only a genuine change is an edit — resuming an in-progress card
-    // (blockCard's "resume" step) re-posts this same answer as a safe
-    // no-op, which shouldn't read as the user having changed their mind.
-    if (prev.answer !== body.answer) {
-      state.answerEdits.push({ date, block: body.block, previousAnswer: prev.answer, previousCategory: prev.category, editedAt: new Date().toISOString() });
-    }
+  const prev = existingIdx !== -1 ? state.answers[existingIdx] : undefined;
+  // Only a genuine change is an edit — resuming an in-progress card (blockCard's "resume" step)
+  // re-posts this same answer as a safe no-op, which shouldn't read as the user having changed their
+  // mind. Editing an existing answer (today or backfilling a past day): undo any prior follow-up count
+  // before overwriting.
+  const isGenuineChange = !prev || prev.answer !== body.answer;
+  if (prev && isGenuineChange) {
+    state.answerEdits.push({ date, block: body.block, previousAnswer: prev.answer, previousCategory: prev.category, editedAt: new Date().toISOString() });
   }
 
-  const record: AnswerRecord = { date, block: body.block, answer: body.answer, timestamp: new Date().toISOString() };
+  const record: AnswerRecord = {
+    date,
+    block: body.block,
+    answer: body.answer,
+    // Snapshots whichever question is active RIGHT NOW, but only on a genuine new answer or a genuine
+    // change — a harmless resume re-post keeps whatever path the answer was ORIGINALLY given under.
+    // Otherwise, reloading the app after accepting an unrelated swap invite on some other block would
+    // silently relabel an already-given answer under the new path, before this block was ever touched
+    // again — exactly the kind of retroactive misattribution the per-path analytics breakdown exists
+    // to avoid.
+    path: isGenuineChange ? (state.activeOverride?.path ?? []) : (prev?.path ?? []),
+    timestamp: new Date().toISOString(),
+  };
   if (existingIdx !== -1) state.answers[existingIdx] = record;
   else state.answers.push(record);
 
