@@ -11,9 +11,8 @@ import {
   type FollowupPrompt,
   type QuestionRoot,
 } from "../api";
-import { CATEGORY_LABEL } from "../blockCard";
+import { CATEGORY_LABEL, CATEGORY_ORDER } from "../blockCard";
 
-const CATEGORY_ORDER: Category[] = ["friends", "colleagues", "family", "me"];
 const ROOT_BLOCK_FIELDS = [
   ["Morning", "q1"],
   ["Midday", "q2"],
@@ -22,7 +21,7 @@ const ROOT_BLOCK_FIELDS = [
 ] as const;
 
 function emptyFollowup(): FollowupPrompt {
-  return { prompt: "", options: { friends: "", colleagues: "", family: "", me: "" } };
+  return { prompt: "", options: Object.fromEntries(CATEGORY_ORDER.map((c) => [c, ""])) as FollowupPrompt["options"] };
 }
 
 function emptyNode(): EscalationNode {
@@ -224,7 +223,7 @@ function renderSheetSyncSection(
   const note = document.createElement("p");
   note.className = "muted";
   note.textContent =
-    "Push writes the current tree out to the configured Google Sheet. Pull reads it back and shows exactly what would change before anything here is touched.";
+    "Save all changes below now pushes here automatically, so the Sheet never drifts from what's actually live. Use this button only to push again without changing anything else. Pull reads the Sheet back and shows exactly what would change before anything here is touched.";
   card.appendChild(note);
 
   const pushRow = document.createElement("div");
@@ -437,7 +436,18 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
       saveBtn.setAttribute("disabled", "true");
       try {
         await api.saveAdminConfig(config);
-        status.textContent = "Saved.";
+        // The Sheet push reads the tree back out of KV (see handlePushToSheet), so it only makes sense
+        // once the save above has actually landed there — a save that fails must not attempt this at
+        // all, or the Sheet would silently get pushed whatever it last held, not what was just edited.
+        try {
+          await api.pushQuestionsToSheet();
+          pushStatus = "Pushed.";
+          status.textContent = "Saved and pushed to Sheet.";
+        } catch (err) {
+          pushStatus = err instanceof Error ? err.message : "Push failed.";
+          status.textContent = `Saved, but the Sheet push failed: ${pushStatus}`;
+        }
+        renderSheetCard();
       } catch (err) {
         status.textContent = err instanceof Error ? err.message : "Save failed.";
       }

@@ -1,4 +1,6 @@
 import {
+  CATEGORIES,
+  CATEGORY_LABEL,
   LIVE_BLOCKS,
   type AppConfig,
   type BlockContent,
@@ -20,12 +22,10 @@ function prompt(text: string, options: Record<string, string>): FollowupPrompt {
   return { prompt: text, options: options as FollowupPrompt["options"] };
 }
 
-const CATEGORY_OPTIONS = { friends: "Friends", colleagues: "Colleagues", family: "Family", me: "Me" };
-
 // Same WHY content serves every block by default — only the base question itself differs per block.
 const SHARED_FOLLOWUPS: Pick<BlockContent, "yes" | "no"> = {
-  yes: prompt("Who made it work?", CATEGORY_OPTIONS),
-  no: prompt("Who had to move?", CATEGORY_OPTIONS),
+  yes: prompt("Who made it work?", CATEGORY_LABEL),
+  no: prompt("Who had to move?", CATEGORY_LABEL),
 };
 
 /** Frozen legacy blocks only — never edited again, kept purely so History reads old answered days
@@ -132,7 +132,7 @@ function migrateEscalationChildren(rawCopy: Record<string, unknown> | null): Esc
   if (!rawCopy) return children;
   const amplify = rawCopy.amplify as Record<string, unknown> | undefined;
   const resolve = rawCopy.resolve as Record<string, unknown> | undefined;
-  for (const cat of ["friends", "colleagues", "family", "me"] as const) {
+  for (const cat of CATEGORIES) {
     const aText = amplify && extractLegacyInvitationText(amplify[cat]);
     if (aText) children.amplify[cat] = leaf(aText);
     const rText = resolve && extractLegacyInvitationText(resolve[cat]);

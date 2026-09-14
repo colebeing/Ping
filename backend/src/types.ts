@@ -2,6 +2,11 @@ export type Category = "friends" | "colleagues" | "family" | "me";
 
 export const CATEGORIES: Category[] = ["friends", "colleagues", "family", "me"];
 
+/** The one source of truth for how each category displays, backend-side (sheets.ts's Sheet headers
+ * and breadcrumbs, config.ts's seed content) — mirrored by frontend/src/blockCard.ts's own copy,
+ * since the two projects don't share a module. Keep both in sync if this ever changes. */
+export const CATEGORY_LABEL: Record<Category, string> = { friends: "Friends", colleagues: "Colleagues", family: "Family", me: "Me" };
+
 export type NeedQuadrant = "be" | "become" | "believe" | "belong";
 
 // Backend-only. Users never see quadrant names, only who labels.

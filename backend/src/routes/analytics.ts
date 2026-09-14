@@ -27,6 +27,12 @@ export interface AnalyticsResponse {
   users: AnalyticsUserSummary[];
 }
 
+/** Builds a fresh Record<Category, T> from CATEGORIES instead of spelling out all four keys by hand —
+ * `make` runs once per category so each gets its own object, not a shared reference. */
+function zeroPerCategory<T>(make: () => T): Record<Category, T> {
+  return Object.fromEntries(CATEGORIES.map((c) => [c, make()])) as Record<Category, T>;
+}
+
 async function listUserIds(env: Env): Promise<string[]> {
   const ids: string[] = [];
   let cursor: string | undefined;
@@ -58,12 +64,7 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
   const cutoff7 = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
   const cutoff30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
 
-  const categoryTotals: Record<Category, { yes: number; no: number }> = {
-    friends: { yes: 0, no: 0 },
-    colleagues: { yes: 0, no: 0 },
-    family: { yes: 0, no: 0 },
-    me: { yes: 0, no: 0 },
-  };
+  const categoryTotals: Record<Category, { yes: number; no: number }> = zeroPerCategory(() => ({ yes: 0, no: 0 }));
   const answerBalance: Record<BlockId, { yes: number; no: number }> = {
     "1": { yes: 0, no: 0 },
     "2": { yes: 0, no: 0 },
@@ -87,7 +88,7 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
     if (!user) continue;
 
     let lastActive: string | null = null;
-    const catCounts: Record<Category, number> = { friends: 0, colleagues: 0, family: 0, me: 0 };
+    const catCounts: Record<Category, number> = zeroPerCategory(() => 0);
 
     let lastNotification: AnalyticsUserSummary["lastNotification"] = null;
     for (const event of state.notificationEvents) {
@@ -180,12 +181,7 @@ export interface UserProfileResponse {
 
 function emptyCategoryTrend(): UserProfileResponse["categoryTrend"] {
   const empty = () => ({ yes: 0, no: 0 });
-  return {
-    friends: { last14: empty(), prior14: empty(), allTime: empty() },
-    colleagues: { last14: empty(), prior14: empty(), allTime: empty() },
-    family: { last14: empty(), prior14: empty(), allTime: empty() },
-    me: { last14: empty(), prior14: empty(), allTime: empty() },
-  };
+  return zeroPerCategory(() => ({ last14: empty(), prior14: empty(), allTime: empty() }));
 }
 
 /** Denormalizes an override's 4-block question into one representative string for a human-scannable

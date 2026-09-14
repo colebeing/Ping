@@ -1,5 +1,6 @@
 import {
   CATEGORIES,
+  CATEGORY_LABEL,
   type Category,
   type DigIn,
   type DigInOption,
@@ -27,15 +28,9 @@ const QUESTIONS_HEADER = [
   "Afternoon",
   "Evening",
   "Yes prompt",
-  "Yes: Friends",
-  "Yes: Colleagues",
-  "Yes: Family",
-  "Yes: Me",
+  ...CATEGORIES.map((c) => `Yes: ${CATEGORY_LABEL[c]}`),
   "No prompt",
-  "No: Friends",
-  "No: Colleagues",
-  "No: Family",
-  "No: Me",
+  ...CATEGORIES.map((c) => `No: ${CATEGORY_LABEL[c]}`),
   "Follow-up prompt",
 ];
 const OPTIONS_HEADER = ["Path (do not edit)", "Option #", "Label", "Morning", "Midday", "Afternoon", "Evening"];
@@ -64,8 +59,7 @@ function setChildAt(children: EscalationChildren, step: EscalationStep, node: Es
 
 function stepLabel(step: EscalationStep): string {
   if (step.category === null) return step.valence === "amplify" ? "Mixed (yes-streak)" : "Mixed (no-streak)";
-  const names: Record<Category, string> = { friends: "Friends", colleagues: "Colleagues", family: "Family", me: "Me" };
-  return names[step.category];
+  return CATEGORY_LABEL[step.category];
 }
 
 function pathKey(path: EscalationPath): string {
@@ -84,15 +78,9 @@ function questionsRowValues(path: EscalationPath, breadcrumb: string, inviteQues
     blockQuestions.q3,
     blockQuestions.q4,
     yes.prompt,
-    yes.options.friends,
-    yes.options.colleagues,
-    yes.options.family,
-    yes.options.me,
+    ...CATEGORIES.map((c) => yes.options[c]),
     no.prompt,
-    no.options.friends,
-    no.options.colleagues,
-    no.options.family,
-    no.options.me,
+    ...CATEGORIES.map((c) => no.options[c]),
     digInPrompt,
   ];
 }
@@ -129,6 +117,12 @@ export function flattenTree(root: QuestionRoot): { questions: string[][]; option
 }
 
 // ---------- reconstruct (pull) ----------
+
+/** The inverse of questionsRowValues' `...CATEGORIES.map((c) => X.options[c])` spread — reads that
+ * same run of columns back into a Record<Category, string>, in CATEGORIES' order starting at `startCol`. */
+function optionsFromColumns(row: string[], startCol: number): Record<Category, string> {
+  return Object.fromEntries(CATEGORIES.map((c, i) => [c, row[startCol + i] ?? ""])) as Record<Category, string>;
+}
 
 function parsePath(raw: string | undefined): EscalationPath | null {
   if (!raw) return null;
@@ -198,8 +192,8 @@ export function reconstructTree(questionsValues: string[][], optionsValues: stri
       key,
       inviteQuestion: row[2] ?? "",
       blockQuestions: { q1: row[3] ?? "", q2: row[4] ?? "", q3: row[5] ?? "", q4: row[6] ?? "" },
-      yes: { prompt: row[7] ?? "", options: { friends: row[8] ?? "", colleagues: row[9] ?? "", family: row[10] ?? "", me: row[11] ?? "" } },
-      no: { prompt: row[12] ?? "", options: { friends: row[13] ?? "", colleagues: row[14] ?? "", family: row[15] ?? "", me: row[16] ?? "" } },
+      yes: { prompt: row[7] ?? "", options: optionsFromColumns(row, 8) },
+      no: { prompt: row[12] ?? "", options: optionsFromColumns(row, 13) },
       digInPrompt: row[17] ?? "",
     });
   }

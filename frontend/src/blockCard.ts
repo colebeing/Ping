@@ -10,6 +10,9 @@ export const BLOCK_LABEL: Record<BlockId, string> = {
   q4: "Evening",
 };
 export const CATEGORY_LABEL: Record<Category, string> = { friends: "Friends", colleagues: "Colleagues", family: "Family", me: "Me" };
+/** The one place category display order is decided — derived from CATEGORY_LABEL above so there's
+ * only one list to keep in sync, not a second copy of the four keys elsewhere in the frontend. */
+export const CATEGORY_ORDER: Category[] = Object.keys(CATEGORY_LABEL) as Category[];
 
 interface DoneStep {
   kind: "done";
@@ -113,7 +116,7 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
         card.appendChild(p);
         const grid = document.createElement("div");
         grid.className = "option-grid";
-        for (const cat of Object.keys(CATEGORY_LABEL) as Category[]) {
+        for (const cat of CATEGORY_ORDER) {
           grid.appendChild(button(step.prompt.options[cat], "btn", () => submitFollowup(step as Extract<Step, { kind: "followup" }>, cat)));
         }
         card.appendChild(grid);
