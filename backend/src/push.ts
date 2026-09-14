@@ -2,6 +2,7 @@ import { buildPushPayload, type PushMessage, type PushSubscription as WebPushSub
 import { LIVE_BLOCKS, isLiveBlockId, type BlockId, type Cadence, type Env, type LiveBlockId, type PushSubscriptionJSON, type RecommendationNudge } from "./types";
 import { getState, saveState, todayLocal } from "./state";
 import { getConfig, getQuestionRoot } from "./config";
+import { resolveOverrideContent } from "./recommendations";
 import { sendFcmPush, fcmConfigured, type SendOutcome } from "./fcm";
 
 /** Which of q1-q4 are actually live for this user right now (not skipped), and what time each is due. */
@@ -44,7 +45,12 @@ function blockPushBody(
   root: Awaited<ReturnType<typeof getQuestionRoot>>,
   config: Awaited<ReturnType<typeof getConfig>>,
 ): string {
-  if (isLiveBlockId(block)) return state.activeOverride?.blockQuestions[block] ?? root.blockQuestions[block];
+  if (isLiveBlockId(block)) {
+    // Live-resolved against the current tree, not the override's own frozen snapshot — an admin's
+    // later edit to this question should reach a push notification the same as it reaches the app.
+    if (state.activeOverride) return resolveOverrideContent(root, state.activeOverride).blockQuestions[block];
+    return root.blockQuestions[block];
+  }
   return config.blocks[block].question;
 }
 

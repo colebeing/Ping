@@ -93,11 +93,15 @@ public class PingNotificationDelegate: NSObject, UNUserNotificationCenterDelegat
             }
 
         case let categoryId where categoryId.hasPrefix("PING_FOLLOWUP"):
+            // Must match backend/src/types.ts's CATEGORIES (the EPIC set). These were the pre-rename
+            // friends/colleagues/family/me until the EPIC rename shipped without updating this hardcoded
+            // map, which silently dropped every follow-up action button (the backend's `options` never
+            // has any of these old keys anymore) until caught here.
             let categoryKeys: [String: String] = [
-                "FOLLOWUP_FRIENDS": "friends",
-                "FOLLOWUP_COLLEAGUES": "colleagues",
-                "FOLLOWUP_FAMILY": "family",
-                "FOLLOWUP_ME": "me",
+                "FOLLOWUP_ENVIRONMENT": "environment",
+                "FOLLOWUP_PEOPLE": "people",
+                "FOLLOWUP_IMPACT": "impact",
+                "FOLLOWUP_CAPACITY": "capacity",
             ]
             guard let category = categoryKeys[response.actionIdentifier] else {
                 completionHandler()
@@ -207,12 +211,13 @@ public class PingNotificationDelegate: NSObject, UNUserNotificationCenterDelegat
     /// label are threaded into userInfo so the final confirmation step can render "Logged: Yes —
     /// Family" without a second round trip — /api/followup's response doesn't echo them back.
     private func scheduleFollowup(identifier: String, block: String, answer: String, prompt: String, options: [String: String]) {
-        // Same order every time so the buttons don't shuffle between builds.
+        // Same order every time so the buttons don't shuffle between builds — keep in sync with the
+        // categoryKeys map above (and ultimately backend/src/types.ts's CATEGORIES).
         let order: [(key: String, actionId: String)] = [
-            ("friends", "FOLLOWUP_FRIENDS"),
-            ("colleagues", "FOLLOWUP_COLLEAGUES"),
-            ("family", "FOLLOWUP_FAMILY"),
-            ("me", "FOLLOWUP_ME"),
+            ("environment", "FOLLOWUP_ENVIRONMENT"),
+            ("people", "FOLLOWUP_PEOPLE"),
+            ("impact", "FOLLOWUP_IMPACT"),
+            ("capacity", "FOLLOWUP_CAPACITY"),
         ]
         let actions = order.compactMap { key, actionId -> UNNotificationAction? in
             guard let label = options[key] else { return nil }

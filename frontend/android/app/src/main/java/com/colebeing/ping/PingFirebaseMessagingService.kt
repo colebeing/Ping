@@ -150,8 +150,12 @@ fun showQuestionNotification(context: Context, block: String, title: String, bod
 fun showFollowupNotification(context: Context, block: String, answer: String, prompt: String, options: Map<String, String>) {
     ensureChannel(context)
 
-    // Same order every time (friends/colleagues/family/me) so the buttons don't shuffle between builds.
-    val categories = listOf("friends", "colleagues", "family", "me")
+    // Same order every time (the EPIC set: environment/people/impact/capacity) so the buttons don't
+    // shuffle between builds. Must match backend/src/types.ts's CATEGORIES exactly, keys included —
+    // these were the pre-rename friends/colleagues/family/me until the EPIC rename shipped and this
+    // hardcoded list wasn't updated with it, which silently dropped every follow-up button (the
+    // backend's `options` map no longer has any of these old keys) until caught here.
+    val categories = listOf("environment", "people", "impact", "capacity")
     val buttonIds = listOf(R.id.followup_btn1, R.id.followup_btn2, R.id.followup_btn3, R.id.followup_btn4)
 
     fun buildButtonRow(): RemoteViews {

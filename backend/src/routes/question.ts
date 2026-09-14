@@ -2,7 +2,7 @@ import { isBlockId, isLiveBlockId, type FollowupPrompt, type Env } from "../type
 import { errorResponse, json } from "../http";
 import { getState, saveState, todayLocal, resolveDate } from "../state";
 import { getConfig, getQuestionRoot, getTriggerConfig } from "../config";
-import { checkRetirement } from "../recommendations";
+import { checkRetirement, resolveOverrideContent } from "../recommendations";
 
 export async function handleGetQuestion(request: Request, env: Env, userId: string): Promise<Response> {
   const url = new URL(request.url);
@@ -28,9 +28,18 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
   let no: FollowupPrompt;
   if (isLiveBlockId(block)) {
     const root = await getQuestionRoot(env);
-    question = override?.blockQuestions[block] ?? root.blockQuestions[block];
-    yes = root.yes;
-    no = root.no;
+    // Live-resolved against the current tree when an override is active, not its own frozen snapshot —
+    // an admin's later edit to this question should reach the app the same as it reaches Admin itself.
+    if (override) {
+      const live = resolveOverrideContent(root, override);
+      question = live.blockQuestions[block];
+      yes = live.yes;
+      no = live.no;
+    } else {
+      question = root.blockQuestions[block];
+      yes = root.yes;
+      no = root.no;
+    }
   } else {
     const config = await getConfig(env);
     // No override is ever active for a legacy block (overrides only ever apply to q1-q4, see above).
@@ -47,7 +56,9 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
   const existingAnswer = state.answers.find((a) => a.date === date && a.block === block);
   let followup: { prompt: string; optionLabel: string } | undefined;
   if (existingAnswer?.category) {
-    const content = override ? override[existingAnswer.answer] : existingAnswer.answer === "yes" ? yes : no;
+    // yes/no above are already the live-resolved content either way (override or not) — no need to
+    // branch on override again here.
+    const content = existingAnswer.answer === "yes" ? yes : no;
     followup = { prompt: content.prompt, optionLabel: content.options[existingAnswer.category] };
   }
 

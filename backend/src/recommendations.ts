@@ -7,7 +7,9 @@ import {
   type EscalationNode,
   type EscalationPath,
   type EscalationStep,
+  type FollowupPrompt,
   type LiveBlockId,
+  type QuestionOverride,
   type QuestionRoot,
   type RecommendationNudge,
   type TriggerConfig,
@@ -30,7 +32,7 @@ function declinedStreakKey(valence: "amplify" | "resolve", category: Category | 
  * that need root's own children just use `root.children` directly instead of calling this with `[]`.
  * Returns null if any step along the way is missing — shouldn't happen for a real stored override
  * (every step it was built from once existed), but a defensive null beats a throw. */
-function resolveNode(root: QuestionRoot, path: EscalationPath): EscalationNode | null {
+export function resolveNode(root: QuestionRoot, path: EscalationPath): EscalationNode | null {
   let node: EscalationNode | null = null;
   let children: EscalationChildren = root.children;
   for (const step of path) {
@@ -40,6 +42,23 @@ function resolveNode(root: QuestionRoot, path: EscalationPath): EscalationNode |
     children = next.children;
   }
   return node;
+}
+
+/**
+ * An active override's content, resolved LIVE against the current tree rather than the frozen snapshot
+ * taken at accept time — an admin editing that node's question/follow-up text (a very ordinary thing to
+ * do, especially on a single-admin account where the admin and the user are the same person) should be
+ * reflected wherever this question is shown, not just in Admin. Falls back to the override's own
+ * denormalized snapshot only if the tree has since changed shape enough that `path` no longer resolves
+ * (the node was deleted/restructured) — better than a broken question with nothing to show at all.
+ */
+export function resolveOverrideContent(
+  root: QuestionRoot,
+  override: QuestionOverride,
+): { blockQuestions: Record<LiveBlockId, string>; yes: FollowupPrompt; no: FollowupPrompt } {
+  const node = resolveNode(root, override.path);
+  if (node) return { blockQuestions: node.blockQuestions, yes: node.yes, no: node.no };
+  return { blockQuestions: override.blockQuestions, yes: override.yes, no: override.no };
 }
 
 function pathsEqual(a: EscalationPath, b: EscalationPath): boolean {

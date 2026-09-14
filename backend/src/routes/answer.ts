@@ -2,7 +2,7 @@ import { CATEGORIES, isLiveBlockId, type Answer, type AnswerRecord, type BlockId
 import { errorResponse, json, readJson } from "../http";
 import { getState, saveState, resolveDate, hasPushEnabled } from "../state";
 import { getQuestionRoot, getTriggerConfig } from "../config";
-import { detectStreaks } from "../recommendations";
+import { detectStreaks, resolveOverrideContent } from "../recommendations";
 import { getUser } from "../auth";
 import { sendRecommendationPush } from "../push";
 
@@ -73,10 +73,12 @@ export async function handleAnswer(request: Request, env: Env, userId: string): 
 
   await saveState(env, userId, state);
 
-  const override = state.activeOverride;
   // body.block is always live here (isLiveBlockId-gated above) — its un-overridden follow-up is
   // always the escalation tree's one shared root.yes/root.no, never AppConfig (legacy-only now).
-  const content = override ? override[body.answer] : (await getQuestionRoot(env))[body.answer];
+  // Live-resolved against the current tree when an override is active, not its own frozen snapshot —
+  // see resolveOverrideContent's own doc comment.
+  const root = await getQuestionRoot(env);
+  const content = state.activeOverride ? resolveOverrideContent(root, state.activeOverride)[body.answer] : root[body.answer];
   return json({ block: body.block, date, answer: body.answer, followup: { prompt: content.prompt, options: content.options } });
 }
 
