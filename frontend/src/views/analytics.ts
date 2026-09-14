@@ -1,4 +1,4 @@
-import { api, type AnalyticsResponse, type AnalyticsUserSummary, type BlockId, type Category, type QuestionPathBreakdown, type UserProfileResponse } from "../api";
+import { api, type AnalyticsQuestionPath, type AnalyticsResponse, type AnalyticsUserSummary, type BlockId, type Category, type QuestionPathBreakdown, type UserProfileResponse } from "../api";
 import { BLOCK_LABEL, CATEGORY_LABEL } from "../blockCard";
 
 /** Two views in one tab — the all-users list, and drilling into one person's own trend/history —
@@ -29,7 +29,7 @@ export async function renderAnalytics(root: HTMLElement): Promise<void> {
         root.appendChild(renderTotals(data));
         root.appendChild(renderNotificationHealth(data));
         root.appendChild(renderDailyActivity(data));
-        root.appendChild(renderCategoryTotals(data));
+        root.appendChild(renderQuestionCategorySection(data.questionPaths));
         root.appendChild(renderAnswerBalance(data));
         root.appendChild(renderUsersTable(data, showProfile));
       } else {
@@ -159,21 +159,65 @@ function barRow(label: string, value: number, total: number, variant?: "no"): HT
   return row;
 }
 
-function renderCategoryTotals(data: AnalyticsResponse): HTMLElement {
+/**
+ * Category breakdown, scoped to whichever question the dropdown picks — an account's answer history
+ * can span several distinct "current questions" over time, so mixing them into one all-users total
+ * would blur the read the same way it would on the per-user page (see renderUserProfile). Routine
+ * question is always the first option, since that's every account's default starting point and
+ * data.questionPaths already guarantees it's present even at zero.
+ */
+function renderQuestionCategorySection(paths: AnalyticsQuestionPath[]): HTMLElement {
+  const wrap = document.createElement("div");
+
+  const pickerCard = document.createElement("div");
+  pickerCard.className = "card";
+  const label = document.createElement("label");
+  label.className = "muted";
+  label.textContent = "Question";
+  label.style.display = "block";
+  label.style.marginBottom = "8px";
+  pickerCard.appendChild(label);
+  const select = document.createElement("select");
+  paths.forEach((qp, i) => {
+    const opt = document.createElement("option");
+    opt.value = String(i);
+    opt.textContent = `${qp.label} (${qp.totalAnswers})`;
+    select.appendChild(opt);
+  });
+  pickerCard.appendChild(select);
+  wrap.appendChild(pickerCard);
+
+  const detail = document.createElement("div");
+  wrap.appendChild(detail);
+
+  const paintDetail = () => {
+    const selected = paths[Number(select.value)] ?? paths[0];
+    detail.innerHTML = "";
+    detail.appendChild(renderCategoryTotalsCard(selected));
+  };
+  select.addEventListener("change", paintDetail);
+  paintDetail();
+
+  return wrap;
+}
+
+function renderCategoryTotalsCard(qp: AnalyticsQuestionPath): HTMLElement {
   const card = document.createElement("div");
   card.className = "card";
   const h = document.createElement("h3");
-  h.textContent = "Category breakdown (all users)";
+  h.textContent = `Category breakdown — ${qp.label}`;
   card.appendChild(h);
 
-  const categories = Object.keys(data.categoryTotals) as Category[];
+  const categories = Object.keys(qp.categoryTotals) as Category[];
   // One shared scale across every category's yes/no bar, so volumes stay
   // comparable both across categories and between a category's own yes vs no.
-  const max = Math.max(1, ...categories.flatMap((cat) => [data.categoryTotals[cat].yes, data.categoryTotals[cat].no]));
+  const max = Math.max(1, ...categories.flatMap((cat) => [qp.categoryTotals[cat].yes, qp.categoryTotals[cat].no]));
 
+  let anyShown = false;
   for (const cat of categories) {
-    const { yes, no } = data.categoryTotals[cat];
+    const { yes, no } = qp.categoryTotals[cat];
     if (yes + no === 0) continue;
+    anyShown = true;
 
     const label = document.createElement("p");
     label.className = "muted";
@@ -184,6 +228,14 @@ function renderCategoryTotals(data: AnalyticsResponse): HTMLElement {
     card.appendChild(barRow("Yes", yes, max));
     card.appendChild(barRow("No", no, max, "no"));
   }
+
+  if (!anyShown) {
+    const p = document.createElement("p");
+    p.className = "muted";
+    p.textContent = "No categorized answers yet for this question.";
+    card.appendChild(p);
+  }
+
   return card;
 }
 

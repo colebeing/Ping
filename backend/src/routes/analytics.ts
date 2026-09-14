@@ -11,6 +11,7 @@ import type {
   QuestionOverride,
   QuestionRoot,
   UserRecord,
+  UserState,
 } from "../types";
 import { CATEGORIES, CATEGORY_LABEL } from "../types";
 import { errorResponse, json } from "../http";
@@ -31,6 +32,17 @@ export interface AnalyticsUserSummary {
   lastNotification: { block: BlockId; channel: NotificationEvent["channel"]; outcome: "sent" | "failed"; timestamp: string } | null;
 }
 
+/** One entry per distinct escalation-tree path anyone (across all users) has ever answered under —
+ * routine question ([]) always first (even with zero answers, since it's the natural default), the
+ * rest ordered most-answered first. Drives the main Analytics page's question dropdown, same idea as
+ * QuestionPathBreakdown below but aggregated across every account instead of scoped to one. */
+export interface AnalyticsQuestionPath {
+  path: EscalationPath;
+  label: string;
+  totalAnswers: number;
+  categoryTotals: Record<Category, { yes: number; no: number }>;
+}
+
 export interface AnalyticsResponse {
   totals: { userCount: number; answerCount: number; activeUsers7d: number; activeUsers30d: number };
   categoryTotals: Record<Category, { yes: number; no: number }>;
@@ -38,7 +50,41 @@ export interface AnalyticsResponse {
   dailyActivity: { date: string; count: number }[];
   /** Send attempts (not clicks) across all users in the last 30 days — a delivery-health signal independent of any one user's history. */
   notificationTotals: { sent30d: number; failed30d: number };
+  /** For the Admin Analytics page's question dropdown — see AnalyticsQuestionPath's own doc comment. */
+  questionPaths: AnalyticsQuestionPath[];
   users: AnalyticsUserSummary[];
+}
+
+/** Every known override acceptance for an account, oldest first — retiredOverrides plus the current
+ * activeOverride (if any), each paired with when it took over. Lets a path-less answer (recorded before
+ * per-answer path tracking existed) be retroactively attributed to whichever question was actually
+ * active when it was answered, instead of assumed to be the routine question by default — see
+ * resolvedPath below for why that default alone isn't good enough. */
+function overrideTimeline(state: UserState): { path: EscalationPath; acceptedAt: string }[] {
+  const entries: QuestionOverride[] = [...state.retiredOverrides, ...(state.activeOverride ? [state.activeOverride] : [])];
+  return entries.map((o) => ({ path: o.path, acceptedAt: o.acceptedAt })).sort((a, b) => a.acceptedAt.localeCompare(b.acceptedAt));
+}
+
+/**
+ * The path an answer should be attributed to for grouping purposes: its own recorded path if answer-
+ * level tracking already covered it, otherwise whichever timeline entry was active at its timestamp
+ * (routine question if that's before the earliest override, or if there's no override history at all).
+ *
+ * Imperfect for pre-tracking data specifically: an override swapped again before it ever naturally
+ * retired leaves no trace in retiredOverrides, so a gap like that reads as whichever override came
+ * before or after it instead. Still far more accurate than defaulting every untracked answer to the
+ * routine question, which is wrong for the overwhelmingly common real case — an override accepted once
+ * and answered under for days before per-answer tracking existed, exactly what "no responses under my
+ * new question" turned out to be.
+ */
+function resolvedPath(a: AnswerRecord, timeline: { path: EscalationPath; acceptedAt: string }[]): EscalationPath {
+  if (a.path) return a.path;
+  let path: EscalationPath = [];
+  for (const entry of timeline) {
+    if (entry.acceptedAt <= a.timestamp) path = entry.path;
+    else break;
+  }
+  return path;
 }
 
 /** Builds a fresh Record<Category, T> from CATEGORIES instead of spelling out all four keys by hand —
@@ -73,7 +119,7 @@ function activeDayStreak(answers: AnswerRecord[], todayStr: string): number {
 }
 
 export async function handleGetAnalytics(_request: Request, env: Env): Promise<Response> {
-  const userIds = await listUserIds(env);
+  const [userIds, root] = await Promise.all([listUserIds(env), getQuestionRoot(env)]);
   const todayStr = new Date().toISOString().slice(0, 10);
   const cutoff7 = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
   const cutoff30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
@@ -90,6 +136,10 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
   };
   const dailyCounts = new Map<string, number>();
   const users: AnalyticsUserSummary[] = [];
+  // Seeded with routine question up front so it's always present (even at 0), same convention as
+  // handleGetUserProfile's own per-path breakdown.
+  const pathBuckets = new Map<string, { path: EscalationPath; totalAnswers: number; categoryTotals: Record<Category, { yes: number; no: number }> }>();
+  pathBuckets.set(pathKey([]), { path: [], totalAnswers: 0, categoryTotals: zeroPerCategory(() => ({ yes: 0, no: 0 })) });
   let answerCount = 0;
   let activeUsers7d = 0;
   let activeUsers30d = 0;
@@ -103,6 +153,7 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
 
     let lastActive: string | null = null;
     const catCounts: Record<Category, number> = zeroPerCategory(() => 0);
+    const timeline = overrideTimeline(state);
 
     let lastNotification: AnalyticsUserSummary["lastNotification"] = null;
     for (const event of state.notificationEvents) {
@@ -129,6 +180,16 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
       }
       dailyCounts.set(a.date, (dailyCounts.get(a.date) ?? 0) + 1);
       if (!lastActive || a.date > lastActive) lastActive = a.date;
+
+      const path = resolvedPath(a, timeline);
+      const key = pathKey(path);
+      let bucket = pathBuckets.get(key);
+      if (!bucket) {
+        bucket = { path, totalAnswers: 0, categoryTotals: zeroPerCategory(() => ({ yes: 0, no: 0 })) };
+        pathBuckets.set(key, bucket);
+      }
+      bucket.totalAnswers++;
+      if (a.category && bucket.categoryTotals[a.category]) bucket.categoryTotals[a.category][a.answer]++;
     }
 
     if (lastActive && lastActive >= cutoff7) activeUsers7d++;
@@ -162,12 +223,26 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
     return { date, count: dailyCounts.get(date) ?? 0 };
   });
 
+  // Routine question first regardless of its count (the natural default view), the rest by how much
+  // data they actually have — most substantial patterns first.
+  const routineKey = pathKey([]);
+  const questionPaths: AnalyticsQuestionPath[] = [
+    ...Array.from(pathBuckets.entries())
+      .filter(([key]) => key === routineKey)
+      .map(([, b]) => ({ path: b.path, label: pathLabel(root, b.path), totalAnswers: b.totalAnswers, categoryTotals: b.categoryTotals })),
+    ...Array.from(pathBuckets.entries())
+      .filter(([key]) => key !== routineKey)
+      .map(([, b]) => ({ path: b.path, label: pathLabel(root, b.path), totalAnswers: b.totalAnswers, categoryTotals: b.categoryTotals }))
+      .sort((a, b) => b.totalAnswers - a.totalAnswers),
+  ];
+
   const response: AnalyticsResponse = {
     totals: { userCount: userIds.length, answerCount, activeUsers7d, activeUsers30d },
     categoryTotals,
     answerBalance,
     dailyActivity,
     notificationTotals: { sent30d, failed30d },
+    questionPaths,
     users,
   };
   return json(response);
@@ -294,9 +369,13 @@ export async function handleGetUserProfile(_request: Request, env: Env, id: stri
       .map((e) => e.path),
   ];
 
+  // resolvedPath, not a raw `a.path ?? []` default — an answer recorded before per-answer path
+  // tracking existed still gets attributed to whichever question was actually active when it was
+  // answered, via the account's own override timeline. See resolvedPath's own doc comment.
+  const timeline = overrideTimeline(state);
   const answersByPath = new Map<string, AnswerRecord[]>();
   for (const a of state.answers) {
-    const key = pathKey(a.path ?? []);
+    const key = pathKey(resolvedPath(a, timeline));
     const list = answersByPath.get(key);
     if (list) list.push(a);
     else answersByPath.set(key, [a]);

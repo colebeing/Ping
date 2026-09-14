@@ -193,12 +193,23 @@ export interface AnalyticsUserSummary {
   lastNotification: { block: BlockId; channel: "webpush" | "fcm"; outcome: "sent" | "failed"; timestamp: string } | null;
 }
 
+/** One entry per distinct escalation-tree path anyone (across all users) has ever answered under —
+ * routine question ([]) always first, the rest ordered most-answered first. Drives the main Analytics
+ * page's question dropdown. */
+export interface AnalyticsQuestionPath {
+  path: EscalationPath;
+  label: string;
+  totalAnswers: number;
+  categoryTotals: Record<Category, { yes: number; no: number }>;
+}
+
 export interface AnalyticsResponse {
   totals: { userCount: number; answerCount: number; activeUsers7d: number; activeUsers30d: number };
   categoryTotals: Record<Category, { yes: number; no: number }>;
   answerBalance: Record<BlockId, { yes: number; no: number }>;
   dailyActivity: { date: string; count: number }[];
   notificationTotals: { sent30d: number; failed30d: number };
+  questionPaths: AnalyticsQuestionPath[];
   users: AnalyticsUserSummary[];
 }
 
