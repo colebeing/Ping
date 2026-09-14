@@ -142,8 +142,13 @@ function showApp(isAdmin: boolean): void {
   // Yes/No buttons included, which a reflexive tap could use to overwrite an
   // answer the notification itself just recorded. Re-rendering immediately
   // swaps that stale card for a loading state before it's clickable again.
+  // Scoped to Home only — that's the sole view with this stale-action-button
+  // race. Admin's tree editor keeps real in-progress state across refocus
+  // instead (which path is open, the map's expanded/collapsed state, any
+  // pending Sheet-sync preview) that a blanket refresh on every view would
+  // otherwise wipe out on every alt-tab back into the app.
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") renderActive();
+    if (document.visibilityState === "visible" && active === "home") renderActive();
   });
 
   for (const def of tabDefs) {
