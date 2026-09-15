@@ -23,6 +23,11 @@ on:
 jobs:
   distribute:
     runs-on: ubuntu-latest
+    # `secrets` isn't a recognized named-value inside `if:` expressions (GitHub Actions rejects the
+    # whole workflow file if it's referenced there) — mirrored into a job-level env var instead, which
+    # `if:` can read via the `env` context, and which every step's shell already inherits for free.
+    env:
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
     steps:
       - uses: actions/checkout@v4
 
@@ -53,13 +58,11 @@ jobs:
       - uses: android-actions/setup-android@v3
 
       - name: Write Firebase service account credentials
-        if: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON != '' }}
+        if: ${{ env.FIREBASE_SERVICE_ACCOUNT_JSON != '' }}
         working-directory: frontend/android/app
         run: printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > firebase-service-account.json
-        env:
-          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
 
       - name: Build and upload to Firebase App Distribution
-        if: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON != '' }}
+        if: ${{ env.FIREBASE_SERVICE_ACCOUNT_JSON != '' }}
         working-directory: frontend/android
         run: ./gradlew appDistributionUploadDebug
