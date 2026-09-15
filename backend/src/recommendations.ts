@@ -24,7 +24,7 @@ function daysBetween(a: string, b: string): number {
 /** Global key for a declined streak — "<valence>:<category>" or "<valence>:general" for the
  * mixed-category slot. Not scoped by block: responses across all four blocks count toward the same
  * streak now (see detectStreaks), so a decline has to reset the same global count. */
-function declinedStreakKey(valence: "amplify" | "resolve", category: Category | null): string {
+function declinedStreakKey(valence: Answer, category: Category | null): string {
   return `${valence}:${category ?? "general"}`;
 }
 
@@ -36,7 +36,7 @@ export function resolveNode(root: QuestionRoot, path: EscalationPath): Escalatio
   let node: EscalationNode | null = null;
   let children: EscalationChildren = root.children;
   for (const step of path) {
-    const next = step.category === null ? (step.valence === "amplify" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
+    const next = step.category === null ? (step.valence === "yes" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
     if (!next) return null;
     node = next;
     children = next.children;
@@ -68,8 +68,8 @@ function pathsEqual(a: EscalationPath, b: EscalationPath): boolean {
 
 /**
  * Checks whether the response just recorded (`justAnswered`) has pushed a streak's total response count
- * to threshold, and if so proposes a recommendation. Amplify for yes-streaks (do more of what's
- * working), resolve for no-streaks — symmetric per spec.
+ * to threshold, and if so proposes a recommendation. The yes valence covers yes-streaks (do more of
+ * what's working), no covers no-streaks — symmetric per spec.
  *
  * Counts *responses*, not consecutive days, and globally across all four live blocks, not per block —
  * three blocks all answered "yes, family" on the same day count as 3 toward that streak, same as 3
@@ -99,7 +99,8 @@ export function detectStreaks(
   const currentPath = state.activeOverride?.path ?? [];
   const children = currentPath.length === 0 ? root.children : (resolveNode(root, currentPath)?.children ?? root.children);
 
-  const valence: "amplify" | "resolve" = justAnswered.answer === "yes" ? "amplify" : "resolve";
+  // A valence IS just which answer produced this streak direction — same Answer type, no translation.
+  const valence: Answer = justAnswered.answer;
 
   // A decline's asOfTimestamp is a floor: responses at or before it don't count toward a fresh streak,
   // so a declined invitation needs genuinely new responses (not the same count continuing) before
@@ -119,8 +120,8 @@ export function detectStreaks(
     (a) => isLiveBlockId(a.block) && a.answer === justAnswered.answer && a.category && (!generalFloor || a.timestamp > generalFloor),
   ).length;
 
-  const categoryThreshold = valence === "amplify" ? thresholds.categoryYesThreshold : thresholds.categoryNoThreshold;
-  const generalThreshold = valence === "amplify" ? thresholds.generalYesThreshold : thresholds.generalNoThreshold;
+  const categoryThreshold = valence === "yes" ? thresholds.categoryYesThreshold : thresholds.categoryNoThreshold;
+  const generalThreshold = valence === "yes" ? thresholds.generalYesThreshold : thresholds.generalNoThreshold;
 
   let runCategory: Category | null = null;
   let step: EscalationStep;
@@ -133,7 +134,7 @@ export function detectStreaks(
     return newRecs;
   }
 
-  const child = step.category === null ? (step.valence === "amplify" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
+  const child = step.category === null ? (step.valence === "yes" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
   if (!child) return newRecs; // nothing authored at this slot — no swap invite offered, no error
 
   const candidatePath = [...currentPath, step];

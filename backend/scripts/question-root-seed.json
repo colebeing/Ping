@@ -24,7 +24,7 @@
     }
   },
   "children": {
-    "amplify": {
+    "yes": {
       "environment": {
         "inviteQuestion": "Would you like to focus on protecting friend time?",
         "blockQuestions": {
@@ -52,8 +52,8 @@
           }
         },
         "children": {
-          "amplify": {},
-          "resolve": {}
+          "yes": {},
+          "no": {}
         }
       },
       "impact": {
@@ -83,8 +83,8 @@
           }
         },
         "children": {
-          "amplify": {},
-          "resolve": {}
+          "yes": {},
+          "no": {}
         }
       },
       "people": {
@@ -114,8 +114,8 @@
           }
         },
         "children": {
-          "amplify": {},
-          "resolve": {}
+          "yes": {},
+          "no": {}
         }
       },
       "capacity": {
@@ -145,12 +145,12 @@
           }
         },
         "children": {
-          "amplify": {},
-          "resolve": {}
+          "yes": {},
+          "no": {}
         }
       }
     },
-    "resolve": {
+    "no": {
       "environment": {
         "inviteQuestion": "Would you like to focus on making space for friends?",
         "blockQuestions": {
@@ -178,8 +178,8 @@
           }
         },
         "children": {
-          "amplify": {},
-          "resolve": {}
+          "yes": {},
+          "no": {}
         }
       },
       "impact": {
@@ -209,8 +209,8 @@
           }
         },
         "children": {
-          "amplify": {},
-          "resolve": {}
+          "yes": {},
+          "no": {}
         }
       },
       "people": {
@@ -240,8 +240,8 @@
           }
         },
         "children": {
-          "amplify": {},
-          "resolve": {}
+          "yes": {},
+          "no": {}
         }
       },
       "capacity": {
@@ -271,8 +271,8 @@
           }
         },
         "children": {
-          "amplify": {},
-          "resolve": {}
+          "yes": {},
+          "no": {}
         }
       }
     },
@@ -303,8 +303,8 @@
         }
       },
       "children": {
-        "amplify": {},
-        "resolve": {}
+        "yes": {},
+        "no": {}
       }
     },
     "generalNo": {
@@ -334,8 +334,8 @@
         }
       },
       "children": {
-        "amplify": {},
-        "resolve": {}
+        "yes": {},
+        "no": {}
       }
     }
   }

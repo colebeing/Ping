@@ -83,13 +83,21 @@ function showApp(isAdmin: boolean): void {
     : [];
   const validTabs: Tab[] = ["home", "settings", ...tabDefs.filter((d) => d.id !== "home").map((d) => d.id)];
 
-  // Stay on the tab across a refresh by round-tripping it through the URL hash.
+  // Stay on the tab across a refresh by round-tripping it through the URL hash. Admin extends its own
+  // hash with a "/"-separated question path (see admin.ts's encodeHashForPath/decodePathFromHash) —
+  // only the segment before the first "/" is the tab name, so that extra addressing doesn't register
+  // as an unrecognized tab and fall back to Home.
   const tabFromHash = (): Tab => {
-    const h = location.hash.slice(1);
+    const h = location.hash.slice(1).split("/")[0];
     return (validTabs as string[]).includes(h) ? (h as Tab) : "home";
   };
 
   let active: Tab = tabFromHash();
+  // The Admin tab button below can't just always jump to the bare "#admin" root — that's exactly what
+  // threw away the question you were looking at on every trip through Home/Analytics. This remembers
+  // the fullest admin address seen so far (including its own question sub-path) so clicking back into
+  // Admin restores it, without admin.ts needing any cross-view API to report its own state up to here.
+  let lastAdminHash = location.hash.slice(1).split("/")[0] === "admin" ? location.hash.slice(1) : "admin";
 
   const goHome = () => {
     active = "home";
@@ -129,6 +137,8 @@ function showApp(isAdmin: boolean): void {
   };
 
   window.addEventListener("hashchange", () => {
+    const raw = location.hash.slice(1);
+    if (raw.split("/")[0] === "admin") lastAdminHash = raw;
     const next = tabFromHash();
     if (next !== active) {
       active = next;
@@ -157,7 +167,7 @@ function showApp(isAdmin: boolean): void {
     btn.textContent = def.label;
     btn.addEventListener("click", () => {
       active = def.id;
-      location.hash = def.id;
+      location.hash = def.id === "admin" ? lastAdminHash : def.id;
       renderActive();
     });
     tabs!.appendChild(btn);

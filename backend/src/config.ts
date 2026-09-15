@@ -74,12 +74,12 @@ function leaf(question: string): EscalationNode {
     inviteQuestion: question,
     blockQuestions: { q1: question, q2: question, q3: question, q4: question },
     ...SHARED_FOLLOWUPS,
-    children: { amplify: {}, resolve: {} },
+    children: { yes: {}, no: {} },
   };
 }
 
 const DEFAULT_ESCALATION_CHILDREN: EscalationChildren = {
-  amplify: {
+  yes: {
     // Wording carried over verbatim from the old friends/colleagues/family/me set — only the keys
     // renamed to their EPIC equivalents (see category-migration.ts). Fallback-only content (never
     // touched again once CONFIG_KV has real content), so it's not worth rewriting the phrasing itself.
@@ -88,7 +88,7 @@ const DEFAULT_ESCALATION_CHILDREN: EscalationChildren = {
     people: leaf("Would you like to focus on protecting family time?"),
     capacity: leaf("Would you like to focus on protecting time for yourself?"),
   },
-  resolve: {
+  no: {
     environment: leaf("Would you like to focus on making space for friends?"),
     impact: leaf("Would you like to focus on getting ahead of what colleagues need?"),
     people: leaf("Would you like to focus on making space for family?"),
@@ -130,17 +130,21 @@ function extractLegacyInvitationText(raw: unknown): string | null {
  * authored deeper than depth 1 before this tree existed). Any slot that can't be salvaged is simply
  * left unauthored rather than guessed at. */
 function migrateEscalationChildren(rawCopy: Record<string, unknown> | null): EscalationChildren {
-  const children: EscalationChildren = { amplify: {}, resolve: {} };
+  const children: EscalationChildren = { yes: {}, no: {} };
   if (!rawCopy) return children;
+  // Raw key names ("amplify"/"resolve") reflect this ancient blob's own historical shape, predating
+  // both the EPIC category rename below AND the later amplify/resolve -> yes/no valence rename — not
+  // worth updating since this whole blob is frozen, never written again once CONFIG_KV has real
+  // question-root content.
   const amplify = rawCopy.amplify as Record<string, unknown> | undefined;
   const resolve = rawCopy.resolve as Record<string, unknown> | undefined;
   // This raw blob predates the EPIC rename entirely, so its keys are still friends/colleagues/family/
   // me — read via CATEGORY_RENAME's old keys, write under the new ones (same as everywhere else).
   for (const [oldCat, newCat] of Object.entries(CATEGORY_RENAME)) {
     const aText = amplify && extractLegacyInvitationText(amplify[oldCat]);
-    if (aText) children.amplify[newCat] = leaf(aText);
+    if (aText) children.yes[newCat] = leaf(aText);
     const rText = resolve && extractLegacyInvitationText(resolve[oldCat]);
-    if (rText) children.resolve[newCat] = leaf(rText);
+    if (rText) children.no[newCat] = leaf(rText);
   }
   const generalYesText = extractLegacyInvitationText(rawCopy.generalYes);
   if (generalYesText) children.generalYes = leaf(generalYesText);
@@ -173,18 +177,21 @@ function migrateNodeShape(node: EscalationNode): EscalationNode {
 }
 
 /** Renames pre-EPIC category keys (friends/colleagues/family/me) to their EPIC equivalents wherever
- * they appear as EscalationChildren's own amplify/resolve slots — see category-migration.ts. Reads via
- * both the new key and CATEGORY_RENAME's old key so this is idempotent: already-migrated data (only
- * the new key present) passes straight through untouched. */
+ * they appear as EscalationChildren's own yes/no slots — see category-migration.ts. Also renames the
+ * slots themselves from their pre-rename names (amplify/resolve) to the current yes/no, one rename
+ * layered on top of the other exactly like migrateNodeShape/migrateFollowupPromptCategories compose.
+ * Reads via both the new key and the old one at each level so this is idempotent: already-migrated
+ * data (only new keys present, at both levels) passes straight through untouched. */
 function migrateChildrenShape(children: EscalationChildren): EscalationChildren {
-  const migrated: EscalationChildren = { amplify: {}, resolve: {} };
-  const rawAmplify = children.amplify as Partial<Record<string, EscalationNode>>;
-  const rawResolve = children.resolve as Partial<Record<string, EscalationNode>>;
+  const migrated: EscalationChildren = { yes: {}, no: {} };
+  const raw = children as unknown as Record<string, Partial<Record<string, EscalationNode>> | undefined>;
+  const rawYes = raw.yes ?? raw.amplify ?? {};
+  const rawNo = raw.no ?? raw.resolve ?? {};
   for (const [oldCat, newCat] of Object.entries(CATEGORY_RENAME)) {
-    const a = rawAmplify[newCat] ?? rawAmplify[oldCat];
-    if (a) migrated.amplify[newCat] = migrateNodeShape(a);
-    const r = rawResolve[newCat] ?? rawResolve[oldCat];
-    if (r) migrated.resolve[newCat] = migrateNodeShape(r);
+    const y = rawYes[newCat] ?? rawYes[oldCat];
+    if (y) migrated.yes[newCat] = migrateNodeShape(y);
+    const n = rawNo[newCat] ?? rawNo[oldCat];
+    if (n) migrated.no[newCat] = migrateNodeShape(n);
   }
   if (children.generalYes) migrated.generalYes = migrateNodeShape(children.generalYes);
   if (children.generalNo) migrated.generalNo = migrateNodeShape(children.generalNo);

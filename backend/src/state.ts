@@ -141,14 +141,28 @@ export async function getState(env: Env, userId: string): Promise<UserState> {
  * answer history, overrides (including their own yes/no follow-up options), pending recommendation
  * nudges, and declined-streak keys. See category-migration.ts; idempotent, so safe to run on every
  * read regardless of whether this particular blob has already been touched since the rename. */
-/** Renames the category embedded in each step of a stored EscalationPath — distinct from (and just as
- * necessary as) migrating a denormalized display-only `category` field: this is the STRUCTURAL value
- * resolveNode actually walks the live tree with (see recommendations.ts's resolveOverrideContent). A
- * path still carrying an old category name silently fails to resolve against the tree's now-renamed
- * keys and falls back to the frozen snapshot — which looks exactly like "my edit isn't taking effect",
- * and is the bug this function exists to close. */
+/** A stored step's valence predating the amplify/resolve -> yes/no rename; already-migrated values (or
+ * anything unrecognized) pass through untouched — same defensive-against-`unknown` posture as
+ * migrateCategoryValue, since a value read straight out of KV JSON isn't guaranteed to match its
+ * declared type at runtime. */
+function migrateValenceValue(raw: unknown): "yes" | "no" | undefined {
+  if (raw === "yes" || raw === "no") return raw;
+  if (raw === "amplify") return "yes";
+  if (raw === "resolve") return "no";
+  return undefined;
+}
+
+/** Renames the valence and category embedded in each step of a stored EscalationPath — distinct from
+ * (and just as necessary as) migrating a denormalized display-only `category` field: this is the
+ * STRUCTURAL value resolveNode actually walks the live tree with (see recommendations.ts's
+ * resolveOverrideContent). A path still carrying an old category or valence name silently fails to
+ * resolve against the tree's now-renamed keys and falls back to the frozen snapshot — which looks
+ * exactly like "my edit isn't taking effect", and is the bug this function exists to close. */
 function migratePath(path: EscalationPath): EscalationPath {
-  return path.map((step) => (step.category ? { ...step, category: migrateCategoryValue(step.category) ?? step.category } : step));
+  return path.map((step) => ({
+    valence: migrateValenceValue(step.valence) ?? step.valence,
+    category: step.category ? (migrateCategoryValue(step.category) ?? step.category) : step.category,
+  }));
 }
 
 function migrateCategories(stored: UserState): void {
@@ -177,20 +191,22 @@ function migrateCategories(stored: UserState): void {
     return {
       ...n,
       category: n.category ? (migrateCategoryValue(n.category) ?? n.category) : n.category,
+      valence: migrateValenceValue(n.valence) ?? n.valence,
       path: migratePath(n.path),
       node: { ...n.node, yes: migrateFollowupPromptCategories(n.node.yes), no: migrateFollowupPromptCategories(n.node.no) },
     };
   });
   // Keyed "<valence>:<category-or-'general'>" (see recommendations.ts's declinedStreakKey) — "general"
-  // itself never changes, only a real category name after the colon needs remapping.
+  // itself never changes; the valence prefix and a real category name after the colon both do.
   const migratedDeclined: UserState["declinedStreaks"] = {};
   for (const [key, value] of Object.entries(stored.declinedStreaks)) {
     if (!value) continue;
     const sep = key.indexOf(":");
     const valence = key.slice(0, sep);
     const cat = key.slice(sep + 1);
+    const newValence = migrateValenceValue(valence) ?? valence;
     const newCat = cat === "general" ? "general" : (migrateCategoryValue(cat) ?? cat);
-    migratedDeclined[`${valence}:${newCat}`] = value;
+    migratedDeclined[`${newValence}:${newCat}`] = value;
   }
   stored.declinedStreaks = migratedDeclined;
 }

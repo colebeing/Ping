@@ -1,6 +1,7 @@
 import {
   api,
   type AdminConfig,
+  type Answer,
   type Category,
   type DigIn,
   type DigInOption,
@@ -30,7 +31,7 @@ function emptyNode(): EscalationNode {
     blockQuestions: { q1: "", q2: "", q3: "", q4: "" },
     yes: emptyFollowup(),
     no: emptyFollowup(),
-    children: { amplify: {}, resolve: {} },
+    children: { yes: {}, no: {} },
   };
 }
 
@@ -43,12 +44,12 @@ function emptyDigIn(): DigIn {
 }
 
 function childAt(children: EscalationChildren, step: EscalationStep): EscalationNode | undefined {
-  return step.category === null ? (step.valence === "amplify" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
+  return step.category === null ? (step.valence === "yes" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
 }
 
 function setChildAt(children: EscalationChildren, step: EscalationStep, node: EscalationNode): void {
   if (step.category === null) {
-    if (step.valence === "amplify") children.generalYes = node;
+    if (step.valence === "yes") children.generalYes = node;
     else children.generalNo = node;
   } else {
     children[step.valence][step.category] = node;
@@ -68,23 +69,67 @@ function resolveNode(root: QuestionRoot, path: EscalationPath): EscalationNode |
   return node;
 }
 
+/** Round-trips an EscalationPath through the URL hash (e.g. "#admin/yes.people/no.general") so a
+ * specific question view is a real, shareable/bookmarkable address instead of in-memory-only state
+ * that a tab switch or reload throws away. "general" stands in for a null category (the mixed slot) —
+ * not a Category value itself, so it can't collide with a real one. */
+const GENERAL_CATEGORY_TOKEN = "general";
+
+function encodeStep(step: EscalationStep): string {
+  return `${step.valence}.${step.category ?? GENERAL_CATEGORY_TOKEN}`;
+}
+
+function decodeStep(segment: string): EscalationStep | null {
+  const [valence, categoryToken] = segment.split(".");
+  if (valence !== "yes" && valence !== "no") return null;
+  if (categoryToken === GENERAL_CATEGORY_TOKEN) return { valence, category: null };
+  if ((CATEGORY_ORDER as string[]).includes(categoryToken)) return { valence, category: categoryToken as Category };
+  return null;
+}
+
+function encodeHashForPath(path: EscalationPath): string {
+  return path.length === 0 ? "admin" : "admin/" + path.map(encodeStep).join("/");
+}
+
+/** Reads the escalation path out of the current URL hash. A step that fails to decode, or that
+ * doesn't actually resolve against the live tree (stale link to a category an admin later removed),
+ * truncates the path there rather than erroring — the same resilience an accepted override's own
+ * stored path already gets when it no longer resolves. */
+function decodePathFromHash(root: QuestionRoot): EscalationPath {
+  const segments = location.hash.slice(1).split("/").slice(1);
+  const path: EscalationPath = [];
+  let children = root.children;
+  for (const segment of segments) {
+    const step = decodeStep(segment);
+    const node = step && childAt(children, step);
+    if (!step || !node) break;
+    path.push(step);
+    children = node.children;
+  }
+  return path;
+}
+
 /** A step's true label is whatever the PARENT node's own yes/no follow-up option text says for that
  * category — the literal button text a real end-user taps — not a fixed generic name, since admins can
  * customize that text per node. Falls back to CATEGORY_LABEL only while the option text is genuinely
- * still blank. The "Mixed" (general) slots aren't tied to one category, so they keep fixed text. */
+ * still blank. Prefixed with which valence this step came from ("Yes: "/"No: ") — the category/button
+ * text alone doesn't say whether it was reached via a yes-streak or a no-streak, and two different
+ * nodes can share the same category under opposite valences. The "Mixed" (general) slots aren't tied
+ * to one category and already name their own valence, so they keep their existing fixed text as-is. */
 function dynamicStepLabel(step: EscalationStep, parentYes: FollowupPrompt, parentNo: FollowupPrompt): string {
-  if (step.category === null) return step.valence === "amplify" ? "Mixed (yes-streak)" : "Mixed (no-streak)";
-  const prompt = step.valence === "amplify" ? parentYes : parentNo;
-  return prompt.options[step.category] || CATEGORY_LABEL[step.category];
+  if (step.category === null) return step.valence === "yes" ? "Mixed (yes-streak)" : "Mixed (no-streak)";
+  const prompt = step.valence === "yes" ? parentYes : parentNo;
+  const label = prompt.options[step.category] || CATEGORY_LABEL[step.category];
+  return `${step.valence === "yes" ? "Yes" : "No"}: ${label}`;
 }
 
 /** The 10 possible child slots off any node, in the same fixed order the map's columns and the tree
  * editor's two branch groups both use. */
 const SLOTS: EscalationStep[] = [
-  ...CATEGORY_ORDER.map((category) => ({ valence: "amplify" as const, category })),
-  { valence: "amplify" as const, category: null },
-  ...CATEGORY_ORDER.map((category) => ({ valence: "resolve" as const, category })),
-  { valence: "resolve" as const, category: null },
+  ...CATEGORY_ORDER.map((category) => ({ valence: "yes" as const, category })),
+  { valence: "yes" as const, category: null },
+  ...CATEGORY_ORDER.map((category) => ({ valence: "no" as const, category })),
+  { valence: "no" as const, category: null },
 ];
 
 interface MapRow {
@@ -342,16 +387,23 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
     const treeCard = document.createElement("div");
     root.appendChild(treeCard);
 
-    let currentPath: EscalationPath = [];
+    // Seeded from the URL hash instead of always starting at the root, so a bookmarked/shared link (or
+    // just switching to Home/Analytics and back) lands back on the exact question it pointed at.
+    let currentPath: EscalationPath = decodePathFromHash(config.questionRoot);
     // Collapsed by default — a wide table that isn't needed on most visits shouldn't sit open in the
     // way. Lives here (not inside renderQuestionMap) so it survives renderBoth tearing the map card
     // down and rebuilding it on every navigation, instead of silently re-collapsing on each click.
     let mapExpanded = false;
     // Re-renders both cards — the map's own rows/gaps change the moment a new node is created via the
     // tree editor's "add a swap invite" affordance, so it needs to stay in sync with every navigation,
-    // not just the tree editor itself.
+    // not just the tree editor itself. Also keeps the hash in sync so the address bar always names the
+    // question actually on screen — the browser Back button steps through prior questions as a result,
+    // though only across tab switches; it won't repaint live while Admin stays mounted (nothing listens
+    // for hashchange in that window, deliberately, to avoid a second global listener with no teardown
+    // hook to remove it with).
     const navigate = (path: EscalationPath) => {
       currentPath = path;
+      location.hash = encodeHashForPath(path);
       renderBoth();
     };
     // The map sits above the tree editor — jumping from a map row/cell should bring the editor it just
@@ -664,8 +716,8 @@ function renderNodeEditor(root: QuestionRoot, path: EscalationPath, navigate: (p
   card.appendChild(renderFollowupEditor(no, "No → WHY"));
 
   const children = path.length === 0 ? root.children : node!.children;
-  card.appendChild(renderBranchGroup("Yes-path swap invites", "amplify", yes, children, path, navigate));
-  card.appendChild(renderBranchGroup("No-path swap invites", "resolve", no, children, path, navigate));
+  card.appendChild(renderBranchGroup("Yes-path swap invites", "yes", yes, children, path, navigate));
+  card.appendChild(renderBranchGroup("No-path swap invites", "no", no, children, path, navigate));
 
   return card;
 }
@@ -738,7 +790,7 @@ function breadcrumb(label: string, isCurrent: boolean, onClick: () => void): HTM
 
 function renderBranchGroup(
   title: string,
-  valence: "amplify" | "resolve",
+  valence: Answer,
   prompt: FollowupPrompt,
   children: EscalationChildren,
   path: EscalationPath,

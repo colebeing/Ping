@@ -81,10 +81,12 @@ export interface TriggerConfig {
   retireAfterDays: number;
 }
 
-/** One step down the escalation tree: which valence-branch and which category (null = the general,
+/** One step down the escalation tree: which valence-branch ("yes" = do-more-of-what's-working,
+ * "no" = fix-what's-not — the same Answer type an actual response uses, since a valence IS just which
+ * answer the streak that produced this step ran on) and which category (null = the general,
  * mixed-category slot) was taken. A full EscalationPath is how a node is found from the root. */
 export interface EscalationStep {
-  valence: "amplify" | "resolve";
+  valence: Answer;
   category: Category | null;
 }
 /** [] means the root routine question itself — not any EscalationNode. */
@@ -144,8 +146,8 @@ export interface EscalationNode {
  * admins author only as deep as they choose to; an absent slot means no swap invite is ever proposed
  * there, not a default one. */
 export interface EscalationChildren {
-  amplify: Partial<Record<Category, EscalationNode>>;
-  resolve: Partial<Record<Category, EscalationNode>>;
+  yes: Partial<Record<Category, EscalationNode>>;
+  no: Partial<Record<Category, EscalationNode>>;
   generalYes?: EscalationNode;
   generalNo?: EscalationNode;
 }
@@ -208,7 +210,7 @@ export interface RecommendationNudge extends NudgeBase {
   /** Denormalized from path's last step — display/logging convenience only, never used for dedup
    * (two different nodes can share a trailing step; only a full-path compare tells them apart). */
   category: Category | null;
-  valence: "amplify" | "resolve";
+  valence: Answer;
   /** Timestamp of the response that crossed the threshold and produced this — the floor a fresh streak
    * must clear after a decline, see DeclinedStreak. A timestamp, not a date: responses are counted
    * globally across all four blocks now, so same-day responses need to be told apart precisely. */

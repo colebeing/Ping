@@ -40,19 +40,19 @@ const OPTIONS_HEADER = ["Path (do not edit)", "Path ID", "Option #", "Label", "M
 /** The 10 possible child slots off any node, in a fixed order — mirrors frontend/src/views/admin.ts's
  * own SLOTS constant (kept as a separate copy since this file has no shared import path to it). */
 const SLOTS: EscalationStep[] = [
-  ...CATEGORIES.map((category) => ({ valence: "amplify" as const, category })),
-  { valence: "amplify" as const, category: null },
-  ...CATEGORIES.map((category) => ({ valence: "resolve" as const, category })),
-  { valence: "resolve" as const, category: null },
+  ...CATEGORIES.map((category) => ({ valence: "yes" as const, category })),
+  { valence: "yes" as const, category: null },
+  ...CATEGORIES.map((category) => ({ valence: "no" as const, category })),
+  { valence: "no" as const, category: null },
 ];
 
 function childAt(children: EscalationChildren, step: EscalationStep): EscalationNode | undefined {
-  return step.category === null ? (step.valence === "amplify" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
+  return step.category === null ? (step.valence === "yes" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
 }
 
 function setChildAt(children: EscalationChildren, step: EscalationStep, node: EscalationNode): void {
   if (step.category === null) {
-    if (step.valence === "amplify") children.generalYes = node;
+    if (step.valence === "yes") children.generalYes = node;
     else children.generalNo = node;
   } else {
     children[step.valence][step.category] = node;
@@ -60,8 +60,8 @@ function setChildAt(children: EscalationChildren, step: EscalationStep, node: Es
 }
 
 function stepLabel(step: EscalationStep): string {
-  if (step.category === null) return step.valence === "amplify" ? "Mixed (yes-streak)" : "Mixed (no-streak)";
-  return CATEGORY_LABEL[step.category];
+  if (step.category === null) return step.valence === "yes" ? "Mixed (yes-streak)" : "Mixed (no-streak)";
+  return `${step.valence === "yes" ? "Yes" : "No"}: ${CATEGORY_LABEL[step.category]}`;
 }
 
 function pathKey(path: EscalationPath): string {
@@ -72,7 +72,7 @@ function pathKey(path: EscalationPath): string {
  * column, distinct from `Breadcrumb`'s admin-navigation arrows (see stepLabel/walk below). Root is
  * "1"; each step appends the valence taken ("y"/"n") then a category letter — E/P/I/C for a specific
  * category (first letter of Category, already unique), or Y/N for the mixed/general slot, matching
- * its own valence (Y pairs with amplify, N with resolve). Every level beyond the first wraps everything
+ * its own valence (Y pairs with yes, N with no). Every level beyond the first wraps everything
  * before it in parens before appending its own 2 characters (e.g. "1yE", then "(1yE)nN", then
  * "((1yE)nN)yP") — purely a readability aid marking each row boundary in a long chain, not needed to
  * parse it: every level is a fixed 2 characters, so it's already unambiguous without them.
@@ -88,7 +88,7 @@ function pathKey(path: EscalationPath): string {
 function pathId(path: EscalationPath): string {
   let id = "1";
   path.forEach((step, i) => {
-    const step2 = (step.valence === "amplify" ? "y" : "n") + (step.category === null ? (step.valence === "amplify" ? "Y" : "N") : step.category[0].toUpperCase());
+    const step2 = (step.valence === "yes" ? "y" : "n") + (step.category === null ? (step.valence === "yes" ? "Y" : "N") : step.category[0].toUpperCase());
     id = i === 0 ? id + step2 : `(${id})${step2}`;
   });
   return id;
@@ -177,8 +177,12 @@ function parsePath(raw: string | undefined): EscalationPath | null {
   const path: EscalationPath = [];
   for (const step of parsed) {
     if (typeof step !== "object" || step === null) return null;
-    const { valence, category } = step as { valence?: unknown; category?: unknown };
-    if (valence !== "amplify" && valence !== "resolve") return null;
+    const { valence: rawValence, category } = step as { valence?: unknown; category?: unknown };
+    // Accepts a real spreadsheet's already-pushed "amplify"/"resolve" JSON from before that rename to
+    // "yes"/"no", same lazy-on-read tolerance as every other rename in this codebase — a pull must not
+    // break just because a push under the old scheme already wrote real cells.
+    const valence = rawValence === "amplify" ? "yes" : rawValence === "resolve" ? "no" : rawValence;
+    if (valence !== "yes" && valence !== "no") return null;
     if (category !== null && !CATEGORIES.includes(category as Category)) return null;
     path.push({ valence, category: category as Category | null });
   }
@@ -299,7 +303,7 @@ export function reconstructTree(questionsValues: string[][], optionsValues: stri
   }
 
   function buildChildren(parentPath: EscalationPath): EscalationChildren {
-    const children: EscalationChildren = { amplify: {}, resolve: {} };
+    const children: EscalationChildren = { yes: {}, no: {} };
     for (const step of SLOTS) {
       const row = byKey.get(pathKey([...parentPath, step]));
       if (!row) continue;

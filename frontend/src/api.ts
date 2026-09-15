@@ -73,7 +73,7 @@ export interface TriggerConfig {
 /** One step down the escalation tree: which valence-branch and which category (null = the general,
  * mixed-category slot) was taken. A full EscalationPath is how a node is found from the root. */
 export interface EscalationStep {
-  valence: "amplify" | "resolve";
+  valence: Answer;
   category: Category | null;
 }
 /** [] means the root routine question itself — not any EscalationNode. */
@@ -122,8 +122,8 @@ export interface EscalationNode {
  * category per valence (4 x 2 = 8), plus a general yes-streak and general no-streak slot. Every slot
  * starts absent — admins author only as deep as they choose to. */
 export interface EscalationChildren {
-  amplify: Partial<Record<Category, EscalationNode>>;
-  resolve: Partial<Record<Category, EscalationNode>>;
+  yes: Partial<Record<Category, EscalationNode>>;
+  no: Partial<Record<Category, EscalationNode>>;
   generalYes?: EscalationNode;
   generalNo?: EscalationNode;
 }
@@ -162,7 +162,7 @@ export interface RecommendationNudge extends NudgeBase {
   node: { inviteQuestion: string; blockQuestions: Record<LiveBlockId, string>; yes: FollowupPrompt; no: FollowupPrompt; digIn?: DigIn };
   /** Denormalized from path's last step — display convenience only. */
   category: Category | null;
-  valence: "amplify" | "resolve";
+  valence: Answer;
   asOfTimestamp: string;
 }
 
@@ -236,7 +236,7 @@ export interface UserProfileResponse {
   totalAnswers: number;
   activeDayStreak: number;
   activeQuestion: { text: Record<LiveBlockId, string>; category: Category | null; acceptedAt: string } | null;
-  overrideHistory: { question: string; category: Category | null; valence: "amplify" | "resolve"; acceptedAt: string; status: "active" | "retired" }[];
+  overrideHistory: { question: string; category: Category | null; valence: Answer; acceptedAt: string; status: "active" | "retired" }[];
   questionPaths: QuestionPathBreakdown[];
 }
 

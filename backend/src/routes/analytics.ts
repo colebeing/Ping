@@ -281,7 +281,7 @@ export interface UserProfileResponse {
   /** What this user has actually accepted, most recent first — shows which content changes actually
    * landed, not just what was offered. No distinct "retired at" timestamp exists in the data (only
    * acceptedAt is ever recorded), so retirement is a status, not a date. */
-  overrideHistory: { question: string; category: Category | null; valence: "amplify" | "resolve"; acceptedAt: string; status: "active" | "retired" }[];
+  overrideHistory: { question: string; category: Category | null; valence: Answer; acceptedAt: string; status: "active" | "retired" }[];
   /** For the Admin per-user page's question-path dropdown — see QuestionPathBreakdown's own doc comment. */
   questionPaths: QuestionPathBreakdown[];
 }
@@ -300,11 +300,15 @@ function pathKey(path: EscalationPath): string {
 /** A step's real label is whatever the PARENT node's own yes/no option text says for that category
  * (the literal button an end user tapped), falling back to CATEGORY_LABEL only while that text is
  * genuinely still blank — same rule frontend/src/views/admin.ts's dynamicStepLabel applies, kept as a
- * separate backend copy since the two projects share no module. */
+ * separate backend copy since the two projects share no module. Prefixed with which valence this step
+ * came from ("Yes: "/"No: ") — the category/button text alone doesn't say whether it was reached via a
+ * yes-streak or a no-streak, and two different nodes can share the same category under opposite
+ * valences. */
 function stepLabel(step: EscalationStep, parentYes: FollowupPrompt, parentNo: FollowupPrompt): string {
-  if (step.category === null) return step.valence === "amplify" ? "Mixed (yes-streak)" : "Mixed (no-streak)";
-  const prompt = step.valence === "amplify" ? parentYes : parentNo;
-  return prompt.options[step.category] || CATEGORY_LABEL[step.category];
+  if (step.category === null) return step.valence === "yes" ? "Mixed (yes-streak)" : "Mixed (no-streak)";
+  const prompt = step.valence === "yes" ? parentYes : parentNo;
+  const label = prompt.options[step.category] || CATEGORY_LABEL[step.category];
+  return `${step.valence === "yes" ? "Yes" : "No"}: ${label}`;
 }
 
 /** Breadcrumb-style label for a path, e.g. "Friends → Mixed (no-streak)" — walks the LIVE tree from the
@@ -320,7 +324,7 @@ function pathLabel(root: QuestionRoot, path: EscalationPath): string {
   let children = root.children;
   for (const step of path) {
     labels.push(stepLabel(step, parentYes, parentNo));
-    const node = step.category === null ? (step.valence === "amplify" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
+    const node = step.category === null ? (step.valence === "yes" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
     if (!node) break;
     parentYes = node.yes;
     parentNo = node.no;
@@ -336,8 +340,8 @@ function overrideQuestionSummary(override: QuestionOverride): string {
 }
 
 /** Valence isn't stored directly on QuestionOverride — it's the last step of the path that produced it. */
-function overrideValence(override: QuestionOverride): "amplify" | "resolve" {
-  return override.path[override.path.length - 1]?.valence ?? "amplify";
+function overrideValence(override: QuestionOverride): Answer {
+  return override.path[override.path.length - 1]?.valence ?? "yes";
 }
 
 export async function handleGetUserProfile(_request: Request, env: Env, id: string): Promise<Response> {

@@ -477,7 +477,7 @@ function renderOverrideHistoryCard(data: UserProfileResponse): HTMLElement {
   for (const o of data.overrideHistory) {
     const tr = document.createElement("tr");
     const category = o.category ? CATEGORY_LABEL[o.category] : "Mixed";
-    const valenceLabel = o.valence === "amplify" ? "Yes-path" : "No-path";
+    const valenceLabel = o.valence === "yes" ? "Yes-path" : "No-path";
     tr.innerHTML = `<td>${escapeHtml(o.question)}</td><td>${category} (${valenceLabel})</td><td>${o.acceptedAt.slice(0, 10)}</td><td>${
       o.status === "active" ? "Active now" : "Retired"
     }</td>`;
