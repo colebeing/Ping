@@ -1,4 +1,4 @@
-import type { Env, LiveBlockId, UserState } from "./types";
+import type { EscalationPath, Env, LiveBlockId, UserState } from "./types";
 import { migrateCategoryValue, migrateFollowupPromptCategories } from "./category-migration";
 
 // Four hours apart, clearing MIN_GAP_MINUTES's 2-hour spacing rule with room to spare. Shared between
@@ -141,6 +141,16 @@ export async function getState(env: Env, userId: string): Promise<UserState> {
  * answer history, overrides (including their own yes/no follow-up options), pending recommendation
  * nudges, and declined-streak keys. See category-migration.ts; idempotent, so safe to run on every
  * read regardless of whether this particular blob has already been touched since the rename. */
+/** Renames the category embedded in each step of a stored EscalationPath — distinct from (and just as
+ * necessary as) migrating a denormalized display-only `category` field: this is the STRUCTURAL value
+ * resolveNode actually walks the live tree with (see recommendations.ts's resolveOverrideContent). A
+ * path still carrying an old category name silently fails to resolve against the tree's now-renamed
+ * keys and falls back to the frozen snapshot — which looks exactly like "my edit isn't taking effect",
+ * and is the bug this function exists to close. */
+function migratePath(path: EscalationPath): EscalationPath {
+  return path.map((step) => (step.category ? { ...step, category: migrateCategoryValue(step.category) ?? step.category } : step));
+}
+
 function migrateCategories(stored: UserState): void {
   for (const a of stored.answers) {
     if (a.category) a.category = migrateCategoryValue(a.category) ?? a.category;
@@ -151,12 +161,14 @@ function migrateCategories(stored: UserState): void {
   if (stored.activeOverride) {
     const o = stored.activeOverride;
     if (o.category) o.category = migrateCategoryValue(o.category) ?? o.category;
+    o.path = migratePath(o.path);
     o.yes = migrateFollowupPromptCategories(o.yes);
     o.no = migrateFollowupPromptCategories(o.no);
   }
   stored.retiredOverrides = stored.retiredOverrides.map((o) => ({
     ...o,
     category: o.category ? (migrateCategoryValue(o.category) ?? o.category) : o.category,
+    path: migratePath(o.path),
     yes: migrateFollowupPromptCategories(o.yes),
     no: migrateFollowupPromptCategories(o.no),
   }));
@@ -165,6 +177,7 @@ function migrateCategories(stored: UserState): void {
     return {
       ...n,
       category: n.category ? (migrateCategoryValue(n.category) ?? n.category) : n.category,
+      path: migratePath(n.path),
       node: { ...n.node, yes: migrateFollowupPromptCategories(n.node.yes), no: migrateFollowupPromptCategories(n.node.no) },
     };
   });
