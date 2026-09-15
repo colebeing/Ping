@@ -90,6 +90,9 @@ const SLOTS: EscalationStep[] = [
 interface MapRow {
   path: EscalationPath;
   label: string;
+  /** Admin-set via the Sheet's "Label" column only — distinct from `label` above (the breadcrumb
+   * trail): a free-text nickname for telling rows apart at a glance, read-only here. */
+  customLabel: string | undefined;
   questionPreview: string;
 }
 
@@ -97,7 +100,7 @@ interface MapRow {
  * an unauthored slot never gets a row of its own, only a gap indicator on its parent's row. */
 function collectRows(root: QuestionRoot): MapRow[] {
   const rootPreview = `${root.blockQuestions.q1} (+3 more)`;
-  const rows: MapRow[] = [{ path: [], label: "Routine question", questionPreview: rootPreview }];
+  const rows: MapRow[] = [{ path: [], label: "Routine question", customLabel: root.label, questionPreview: rootPreview }];
 
   // Carries each step's own parent yes/no down the walk (needed for dynamicStepLabel) and the labels
   // built so far (joined for display, same as the old flat childPath.map(stepLabel).join(" → ")).
@@ -107,7 +110,7 @@ function collectRows(root: QuestionRoot): MapRow[] {
       if (!child) continue;
       const childPath = [...path, step];
       const labels = [...priorLabels, dynamicStepLabel(step, parentYes, parentNo)];
-      rows.push({ path: childPath, label: labels.join(" → "), questionPreview: child.inviteQuestion });
+      rows.push({ path: childPath, label: labels.join(" → "), customLabel: child.label, questionPreview: child.inviteQuestion });
       walk(child.children, childPath, child.yes, child.no, labels);
     }
   };
@@ -139,6 +142,7 @@ function diffBlockQuestions(prefix: string, from: Record<string, string>, to: Re
  * by whichever option is picked, comparing it would just be noise), compared per-option instead. */
 function diffNode(from: EscalationNode, to: EscalationNode): string[] {
   const changes: string[] = [];
+  diffField("Label", from.label ?? "", to.label ?? "", changes);
   diffField("Swap invite", from.inviteQuestion, to.inviteQuestion, changes);
   if (!from.digIn && !to.digIn) {
     diffBlockQuestions("", from.blockQuestions, to.blockQuestions, changes);
@@ -169,6 +173,7 @@ function diffQuestionRoots(current: QuestionRoot, candidate: QuestionRoot): Diff
   const entries: DiffEntry[] = [];
 
   const rootChanges: string[] = [];
+  diffField("Label", current.label ?? "", candidate.label ?? "", rootChanges);
   diffBlockQuestions("", current.blockQuestions, candidate.blockQuestions, rootChanges);
   diffFollowup("Yes", current.yes, candidate.yes, rootChanges);
   diffFollowup("No", current.no, candidate.no, rootChanges);
@@ -501,7 +506,7 @@ function renderQuestionMap(root: QuestionRoot, navigate: (path: EscalationPath) 
 
   const thead = document.createElement("thead");
   const groupRow = document.createElement("tr");
-  groupRow.innerHTML = `<th rowspan="2">Path</th><th rowspan="2">Question</th><th colspan="5">Yes-path</th><th colspan="5">No-path</th>`;
+  groupRow.innerHTML = `<th rowspan="2">Path</th><th rowspan="2">Label</th><th rowspan="2">Question</th><th colspan="5">Yes-path</th><th colspan="5">No-path</th>`;
   const labelRow = document.createElement("tr");
   const slotLabels = [...CATEGORY_ORDER.map((c) => CATEGORY_LABEL[c]), "Mixed"];
   labelRow.innerHTML = [...slotLabels, ...slotLabels].map((label) => `<th>${label}</th>`).join("");
@@ -520,6 +525,11 @@ function renderQuestionMap(root: QuestionRoot, navigate: (path: EscalationPath) 
     pathBtn.addEventListener("click", () => navigate(row.path));
     pathCell.appendChild(pathBtn);
     tr.appendChild(pathCell);
+
+    const labelCell = document.createElement("td");
+    labelCell.className = "map-label" + (row.customLabel ? "" : " muted");
+    labelCell.textContent = row.customLabel || "—";
+    tr.appendChild(labelCell);
 
     const qCell = document.createElement("td");
     qCell.className = "map-question";

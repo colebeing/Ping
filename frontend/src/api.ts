@@ -101,6 +101,9 @@ export interface DigIn {
  * its own further swap invites. An absent slot in `children` means "not yet authored" — never falls
  * back to some default. */
 export interface EscalationNode {
+  /** Optional human-friendly nickname for this row — admin-set via the Sheet's "Label" column only,
+   * read-only here (Admin's Question Map). No functional effect. */
+  label?: string;
   /** The one-time "would you like to switch?" confirmation shown when the swap invite fires. */
   inviteQuestion: string;
   /** Ongoing daily phrasing once accepted — same shape as QuestionRoot.blockQuestions: accepting
@@ -128,6 +131,8 @@ export interface EscalationChildren {
 /** The whole live question tree: the root routine question (4 per-block formulations, one shared
  * follow-up) plus however deep admins have actually built escalation, recursively. */
 export interface QuestionRoot {
+  /** Same optional nickname EscalationNode carries — see its own doc comment. */
+  label?: string;
   blockQuestions: Record<LiveBlockId, string>;
   yes: FollowupPrompt;
   no: FollowupPrompt;

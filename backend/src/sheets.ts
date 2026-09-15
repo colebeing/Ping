@@ -23,6 +23,7 @@ const QUESTIONS_HEADER = [
   "Path (do not edit)",
   "Path ID",
   "Breadcrumb",
+  "Label",
   "Invite question",
   "Morning",
   "Midday",
@@ -95,11 +96,22 @@ function pathId(path: EscalationPath): string {
 
 // ---------- flatten (push) ----------
 
-function questionsRowValues(path: EscalationPath, id: string, breadcrumb: string, inviteQuestion: string, blockQuestions: Record<LiveBlockId, string>, yes: FollowupPrompt, no: FollowupPrompt, digInPrompt: string): string[] {
+function questionsRowValues(
+  path: EscalationPath,
+  id: string,
+  breadcrumb: string,
+  label: string,
+  inviteQuestion: string,
+  blockQuestions: Record<LiveBlockId, string>,
+  yes: FollowupPrompt,
+  no: FollowupPrompt,
+  digInPrompt: string,
+): string[] {
   return [
     pathKey(path),
     id,
     breadcrumb,
+    label,
     inviteQuestion,
     blockQuestions.q1,
     blockQuestions.q2,
@@ -121,7 +133,7 @@ function optionsRowValues(path: EscalationPath, id: string, optionNumber: number
  * dig-in option — same depth-first walk frontend/src/views/admin.ts's collectRows already uses for
  * the Question Map, just producing full rows instead of a preview. */
 export function flattenTree(root: QuestionRoot): { questions: string[][]; options: string[][] } {
-  const questions: string[][] = [questionsRowValues([], pathId([]), "Routine question", "", root.blockQuestions, root.yes, root.no, "")];
+  const questions: string[][] = [questionsRowValues([], pathId([]), "Routine question", root.label ?? "", "", root.blockQuestions, root.yes, root.no, "")];
   const options: string[][] = [];
 
   const walk = (children: EscalationChildren, path: EscalationPath, breadcrumbPrefix: string) => {
@@ -131,7 +143,7 @@ export function flattenTree(root: QuestionRoot): { questions: string[][]; option
       const childPath = [...path, step];
       const id = pathId(childPath);
       const breadcrumb = `${breadcrumbPrefix} → ${stepLabel(step)}`;
-      questions.push(questionsRowValues(childPath, id, breadcrumb, child.inviteQuestion, child.blockQuestions, child.yes, child.no, child.digIn?.prompt ?? ""));
+      questions.push(questionsRowValues(childPath, id, breadcrumb, child.label ?? "", child.inviteQuestion, child.blockQuestions, child.yes, child.no, child.digIn?.prompt ?? ""));
       if (child.digIn) {
         child.digIn.options.forEach((option, i) => {
           if (!option.label) return;
@@ -176,6 +188,7 @@ function parsePath(raw: string | undefined): EscalationPath | null {
 interface ParsedQuestionRow {
   path: EscalationPath;
   key: string;
+  label: string;
   inviteQuestion: string;
   blockQuestions: Record<LiveBlockId, string>;
   yes: FollowupPrompt;
@@ -216,16 +229,18 @@ export function reconstructTree(questionsValues: string[][], optionsValues: stri
       continue;
     }
     seenKeys.add(key);
-    // Column 1 (Path ID) is skipped here deliberately — same as Breadcrumb, it's a display-only
-    // rendering of `path` (see pathId), never read back on pull.
+    // Columns 1-2 (Path ID, Breadcrumb) are skipped here deliberately — display-only renderings of
+    // `path` (see pathId/stepLabel), never read back on pull. Label (3) IS read back — unlike those
+    // two, it's admin-editable content, not derived from the path.
     questionRows.push({
       path,
       key,
-      inviteQuestion: row[3] ?? "",
-      blockQuestions: { q1: row[4] ?? "", q2: row[5] ?? "", q3: row[6] ?? "", q4: row[7] ?? "" },
-      yes: { prompt: row[8] ?? "", options: optionsFromColumns(row, 9) },
-      no: { prompt: row[13] ?? "", options: optionsFromColumns(row, 14) },
-      digInPrompt: row[18] ?? "",
+      label: row[3] ?? "",
+      inviteQuestion: row[4] ?? "",
+      blockQuestions: { q1: row[5] ?? "", q2: row[6] ?? "", q3: row[7] ?? "", q4: row[8] ?? "" },
+      yes: { prompt: row[9] ?? "", options: optionsFromColumns(row, 10) },
+      no: { prompt: row[14] ?? "", options: optionsFromColumns(row, 15) },
+      digInPrompt: row[19] ?? "",
     });
   }
 
@@ -289,6 +304,7 @@ export function reconstructTree(questionsValues: string[][], optionsValues: stri
       const row = byKey.get(pathKey([...parentPath, step]));
       if (!row) continue;
       setChildAt(children, step, {
+        label: row.label || undefined,
         inviteQuestion: row.inviteQuestion,
         blockQuestions: row.blockQuestions,
         yes: row.yes,
@@ -302,6 +318,7 @@ export function reconstructTree(questionsValues: string[][], optionsValues: stri
 
   const rootRow = rootRows[0];
   const root: QuestionRoot = {
+    label: rootRow.label || undefined,
     blockQuestions: rootRow.blockQuestions,
     yes: rootRow.yes,
     no: rootRow.no,

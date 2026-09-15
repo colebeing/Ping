@@ -118,6 +118,10 @@ export interface DigIn {
  * its own set of further swap invites. An absent slot in `children` means "not yet authored" — never
  * falls back to some default, see EscalationChildren. */
 export interface EscalationNode {
+  /** Optional human-friendly nickname for this row (e.g. "The gym one") — admin-set via the Sheet's
+   * "Label" column only, read-only in the app (Admin's Question Map), purely for telling rows apart at
+   * a glance. No functional effect: never shown to end users, never affects question content. */
+  label?: string;
   /** The one-time "would you like to switch?" confirmation shown when the swap invite fires. */
   inviteQuestion: string;
   /** Ongoing daily phrasing once accepted — same shape as QuestionRoot.blockQuestions: accepting
@@ -151,6 +155,8 @@ export interface EscalationChildren {
  * this just stops storing 4 redundant copies of it) plus however deep admins have actually built
  * escalation (Type 3/4, recursively, via `children`). Replaces RecommendationCopy entirely. */
 export interface QuestionRoot {
+  /** Same optional nickname EscalationNode carries — see its own doc comment. */
+  label?: string;
   blockQuestions: Record<LiveBlockId, string>;
   yes: FollowupPrompt;
   no: FollowupPrompt;
