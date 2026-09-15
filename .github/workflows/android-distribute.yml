@@ -55,8 +55,12 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - uses: android-actions/setup-android@v3
-
+      # No separate Android SDK setup step — ubuntu-latest's runner image ships one preinstalled
+      # (see actions/runner-images), and android-actions/setup-android@v3's own default `packages`
+      # input requests the long-deprecated standalone 'tools' package, which no longer exists in
+      # Google's SDK repository and fails the whole step outright. Gradle/AGP can download whatever
+      # specific platform/build-tools version it still needs on demand, using the preinstalled SDK's
+      # already-accepted licenses.
       - name: Write Firebase service account credentials
         if: ${{ env.FIREBASE_SERVICE_ACCOUNT_JSON != '' }}
         working-directory: frontend/android/app
