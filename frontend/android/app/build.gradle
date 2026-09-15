@@ -70,6 +70,13 @@ dependencies {
     // it private to that module rather than exposing it transitively — app needs its own reference
     // (matching push-notifications' own pinned version, so only one copy resolves on the classpath).
     implementation "com.google.firebase:firebase-messaging:25.0.1"
+    // Only App Distribution's debug builds ever get shipped to testers (see buildTypes.debug above),
+    // so the real update-checking implementation is debug-only; the -api artifact is a documented
+    // required companion — a safe no-op stub in any OTHER build type, so code calling
+    // FirebaseAppDistribution.getInstance() (MainActivity) still compiles and runs harmlessly even
+    // where the real implementation isn't on the classpath.
+    debugImplementation "com.google.firebase:firebase-appdistribution:16.0.0-beta20"
+    implementation "com.google.firebase:firebase-appdistribution-api:16.0.0-beta20"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
