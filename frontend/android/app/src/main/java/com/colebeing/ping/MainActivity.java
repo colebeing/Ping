@@ -16,7 +16,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
-    protected void onResume() {
+    public void onResume() {
         super.onResume();
         // Re-checked on resume too, per Firebase's own guidance — covers returning to the app after
         // granting the "install unknown apps" permission mid-flow, which onCreate alone would miss.
