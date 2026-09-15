@@ -69,4 +69,8 @@ jobs:
       - name: Build and upload to Firebase App Distribution
         if: ${{ env.FIREBASE_SERVICE_ACCOUNT_JSON != '' }}
         working-directory: frontend/android
-        run: ./gradlew appDistributionUploadDebug
+        # appDistributionUploadDebug alone fails "Could not find an APK file for this variant" on a
+        # clean checkout — its dependency on assembleDebug isn't reliably wired, so it's spelled out
+        # explicitly here. Worked as just the upload task locally, where a previous build's output was
+        # presumably still sitting around from earlier local runs.
+        run: ./gradlew assembleDebug appDistributionUploadDebug
