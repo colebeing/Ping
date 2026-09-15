@@ -21,6 +21,7 @@ const OPTIONS_SHEET = "Follow-up options";
 
 const QUESTIONS_HEADER = [
   "Path (do not edit)",
+  "Path ID",
   "Breadcrumb",
   "Invite question",
   "Morning",
@@ -33,7 +34,7 @@ const QUESTIONS_HEADER = [
   ...CATEGORIES.map((c) => `No: ${CATEGORY_LABEL[c]}`),
   "Follow-up prompt",
 ];
-const OPTIONS_HEADER = ["Path (do not edit)", "Option #", "Label", "Morning", "Midday", "Afternoon", "Evening"];
+const OPTIONS_HEADER = ["Path (do not edit)", "Path ID", "Option #", "Label", "Morning", "Midday", "Afternoon", "Evening"];
 
 /** The 10 possible child slots off any node, in a fixed order — mirrors frontend/src/views/admin.ts's
  * own SLOTS constant (kept as a separate copy since this file has no shared import path to it). */
@@ -66,11 +67,38 @@ function pathKey(path: EscalationPath): string {
   return JSON.stringify(path);
 }
 
+/** Compact human-readable node reference — a shorter alternative to the raw JSON `Path (do not edit)`
+ * column, distinct from `Breadcrumb`'s admin-navigation arrows (see stepLabel/walk below). Root is
+ * "1"; each step appends the valence taken ("y"/"n") then a category letter — E/P/I/C for a specific
+ * category (first letter of Category, already unique), or Y/N for the mixed/general slot, matching
+ * its own valence (Y pairs with amplify, N with resolve). Every level beyond the first wraps everything
+ * before it in parens before appending its own 2 characters (e.g. "1yE", then "(1yE)nN", then
+ * "((1yE)nN)yP") — purely a readability aid marking each row boundary in a long chain, not needed to
+ * parse it: every level is a fixed 2 characters, so it's already unambiguous without them.
+ *
+ * Deliberately carries no dig-in resolution digit: a node's row manages all of its own questions
+ * (invite/yes/no/dig-in prompt) together regardless of dig-in, and — as of this writing — dig-in
+ * choice never affects which children exist (EscalationNode.children is one shared field, not
+ * per-option), so a resolution digit here would currently just be noise. If that ever changes (children
+ * becoming dig-in-dependent), every existing id is safe to retrofit by mechanically appending "0" —
+ * today's dig-in-agnostic children are already equivalent to "always resolution 0", so there's nothing
+ * to migrate until the feature exists. See optionsRowValues below for where a dig-in choice does get
+ * its own address today (this same id plus the option number). */
+function pathId(path: EscalationPath): string {
+  let id = "1";
+  path.forEach((step, i) => {
+    const step2 = (step.valence === "amplify" ? "y" : "n") + (step.category === null ? (step.valence === "amplify" ? "Y" : "N") : step.category[0].toUpperCase());
+    id = i === 0 ? id + step2 : `(${id})${step2}`;
+  });
+  return id;
+}
+
 // ---------- flatten (push) ----------
 
-function questionsRowValues(path: EscalationPath, breadcrumb: string, inviteQuestion: string, blockQuestions: Record<LiveBlockId, string>, yes: FollowupPrompt, no: FollowupPrompt, digInPrompt: string): string[] {
+function questionsRowValues(path: EscalationPath, id: string, breadcrumb: string, inviteQuestion: string, blockQuestions: Record<LiveBlockId, string>, yes: FollowupPrompt, no: FollowupPrompt, digInPrompt: string): string[] {
   return [
     pathKey(path),
+    id,
     breadcrumb,
     inviteQuestion,
     blockQuestions.q1,
@@ -85,15 +113,15 @@ function questionsRowValues(path: EscalationPath, breadcrumb: string, inviteQues
   ];
 }
 
-function optionsRowValues(path: EscalationPath, optionNumber: number, option: DigInOption): string[] {
-  return [pathKey(path), String(optionNumber), option.label, option.blockQuestions.q1, option.blockQuestions.q2, option.blockQuestions.q3, option.blockQuestions.q4];
+function optionsRowValues(path: EscalationPath, id: string, optionNumber: number, option: DigInOption): string[] {
+  return [pathKey(path), `${id}${optionNumber}`, String(optionNumber), option.label, option.blockQuestions.q1, option.blockQuestions.q2, option.blockQuestions.q3, option.blockQuestions.q4];
 }
 
 /** Walks the whole tree into two flat row sets — one per node (root included), one per non-blank
  * dig-in option — same depth-first walk frontend/src/views/admin.ts's collectRows already uses for
  * the Question Map, just producing full rows instead of a preview. */
 export function flattenTree(root: QuestionRoot): { questions: string[][]; options: string[][] } {
-  const questions: string[][] = [questionsRowValues([], "Routine question", "", root.blockQuestions, root.yes, root.no, "")];
+  const questions: string[][] = [questionsRowValues([], pathId([]), "Routine question", "", root.blockQuestions, root.yes, root.no, "")];
   const options: string[][] = [];
 
   const walk = (children: EscalationChildren, path: EscalationPath, breadcrumbPrefix: string) => {
@@ -101,12 +129,13 @@ export function flattenTree(root: QuestionRoot): { questions: string[][]; option
       const child = childAt(children, step);
       if (!child) continue;
       const childPath = [...path, step];
+      const id = pathId(childPath);
       const breadcrumb = `${breadcrumbPrefix} → ${stepLabel(step)}`;
-      questions.push(questionsRowValues(childPath, breadcrumb, child.inviteQuestion, child.blockQuestions, child.yes, child.no, child.digIn?.prompt ?? ""));
+      questions.push(questionsRowValues(childPath, id, breadcrumb, child.inviteQuestion, child.blockQuestions, child.yes, child.no, child.digIn?.prompt ?? ""));
       if (child.digIn) {
         child.digIn.options.forEach((option, i) => {
           if (!option.label) return;
-          options.push(optionsRowValues(childPath, i + 1, option));
+          options.push(optionsRowValues(childPath, id, i + 1, option));
         });
       }
       walk(child.children, childPath, breadcrumb);
@@ -187,14 +216,16 @@ export function reconstructTree(questionsValues: string[][], optionsValues: stri
       continue;
     }
     seenKeys.add(key);
+    // Column 1 (Path ID) is skipped here deliberately — same as Breadcrumb, it's a display-only
+    // rendering of `path` (see pathId), never read back on pull.
     questionRows.push({
       path,
       key,
-      inviteQuestion: row[2] ?? "",
-      blockQuestions: { q1: row[3] ?? "", q2: row[4] ?? "", q3: row[5] ?? "", q4: row[6] ?? "" },
-      yes: { prompt: row[7] ?? "", options: optionsFromColumns(row, 8) },
-      no: { prompt: row[12] ?? "", options: optionsFromColumns(row, 13) },
-      digInPrompt: row[17] ?? "",
+      inviteQuestion: row[3] ?? "",
+      blockQuestions: { q1: row[4] ?? "", q2: row[5] ?? "", q3: row[6] ?? "", q4: row[7] ?? "" },
+      yes: { prompt: row[8] ?? "", options: optionsFromColumns(row, 9) },
+      no: { prompt: row[13] ?? "", options: optionsFromColumns(row, 14) },
+      digInPrompt: row[18] ?? "",
     });
   }
 
@@ -225,12 +256,13 @@ export function reconstructTree(questionsValues: string[][], optionsValues: stri
       errors.push(`Follow-up options row ${rowNum}: path ${key} has no matching Questions row`);
       continue;
     }
-    const optionNumber = Number(row[1]);
+    // Column 1 (Path ID) is skipped here deliberately — display-only, derived from `path` + option #.
+    const optionNumber = Number(row[2]);
     if (!Number.isInteger(optionNumber) || optionNumber < 1 || optionNumber > 4) {
       errors.push(`Follow-up options row ${rowNum}: option # must be 1-4`);
       continue;
     }
-    const parsedRow: ParsedOptionRow = { key, optionNumber, label: row[2] ?? "", blockQuestions: { q1: row[3] ?? "", q2: row[4] ?? "", q3: row[5] ?? "", q4: row[6] ?? "" } };
+    const parsedRow: ParsedOptionRow = { key, optionNumber, label: row[3] ?? "", blockQuestions: { q1: row[4] ?? "", q2: row[5] ?? "", q3: row[6] ?? "", q4: row[7] ?? "" } };
     optionRows.push(parsedRow);
     const arr = optionsByKey.get(key) ?? [];
     arr.push(parsedRow);
