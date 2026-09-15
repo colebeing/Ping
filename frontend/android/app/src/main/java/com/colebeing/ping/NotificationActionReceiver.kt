@@ -49,20 +49,13 @@ class NotificationActionReceiver : BroadcastReceiver() {
         val answer = intent.getStringExtra("answer") ?: return
 
         val body = JSONObject().put("block", block).put("answer", answer)
-        val response = post(context, "/api/answer", body)
-        // TEMPORARY: diagnosing a real-device report of blank follow-up category buttons that couldn't
-        // be reproduced from server-side data alone — remove once resolved.
-        android.util.Log.d("PingFollowupDebug", "raw /api/answer response: $response")
-        if (response == null) return
+        val response = post(context, "/api/answer", body) ?: return
 
-        val followup = response.optJSONObject("followup")
-        android.util.Log.d("PingFollowupDebug", "followup object: $followup")
-        if (followup == null) return
+        val followup = response.optJSONObject("followup") ?: return
         val prompt = followup.optString("prompt", "Who was it?")
         val optionsJson = followup.optJSONObject("options") ?: JSONObject()
         val options = mutableMapOf<String, String>()
         for (key in optionsJson.keys()) options[key] = optionsJson.getString(key)
-        android.util.Log.d("PingFollowupDebug", "parsed options map: $options")
 
         showFollowupNotification(context, block, answer, prompt, options)
     }
@@ -147,9 +140,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
 
     /** Returns the parsed JSON body on success (2xx), or null on any failure — callers just leave the notification as-is. */
     private fun post(context: Context, path: String, body: JSONObject): JSONObject? {
-        val deviceToken = DeviceTokenStore.read(context)
-        android.util.Log.d("PingFollowupDebug", "post $path, deviceToken present: ${deviceToken != null}")
-        if (deviceToken == null) return null
+        val deviceToken = DeviceTokenStore.read(context) ?: return null
         val connection = URL("$API_BASE$path").openConnection() as HttpURLConnection
         return try {
             connection.requestMethod = "POST"
@@ -158,12 +149,10 @@ class NotificationActionReceiver : BroadcastReceiver() {
             connection.setRequestProperty("Authorization", "Bearer $deviceToken")
             connection.outputStream.use { it.write(body.toString().toByteArray()) }
 
-            android.util.Log.d("PingFollowupDebug", "$path responded with status ${connection.responseCode}")
             if (connection.responseCode !in 200..299) return null
             val text = connection.inputStream.bufferedReader().use { it.readText() }
             JSONObject(text)
         } catch (err: Exception) {
-            android.util.Log.e("PingFollowupDebug", "post $path threw", err)
             err.printStackTrace()
             null
         } finally {
