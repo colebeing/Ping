@@ -254,7 +254,12 @@ function renderClaimCard(onClaimed: () => void, onSignIn: () => void): HTMLEleme
         await enablePushNotifications().catch(() => undefined);
         onClaimed();
       } catch (err) {
-        errorEl.textContent = err instanceof ApiError ? err.message : "Couldn't save your account.";
+        console.error("[ping] claim with google failed", err);
+        // Surface whatever the plugin/backend actually said, same as the login screen's own Google
+        // button does — a silent generic message here is exactly what made this class of bug hard to
+        // diagnose from a report alone.
+        const detail = err instanceof ApiError ? err.message : err instanceof Error ? err.message : null;
+        errorEl.textContent = detail ? `Couldn't save your account: ${detail}` : "Couldn't save your account.";
         google.removeAttribute("disabled");
       }
     });
