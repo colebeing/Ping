@@ -850,20 +850,37 @@ function renderTriggersSection(config: AdminConfig): HTMLElement {
 
   const note = document.createElement("p");
   note.className = "muted";
-  note.textContent = "How many consecutive days of the same answer, before a swap invite is proposed.";
+  note.textContent =
+    "How many responses with the same answer, before a swap invite is proposed — counted across all four blocks, not per day.";
   card.appendChild(note);
 
   card.appendChild(
-    numberField("Yes streak, same category (days)", config.triggers.categoryYesThreshold, (v) => (config.triggers.categoryYesThreshold = v)),
+    numberField(
+      "Yes streak, same category (responses)",
+      config.triggers.categoryYesThreshold,
+      (v) => (config.triggers.categoryYesThreshold = v),
+    ),
   );
   card.appendChild(
-    numberField("No streak, same category (days)", config.triggers.categoryNoThreshold, (v) => (config.triggers.categoryNoThreshold = v)),
+    numberField(
+      "No streak, same category (responses)",
+      config.triggers.categoryNoThreshold,
+      (v) => (config.triggers.categoryNoThreshold = v),
+    ),
   );
   card.appendChild(
-    numberField("Yes streak, any category (days)", config.triggers.generalYesThreshold, (v) => (config.triggers.generalYesThreshold = v)),
+    numberField(
+      "Yes streak, any category (responses)",
+      config.triggers.generalYesThreshold,
+      (v) => (config.triggers.generalYesThreshold = v),
+    ),
   );
   card.appendChild(
-    numberField("No streak, any category (days)", config.triggers.generalNoThreshold, (v) => (config.triggers.generalNoThreshold = v)),
+    numberField(
+      "No streak, any category (responses)",
+      config.triggers.generalNoThreshold,
+      (v) => (config.triggers.generalNoThreshold = v),
+    ),
   );
   card.appendChild(numberField("Retire an accepted suggestion after (days)", config.triggers.retireAfterDays, (v) => (config.triggers.retireAfterDays = v)));
 
