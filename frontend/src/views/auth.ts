@@ -1,6 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import { api, ApiError } from "../api";
 import { getNativeGoogleIdToken } from "../googleSignIn";
+import { describeError } from "../errorDetail";
 
 type Mode = "start" | "forgot" | "forgot-sent" | "reset" | "reset-done";
 
@@ -90,7 +91,7 @@ export function renderAuth(root: HTMLElement, onAuthed: () => void): void {
         // Surface whatever the plugin/backend actually said instead of a static
         // fallback — a silent generic message is what made this class of bug
         // (e.g. a stale native session after logout) hard to diagnose from a report alone.
-        const detail = err instanceof ApiError ? err.message : err instanceof Error ? err.message : null;
+        const detail = describeError(err);
         errorEl.textContent = detail ? `Google sign-in didn't work: ${detail}` : "Google sign-in didn't work. Try again?";
         google.removeAttribute("disabled");
       }

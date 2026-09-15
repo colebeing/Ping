@@ -1,5 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { api, ApiError, LIVE_BLOCKS, type LiveBlockId } from "../api";
+import { describeError } from "../errorDetail";
 import { enablePushNotifications } from "../push-setup";
 import { currentBlockForCadence } from "./today";
 import { CHEVRON_LEFT_SVG, HOME_ICON_SVG } from "../icons";
@@ -258,7 +259,7 @@ function renderClaimCard(onClaimed: () => void, onSignIn: () => void): HTMLEleme
         // Surface whatever the plugin/backend actually said, same as the login screen's own Google
         // button does — a silent generic message here is exactly what made this class of bug hard to
         // diagnose from a report alone.
-        const detail = err instanceof ApiError ? err.message : err instanceof Error ? err.message : null;
+        const detail = describeError(err);
         errorEl.textContent = detail ? `Couldn't save your account: ${detail}` : "Couldn't save your account.";
         google.removeAttribute("disabled");
       }
