@@ -1,0 +1,65 @@
+name: Distribute Android build
+
+# Builds the Capacitor Android wrapper (frontend/android) and uploads the debug APK straight to
+# Firebase App Distribution on every push to main that touches it — the automatic version of what
+# was, until now, a manual `./gradlew appDistributionUploadDebug` someone had to remember to run.
+# Requires the FIREBASE_SERVICE_ACCOUNT_JSON repo secret (the same service account
+# frontend/android/app/firebase-service-account.json holds locally, gitignored since it's a real
+# secret) — without it, the credential-writing and upload steps are skipped rather than failing
+# loudly on every push (e.g. a fork's build still runs, just without this part).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/android/**"
+      - "frontend/src/**"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "frontend/capacitor.config.ts"
+      - ".github/workflows/android-distribute.yml"
+  workflow_dispatch:
+
+jobs:
+  distribute:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build web assets
+        working-directory: frontend
+        run: npm run build
+        env:
+          VITE_API_BASE: https://ping-backend.colebeing.workers.dev
+
+      - name: Sync Capacitor Android platform
+        working-directory: frontend
+        run: npx cap sync android
+
+      # Gradle 9.5 / AGP 9.3.2 need JDK 17+; Temurin 21 matches what's verified working locally.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Write Firebase service account credentials
+        if: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON != '' }}
+        working-directory: frontend/android/app
+        run: printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > firebase-service-account.json
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+
+      - name: Build and upload to Firebase App Distribution
+        if: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON != '' }}
+        working-directory: frontend/android
+        run: ./gradlew appDistributionUploadDebug
