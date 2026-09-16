@@ -168,6 +168,12 @@ function migratePath(path: EscalationPath): EscalationPath {
 function migrateCategories(stored: UserState): void {
   for (const a of stored.answers) {
     if (a.category) a.category = migrateCategoryValue(a.category) ?? a.category;
+    // AnswerRecord's own `path` (which escalation-tree node was active when this was answered) is just
+    // as structural as an override's — routes/analytics.ts's pathLabel walks it the same way, and an
+    // unmigrated valence there does `children["resolve"]` against a tree whose buckets are now keyed
+    // yes/no, throwing (not silently falling back) and taking down the whole Analytics page over any
+    // one account's old answer history.
+    if (a.path) a.path = migratePath(a.path);
   }
   for (const e of stored.answerEdits) {
     if (e.previousCategory) e.previousCategory = migrateCategoryValue(e.previousCategory) ?? e.previousCategory;
