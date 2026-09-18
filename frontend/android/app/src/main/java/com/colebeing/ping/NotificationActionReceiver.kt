@@ -119,8 +119,14 @@ class NotificationActionReceiver : BroadcastReceiver() {
 
     private fun handleRecommendation(context: Context, intent: Intent) {
         val recommendationId = intent.getStringExtra("recommendationId") ?: return
-        val accept = intent.getBooleanExtra("accept", false)
-        val digInChoice = if (intent.hasExtra("digInChoice")) intent.getIntExtra("digInChoice", -1) else null
+        // actionIntent()'s extras are always put as strings (Map<String, String>), so these must be
+        // read back with getStringExtra and parsed, not getBooleanExtra/getIntExtra — those look for a
+        // value stored under Android's actual Boolean/Int extra type, which a string-typed "true" or
+        // "2" never is, so they silently returned their default every time (false / -1) regardless of
+        // what was tapped or picked. That's what made every notification "Yes" behave as a decline, and
+        // any digIn choice always send -1 (rejected server-side as invalid) instead of the real pick.
+        val accept = intent.getStringExtra("accept") == "true"
+        val digInChoice = intent.getStringExtra("digInChoice")?.toIntOrNull()
 
         if (accept && digInChoice == null && intent.hasExtra("digInPrompt")) {
             // "Yes" tapped on an invite whose node has its own follow-up — show the chooser instead of
