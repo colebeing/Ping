@@ -289,6 +289,14 @@ select {
   margin-bottom: 8px;
 }
 
+/* A resolved (accepted/declined) invitation attached to a done answer — plain record of what was
+   offered, not a live decision to make, so it's toned down from the accent-colored dashed border a
+   still-open one gets. */
+.recommendation-resolved {
+  border-top-color: var(--surface-2);
+  border-top-style: solid;
+}
+
 .banner {
   background: linear-gradient(135deg, #2b3a55, #1f1f1f);
   border-radius: var(--radius);

@@ -1,4 +1,4 @@
-import type { EscalationPath, Env, LiveBlockId, UserState } from "./types";
+import type { EscalationPath, Env, LiveBlockId, RecommendationNudge, UserState } from "./types";
 import { migrateCategoryValue, migrateFollowupPromptCategories } from "./category-migration";
 
 // Four hours apart, clearing MIN_GAP_MINUTES's 2-hour spacing rule with room to spare. Shared between
@@ -12,6 +12,7 @@ export function defaultState(): UserState {
     answerEdits: [],
     retiredOverrides: [],
     pendingNudges: [],
+    recommendationHistory: [],
     declinedStreaks: {},
     totalFollowupsAnswered: 0,
     cadence: { times: { ...DEFAULT_TIMES }, skippedBlocks: [], timezone: "UTC" },
@@ -72,11 +73,31 @@ export async function getState(env: Env, userId: string): Promise<UserState> {
   if (!stored.totalFollowupsAnswered) stored.totalFollowupsAnswered = 0;
   // pendingRecommendations -> pendingNudges: every old entry is already a valid RecommendationNudge
   // once tagged with `kind` — mapped rather than dropped, so an invitation a user hasn't resolved yet
-  // survives the migration instead of silently vanishing.
-  if (!stored.pendingNudges) {
+  // survives the migration instead of silently vanishing. Goes straight to recommendationHistory (its
+  // permanent home now, see below) rather than pendingNudges, tagged "pending" since that ancient shape
+  // predates any concept of status too.
+  if (!stored.pendingNudges) stored.pendingNudges = [];
+  if (!stored.recommendationHistory) {
     const old = (stored as unknown as { pendingRecommendations?: unknown[] }).pendingRecommendations ?? [];
-    stored.pendingNudges = old.map((r) => ({ ...(r as object), kind: "recommendation" as const })) as UserState["pendingNudges"];
+    stored.recommendationHistory = old.map((r) => ({ ...(r as object), kind: "recommendation" as const, status: "pending" as const })) as UserState["recommendationHistory"];
   }
+  // Recommendations used to live inside pendingNudges, spliced out entirely the moment they were
+  // accepted or declined — now they live permanently in recommendationHistory instead, `status` taking
+  // over from "still present in the array vs not" as how resolution is tracked (see RecommendationNudge
+  // and UserState's own doc comments for why: a declined or still-open invite can now be found and
+  // accepted long after the fact, wherever it's shown, instead of vanishing the moment it's resolved).
+  // Anything still sitting in pendingNudges under the old scheme was, definitionally, still unresolved —
+  // an old-shape entry always got removed the instant it was accepted or declined — so every one still
+  // there is safe to carry forward as "pending", modulo the same shape check the now-removed filter
+  // below used to apply (an entry from before the escalation tree existed can't be salvaged either way).
+  const rawPendingNudges = stored.pendingNudges as unknown as { kind: string; path?: unknown; node?: { blockQuestions?: unknown } }[];
+  const movedRecs = rawPendingNudges.filter(
+    (n) => n.kind === "recommendation" && "path" in n && Boolean(n.node) && "blockQuestions" in (n.node as object),
+  ) as unknown as RecommendationNudge[];
+  if (movedRecs.length > 0) {
+    stored.recommendationHistory.push(...movedRecs.map((r) => ({ ...r, status: r.status ?? "pending" })));
+  }
+  stored.pendingNudges = (rawPendingNudges.filter((n) => n.kind !== "recommendation") as unknown) as UserState["pendingNudges"];
   // The WHY follow-up's category set changed (friends/work/home/capacity ->
   // friends/colleagues/family/me) and WHAT was dropped entirely — old
   // path/category counts and answer categories are no longer meaningful
@@ -91,6 +112,7 @@ export async function getState(env: Env, userId: string): Promise<UserState> {
     stored.activeOverride = undefined;
     stored.retiredOverrides = [];
     stored.pendingNudges = [];
+    stored.recommendationHistory = [];
   }
   // Overrides used to be per-block (activeOverrides: Partial<Record<BlockId, QuestionOverride>>) —
   // accepting a swap invite now changes the routine question on all four blocks at once, so there's a
@@ -124,14 +146,6 @@ export async function getState(env: Env, userId: string): Promise<UserState> {
   // check's "absent" branch to `never` — the field can still genuinely be missing at runtime.
   if (stored.activeOverride) stored.activeOverride.digInChoice = stored.activeOverride.digInChoice ?? null;
   stored.retiredOverrides = stored.retiredOverrides.map((o) => ({ ...o, digInChoice: o.digInChoice ?? null }));
-  // A pending (not-yet-accepted) recommendation snapshots its own path/node at creation time — an
-  // old-shaped one (carrying `invitation` instead, or a `node` built before the blockQuestions split)
-  // can't be salvaged (there's no tree to resolve it against retroactively), so it's dropped like any
-  // other genuinely incompatible pending-nudge shape: transient, low-stakes state — detectStreaks
-  // naturally re-proposes the same pattern if it continues.
-  stored.pendingNudges = stored.pendingNudges.filter(
-    (n) => n.kind !== "recommendation" || ("path" in n && "node" in n && "blockQuestions" in n.node),
-  );
   migrateCategories(stored);
   return stored;
 }
@@ -192,16 +206,13 @@ function migrateCategories(stored: UserState): void {
     yes: migrateFollowupPromptCategories(o.yes),
     no: migrateFollowupPromptCategories(o.no),
   }));
-  stored.pendingNudges = stored.pendingNudges.map((n) => {
-    if (n.kind !== "recommendation") return n;
-    return {
-      ...n,
-      category: n.category ? (migrateCategoryValue(n.category) ?? n.category) : n.category,
-      valence: migrateValenceValue(n.valence) ?? n.valence,
-      path: migratePath(n.path),
-      node: { ...n.node, yes: migrateFollowupPromptCategories(n.node.yes), no: migrateFollowupPromptCategories(n.node.no) },
-    };
-  });
+  stored.recommendationHistory = stored.recommendationHistory.map((n) => ({
+    ...n,
+    category: n.category ? (migrateCategoryValue(n.category) ?? n.category) : n.category,
+    valence: migrateValenceValue(n.valence) ?? n.valence,
+    path: migratePath(n.path),
+    node: { ...n.node, yes: migrateFollowupPromptCategories(n.node.yes), no: migrateFollowupPromptCategories(n.node.no) },
+  }));
   // Keyed "<valence>:<category-or-'general'>" (see recommendations.ts's declinedStreakKey) — "general"
   // itself never changes; the valence prefix and a real category name after the colon both do.
   const migratedDeclined: UserState["declinedStreaks"] = {};

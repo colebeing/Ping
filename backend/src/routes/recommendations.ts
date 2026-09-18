@@ -6,8 +6,8 @@ import { scheduleUserPush } from "../scheduler";
 
 export async function handleListRecommendations(_request: Request, env: Env, userId: string): Promise<Response> {
   const state = await getState(env, userId);
-  const pending = state.pendingNudges.filter((n) => n.kind === "recommendation");
-  return json({ pending, active: state.activeOverride ?? null, retired: state.retiredOverrides });
+  const pending = state.recommendationHistory.filter((n) => n.status === "pending");
+  return json({ pending, history: state.recommendationHistory, active: state.activeOverride ?? null, retired: state.retiredOverrides });
 }
 
 interface AcceptRecommendationBody {

@@ -141,14 +141,18 @@ export function detectStreaks(
 
   // Dedup compares the FULL path, not just the trailing {valence, category} — two structurally
   // distinct nodes at different depths can share the same trailing step (e.g. a depth-1 node and
-  // some depth-3 descendant that also happens to end in the same category/valence).
-  const alreadyPending = state.pendingNudges.some((n) => n.kind === "recommendation" && pathsEqual(n.path, candidatePath));
+  // some depth-3 descendant that also happens to end in the same category/valence). Only an actually
+  // still-open (pending) one counts here — a declined one is a resolved, historical fact, not something
+  // sitting unresolved, so the same pattern recurring later (once the decline's own floor clears) is
+  // free to propose a genuinely new invitation for the same path.
+  const alreadyPending = state.recommendationHistory.some((n) => n.status === "pending" && pathsEqual(n.path, candidatePath));
   const alreadyActive = Boolean(state.activeOverride && pathsEqual(state.activeOverride.path, candidatePath));
   if (alreadyPending || alreadyActive) return newRecs;
 
   newRecs.push({
     id: crypto.randomUUID(),
     kind: "recommendation",
+    status: "pending",
     block: justAnswered.block,
     path: candidatePath,
     node: { inviteQuestion: child.inviteQuestion, blockQuestions: child.blockQuestions, yes: child.yes, no: child.no, digIn: child.digIn },
@@ -169,9 +173,9 @@ export type AcceptOutcome = "ok" | "not-found" | "digin-choice-required" | "inva
  * digIn option (if any) was picked; only blockQuestions is superseded by the option's own.
  */
 export function acceptRecommendation(state: UserState, recommendationId: string, digInChoice?: number): AcceptOutcome {
-  const idx = state.pendingNudges.findIndex((n) => n.kind === "recommendation" && n.id === recommendationId);
+  const idx = state.recommendationHistory.findIndex((n) => n.id === recommendationId);
   if (idx === -1) return "not-found";
-  const rec = state.pendingNudges[idx] as RecommendationNudge;
+  const rec = state.recommendationHistory[idx];
 
   let blockQuestions = rec.node.blockQuestions;
   if (rec.node.digIn) {
@@ -181,7 +185,9 @@ export function acceptRecommendation(state: UserState, recommendationId: string,
     blockQuestions = option.blockQuestions;
   }
 
-  state.pendingNudges.splice(idx, 1);
+  // Never removed, whatever its prior status — accepting a long-declined (or still-pending) invite from
+  // wherever it's shown is exactly the point of keeping this history around at all.
+  rec.status = "accepted";
   state.activeOverride = {
     path: rec.path,
     blockQuestions,
@@ -191,23 +197,22 @@ export function acceptRecommendation(state: UserState, recommendationId: string,
     digInChoice: rec.node.digIn ? digInChoice! : null,
     acceptedAt: new Date().toISOString(),
   };
-  // The account's tree position just moved for every block — any other still-pending recommendation
-  // was computed against the position that just changed, so it's stale. detectStreaks naturally
-  // re-proposes a fresh one against the new active path if those patterns continue.
-  state.pendingNudges = state.pendingNudges.filter((n) => n.kind !== "recommendation");
-  // Same reason: a decline's meaning is tied to the tree position it was declined at, which just
-  // moved for the whole account, not just the one block that produced this accepted invitation.
+  // A decline's meaning is tied to the tree position it was declined at, which just moved for the
+  // whole account, not just the one block that produced this accepted invitation. Every OTHER
+  // recommendation's own status is left exactly as it was — unlike the old pendingNudges-based
+  // mechanic, nothing here goes stale just because the account's position moved; each one stays
+  // exactly what it always was: a specific offer, on a specific answer, still open to being accepted
+  // later regardless of what's currently active.
   state.declinedStreaks = {};
   return "ok";
 }
 
-/** The user said no — dismiss it, and remember the exact streak declined so
+/** The user said no — mark it declined (never removed) and remember the exact streak declined so
  * detectStreaks won't re-propose it while that same run continues. */
 export function declineRecommendation(state: UserState, recommendationId: string): boolean {
-  const idx = state.pendingNudges.findIndex((n) => n.kind === "recommendation" && n.id === recommendationId);
-  if (idx === -1) return false;
-  const rec = state.pendingNudges[idx] as RecommendationNudge;
-  state.pendingNudges.splice(idx, 1);
+  const rec = state.recommendationHistory.find((n) => n.id === recommendationId);
+  if (!rec) return false;
+  rec.status = "declined";
   state.declinedStreaks[declinedStreakKey(rec.valence, rec.category)] = { asOfTimestamp: rec.asOfTimestamp };
   return true;
 }

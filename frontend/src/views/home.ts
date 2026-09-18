@@ -8,7 +8,6 @@ import { enablePushNotifications } from "../push-setup";
 /** The single Home-level nudge slot — notification-permission, save-account, or whatever earned
  * checkpoint kind comes next. Recommendation nudges never land here; those render inline per-block. */
 function renderNudge(container: HTMLElement, nudge: Nudge, onSettings: () => void, refresh: () => void): void {
-  if (nudge.kind === "recommendation") return;
   container.innerHTML = "";
 
   const card = document.createElement("div");

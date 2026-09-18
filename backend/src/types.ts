@@ -195,10 +195,16 @@ interface NudgeBase {
 }
 
 /** The original "swap invitation" mechanic — a content-adaptation nudge, proposing to change a
- * block's question going forward, triggered by a streak in the user's own answer history. One kind
- * of nudge among several now, not a separate system — see UserState.pendingNudges. */
+ * block's question going forward, triggered by a streak in the user's own answer history. Lives
+ * permanently in UserState.recommendationHistory (not the transient pendingNudges queue) — earned once,
+ * it stays attached to whichever answer produced it and visible from there indefinitely, `status`
+ * tracking what happened to it, rather than disappearing the moment it's resolved one way or the
+ * other. Accepting or declining never removes an entry; `status` is the only thing that changes,
+ * which is what lets a declined (or still-unresolved) invite be picked up and accepted later, from
+ * wherever it's shown, exactly as if it had just fired. */
 export interface RecommendationNudge extends NudgeBase {
   kind: "recommendation";
+  status: "pending" | "accepted" | "declined";
   /** The block whose own answer history produced this streak — display/logging only now that
    * accepting affects every block at once; detectStreaks only ever scans LIVE_BLOCKS. */
   block: LiveBlockId;
@@ -212,8 +218,10 @@ export interface RecommendationNudge extends NudgeBase {
   category: Category | null;
   valence: Answer;
   /** Timestamp of the response that crossed the threshold and produced this — the floor a fresh streak
-   * must clear after a decline, see DeclinedStreak. A timestamp, not a date: responses are counted
-   * globally across all four blocks now, so same-day responses need to be told apart precisely. */
+   * must clear after a decline, see DeclinedStreak, and the join key routes/question.ts uses to attach
+   * this back to the exact AnswerRecord that earned it (same block, same timestamp). A timestamp, not a
+   * date: responses are counted globally across all four blocks now, so same-day responses need to be
+   * told apart precisely. */
   asOfTimestamp: string;
 }
 
@@ -233,7 +241,9 @@ export interface SaveAccountNudge extends NudgeBase {
 
 // invite-friend: deliberately not added yet — no trigger, no destination flow exists. Add a fourth
 // variant here (and a row in backend/src/routes/answer.ts's CHECKPOINT_TRIGGERS) once that flow does.
-export type Nudge = RecommendationNudge | NotificationPermissionNudge | SaveAccountNudge;
+// RecommendationNudge isn't part of this union — it lives in its own permanent
+// UserState.recommendationHistory, not the transient pendingNudges queue these two share.
+export type Nudge = NotificationPermissionNudge | SaveAccountNudge;
 
 /** Marks "the user already said no to this exact streak" so detectStreaks doesn't re-propose it every
  * single response the pattern continues. Only responses strictly after asOfTimestamp count toward a
@@ -308,9 +318,15 @@ export interface UserState {
   /** The account's single active swap-in question, if any — see QuestionOverride's own doc comment. */
   activeOverride?: QuestionOverride;
   retiredOverrides: QuestionOverride[];
-  /** Every kind of earned in-flow prompt — swap invitations, notification/save-account asks, and
+  /** Every earned in-flow prompt that ISN'T a swap invitation — notification/save-account asks, and
    * whatever's added later — one queue, one dismiss endpoint. See types.ts's Nudge union. */
   pendingNudges: Nudge[];
+  /** Every swap invitation ever earned, oldest first, permanent — `status` is the only thing that
+   * changes on accept/decline; nothing is ever removed. Each entry stays attached to the exact answer
+   * that earned it (same `block` + `asOfTimestamp`/AnswerRecord.timestamp), so routes/question.ts can
+   * show it alongside that answer indefinitely, in History as much as on the day it fired — including
+   * offering to accept a declined or still-unresolved one long after the fact. */
+  recommendationHistory: RecommendationNudge[];
   /** Keyed by "<valence>:<category-or-'general'>", see DeclinedStreak's own doc comment. */
   declinedStreaks: Partial<Record<string, DeclinedStreak>>;
   /** Lifetime count of completed follow-ups (category picked), incremented once per handleFollowup

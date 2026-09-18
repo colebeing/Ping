@@ -35,8 +35,9 @@ export interface QuestionResponse {
     category?: Category;
     followup?: { prompt: string; optionLabel: string };
   } | null;
-  /** Only ever set for today's own card — recovers an invitation the user didn't resolve before reloading. */
-  pendingRecommendation: RecommendationNudge | null;
+  /** Whichever swap invitation this exact answer earned, if any — stays attached indefinitely (any
+   * date, any status), not just for today's own card while still unresolved. See blockCard.ts. */
+  recommendation: RecommendationNudge | null;
 }
 
 export interface AnswerResponse {
@@ -152,9 +153,13 @@ interface NudgeBase {
   createdAt: string;
 }
 
-/** A live invitation to swap a block's question, proposed after a streak — renders inline per-block. */
+/** An invitation to swap a block's question, proposed after a streak — renders inline per-block,
+ * attached permanently to whichever answer earned it (see QuestionResponse's own `recommendation`).
+ * `status` is the only thing that changes on accept/decline — nothing is ever removed, so a declined
+ * or still-open one stays visible and actionable indefinitely, not just in the moment it fired. */
 export interface RecommendationNudge extends NudgeBase {
   kind: "recommendation";
+  status: "pending" | "accepted" | "declined";
   block: LiveBlockId;
   /** The full path this proposes moving to. */
   path: EscalationPath;
@@ -178,7 +183,9 @@ export interface SaveAccountNudge extends NudgeBase {
   checkpoint: number;
 }
 
-export type Nudge = RecommendationNudge | NotificationPermissionNudge | SaveAccountNudge;
+// RecommendationNudge isn't part of this union — it renders inline per-block (via QuestionResponse's
+// own `recommendation`), never as the single Home-level nudge slot these two share.
+export type Nudge = NotificationPermissionNudge | SaveAccountNudge;
 
 export interface FollowupResponse {
   newRecommendations: RecommendationNudge[];

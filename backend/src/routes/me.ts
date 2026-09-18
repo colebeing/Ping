@@ -16,9 +16,10 @@ export async function handleMe(_request: Request, env: Env, userId: string): Pro
     await saveState(env, userId, state);
   }
 
-  // Recommendation nudges render inline per-block (via /api/question); this is only ever the
-  // notification-permission/save-account/etc. kind Home renders at the top level, at most one.
-  const homeNudge = state.pendingNudges.find((n) => n.kind !== "recommendation") ?? null;
+  // Recommendation nudges render inline per-block (via /api/question) from their own permanent
+  // recommendationHistory, not pendingNudges — this is only ever the notification-permission/
+  // save-account/etc. kind Home renders at the top level, at most one.
+  const homeNudge = state.pendingNudges[0] ?? null;
 
   return json({
     email: user?.email ?? null,

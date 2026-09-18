@@ -21,7 +21,9 @@ const CHECKPOINT_TRIGGERS: { kind: "notification-permission" | "save-account"; c
 ];
 
 function runCheckpointTriggers(state: UserState, user: UserRecord | null): void {
-  const hasHomeLevelPending = state.pendingNudges.some((n) => n.kind !== "recommendation");
+  // pendingNudges only ever holds this kind now — recommendations live in their own permanent
+  // recommendationHistory instead (see UserState's own doc comments).
+  const hasHomeLevelPending = state.pendingNudges.length > 0;
   if (hasHomeLevelPending) return;
   const trigger = CHECKPOINT_TRIGGERS.find((t) => t.checkpoint === state.totalFollowupsAnswered && t.condition(state, user));
   if (!trigger) return;
@@ -114,7 +116,7 @@ export async function handleFollowup(request: Request, env: Env, userId: string)
   const [thresholds, root, user] = await Promise.all([getTriggerConfig(env), getQuestionRoot(env), getUser(env, userId)]);
 
   const newRecs = detectStreaks(state, thresholds, root, { block: body.block, answer: record.answer, category: body.category, timestamp: record.timestamp });
-  state.pendingNudges.push(...newRecs);
+  state.recommendationHistory.push(...newRecs);
   runCheckpointTriggers(state, user);
 
   // Fire a dedicated push for each new swap invite — otherwise a native install only ever sees one via
@@ -133,6 +135,6 @@ export async function handleFollowup(request: Request, env: Env, userId: string)
 
   return json({
     newRecommendations: newRecs,
-    pendingRecommendations: state.pendingNudges.filter((n) => n.kind === "recommendation"),
+    pendingRecommendations: state.recommendationHistory.filter((n) => n.status === "pending"),
   });
 }

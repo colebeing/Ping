@@ -20,6 +20,12 @@ interface DoneStep {
   category: Category;
   followupPrompt: string;
   optionLabel: string;
+  /** Set only once resolved (accepted/declined) — a still-open one uses the separate "recommendation"
+   * step instead, since that's the interactive accept/decline card, not this plain display. Stays
+   * attached indefinitely (see api.ts's QuestionResponse), so a declined or long-since-accepted
+   * invitation is still visible, and a declined one still actionable, whenever this exact answer is
+   * viewed again — today, or years later in History. */
+  recommendation?: RecommendationNudge;
 }
 
 type Step =
@@ -63,11 +69,12 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
         category: q.existingAnswer.category,
         followupPrompt: q.existingAnswer.followup?.prompt ?? "",
         optionLabel: q.existingAnswer.followup?.optionLabel ?? CATEGORY_LABEL[q.existingAnswer.category],
+        recommendation: q.recommendation && q.recommendation.status !== "pending" ? q.recommendation : undefined,
       };
-      // Recovers an invitation that fired but wasn't resolved before a reload
-      // (closed the app, refreshed) — otherwise it only ever showed up once,
-      // transiently, right after the follow-up call that created it.
-      step = q.pendingRecommendation ? { kind: "recommendation", recommendation: q.pendingRecommendation, next: doneStep } : doneStep;
+      // A still-open invitation (fired but never resolved, whether that's from seconds or months ago)
+      // gets the interactive accept/decline card; an already-resolved one is just attached to doneStep
+      // above for display instead.
+      step = q.recommendation?.status === "pending" ? { kind: "recommendation", recommendation: q.recommendation, next: doneStep } : doneStep;
       onDone?.();
     }
 
@@ -190,6 +197,33 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
         }
 
         card.appendChild(answerRow);
+
+        // Whatever swap invitation this answer earned, stays visible right alongside it rather than
+        // vanishing the moment it's resolved — deliberately plain here (no badge, no "you missed this"
+        // framing), just the fact of what was offered and what happened. A declined one keeps a single,
+        // low-key way to change course, since "earned but said no to at the time" isn't the same as
+        // "never allowed to happen" — the whole point of keeping this around at all.
+        if (step.recommendation) {
+          const rec = step.recommendation;
+          const recWrap = document.createElement("div");
+          recWrap.className = "recommendation-prompt recommendation-resolved";
+
+          const q = document.createElement("p");
+          q.className = "followup-prompt";
+          q.textContent = rec.node.inviteQuestion;
+          recWrap.appendChild(q);
+
+          const status = document.createElement("p");
+          status.className = "muted";
+          status.textContent = rec.status === "accepted" ? "This became your question." : "You said no to this.";
+          recWrap.appendChild(status);
+
+          if (rec.status === "declined") {
+            recWrap.appendChild(button("Make this my question", "btn", () => activateRecommendation(step as DoneStep, rec)));
+          }
+
+          card.appendChild(recWrap);
+        }
       }
 
       container.innerHTML = "";
@@ -220,7 +254,7 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
     const resolveRecommendation = async (current: Extract<Step, { kind: "recommendation" }>, accept: boolean) => {
       if (!accept) {
         await api.declineRecommendation(current.recommendation.id);
-        step = current.next;
+        step = { ...current.next, recommendation: { ...current.recommendation, status: "declined" } };
         paint();
         return;
       }
@@ -232,13 +266,27 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
         return;
       }
       await api.acceptRecommendation(current.recommendation.id);
-      step = current.next;
+      step = { ...current.next, recommendation: { ...current.recommendation, status: "accepted" } };
       paint();
     };
 
     const chooseDigIn = async (current: Extract<Step, { kind: "digIn" }>, index: number) => {
       await api.acceptRecommendation(current.recommendation.id, index);
-      step = current.next;
+      step = { ...current.next, recommendation: { ...current.recommendation, status: "accepted" } };
+      paint();
+    };
+
+    // Reactivates a declined (or, in principle, long-pending) invitation straight from its resolved,
+    // attached-to-doneStep display — same acceptance path a live "recommendation" step uses, just
+    // entered from history instead of the moment it fired.
+    const activateRecommendation = async (current: DoneStep, rec: RecommendationNudge) => {
+      if (rec.node.digIn) {
+        step = { kind: "digIn", recommendation: rec, next: current };
+        paint();
+        return;
+      }
+      await api.acceptRecommendation(rec.id);
+      step = { ...current, recommendation: { ...rec, status: "accepted" } };
       paint();
     };
 

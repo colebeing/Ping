@@ -62,12 +62,16 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
     followup = { prompt: content.prompt, optionLabel: content.options[existingAnswer.category] };
   }
 
-  // Only surfaced for today's own card — a pending invitation is a "just
-  // happened" moment, not something that should resurface while browsing
-  // History. Lets the client recover it after a reload, since it otherwise
-  // only shows up transiently right after the followup call that created it.
-  const pendingRecommendation =
-    date === today ? (state.pendingNudges.find((n) => n.kind === "recommendation" && n.block === block) ?? null) : null;
+  // Whichever swap invitation this exact answer earned, if any — joined by (block, timestamp), the
+  // same pair AnswerRecord.timestamp and RecommendationNudge.asOfTimestamp always share since both are
+  // stamped from the same handleFollowup call. Surfaced regardless of date or status: unlike the old
+  // "only today, only while still unresolved" behavior, an invitation now stays attached to the answer
+  // that earned it permanently, in History as much as on the day it fired, whether it's still open,
+  // was accepted, or was declined — no reason for it to disappear once acted on, or once the day it
+  // fired stops being "today".
+  const recommendation = existingAnswer
+    ? (state.recommendationHistory.find((n) => n.block === block && n.asOfTimestamp === existingAnswer.timestamp) ?? null)
+    : null;
 
   return json({
     block,
@@ -75,6 +79,6 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
     text,
     overridden: Boolean(override),
     existingAnswer: existingAnswer ? { ...existingAnswer, followup } : null,
-    pendingRecommendation,
+    recommendation,
   });
 }
