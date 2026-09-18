@@ -78,8 +78,19 @@ export async function getState(env: Env, userId: string): Promise<UserState> {
   // predates any concept of status too.
   if (!stored.pendingNudges) stored.pendingNudges = [];
   if (!stored.recommendationHistory) {
-    const old = (stored as unknown as { pendingRecommendations?: unknown[] }).pendingRecommendations ?? [];
-    stored.recommendationHistory = old.map((r) => ({ ...(r as object), kind: "recommendation" as const, status: "pending" as const })) as UserState["recommendationHistory"];
+    // Gating on recommendationHistory's own absence alone would re-run this for EVERY pre-existing
+    // account on the first deploy of this field, not just the ones that genuinely predate pendingNudges
+    // itself — an account whose pendingNudges already existed (the overwhelmingly common case) may still
+    // have this ancient field sitting around completely inert, from before pendingNudges existed, never
+    // touched since. Same shape check movedRecs below applies: an entry from before the escalation tree
+    // (lacking path/node/blockQuestions entirely) can't be salvaged and must be dropped, not carried
+    // forward — carrying it forward unchecked is exactly what crashed migratePath on a missing `path`.
+    const old = ((stored as unknown as { pendingRecommendations?: unknown[] }).pendingRecommendations ?? []) as {
+      path?: unknown;
+      node?: { blockQuestions?: unknown };
+    }[];
+    const validOld = old.filter((r) => "path" in r && Boolean(r.node) && "blockQuestions" in (r.node as object));
+    stored.recommendationHistory = validOld.map((r) => ({ ...(r as object), kind: "recommendation" as const, status: "pending" as const })) as UserState["recommendationHistory"];
   }
   // Recommendations used to live inside pendingNudges, spliced out entirely the moment they were
   // accepted or declined — now they live permanently in recommendationHistory instead, `status` taking
