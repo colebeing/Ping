@@ -104,4 +104,23 @@ Each entry: the principle, why it matters, where the current app already lives u
 
 ---
 
-*Add principles here as they come up. Keep the "where it's in tension" sections honest — the point of writing this down is to make the gaps visible, not to grade the app as finished.*
+---
+
+## 6. Hypersafe
+
+**The app does not judge its users. They must feel free to communicate.** Whatever someone honestly reports — including every "no" — has to be received without judgment, or the self-report the whole app depends on stops being honest.
+
+This goes both ways. It's not just tone and color in the UI — users have to be able to *trust* that no one is watching and judging their individual answers, especially once Ping has b2b customers where the person who could theoretically look is an employer, not a stranger. Individual-level responses are only ever accessible to Ping's own dev/product team. Admins (including any future b2b customer admin) never see individual answers — only aggregate data at thresholds specified when b2b actually happens.
+
+**Why:** psychological safety, in service of the other principles rather than separate from them. The check-in only works if it's answered honestly, and honesty requires masks to stay low — the instant someone senses judgment, they start performing an answer instead of reporting one, which breaks the entire premise the app runs on. It also matters specifically because the question is meant to drive toward real action and eventually retire itself (see `checkRetirement` in [recommendations.ts](backend/src/recommendations.ts:106) — a question that's been resolved gets replaced, not repeated forever) — that only works if "no" gets reported honestly and often enough to notice a pattern worth acting on. And low masks is what keeps the interaction itself lightweight and available: the moment answering requires bracing for judgment, it stops being a two-tap reflex and starts being something to steel yourself for or avoid — Hypersafe is partly a precondition for Hyperlightweight and Hyperavailable actually holding, not an independent concern next to them.
+
+**Where it holds today:**
+- The core interaction never asks *why not* in a way that demands justification — a "No" is accepted as a complete, valid answer on its own, with the same two-tap path forward as a "Yes" ([blockCard.ts:86-89](frontend/src/blockCard.ts:86)).
+- `checkRetirement`/`detectStreaks` treat a run of "no" answers as an invitation to help ("resolve" — offer to re-center the check-in on that category), not as a flag to escalate or scold ([recommendations.ts:16](backend/src/recommendations.ts:16)).
+- The data-privacy half holds *only* because there's no b2b customer yet, not because the access control already enforces it — worth being honest that this is "true by absence of the scenario," not "true by design," until the next bullet gets addressed.
+
+**A real structural gap, found while grounding this — needs to exist before b2b, not after:**
+- `isAdmin` today is a single flag with no tiers ([auth.ts](backend/src/auth.ts)), and the admin routes it gates already expose deep individual-level data: `/api/admin/analytics` lists every user by email with their per-category breakdown and streak, and `/api/admin/analytics/users/:id` ([index.ts:84](backend/src/index.ts:84), [analytics.ts:357](backend/src/routes/analytics.ts:357)) drills into one person's full answer history, per-question-path yes/no breakdown, and notification history. There is currently no code-level distinction between "Ping's own dev/product team" and "a b2b customer's admin" — there's just `isAdmin: true`. The moment that flag is handed to anyone outside the dev/product team (an employer, an HR contact), this principle is violated by default, because nothing today would stop it. This needs an actual second admin tier — one that only ever gets the aggregate/threshold view — designed and built *before* the first b2b admin account exists, not retrofitted after.
+
+**Where it's in tension — considered, and kept as-is for now:**
+- The UI color-codes the answer itself: "Yes" renders in `--good` (`#6dbf76`, green), "No" renders in `--warn` (`#e0a95b`, amber) ([style.css:8-9](frontend/src/style.css:8), [style.css:256-264](frontend/src/style.css:256)). Flagged as the sharpest concrete conflict found in this document, and explicitly reviewed rather than waved through: the call is that amber can draw attention to where support is needed without crossing into judgment, as long as the tone around it stays supportive, not punitive — closer to "here's where to look" than "you failed." Kept as-is for now. If this ever gets revisited (a redesign, a new answer type, a user reading it as shame rather than signal), that's the specific bar to re-check it against — not just "does this look bad," but "does this still read as help rather than a verdict."
