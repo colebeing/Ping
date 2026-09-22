@@ -105,6 +105,10 @@ export interface EscalationNode {
   /** Optional human-friendly nickname for this row — admin-set via the Sheet's "Label" column only,
    * read-only here (Admin's Question Map). No functional effect. */
   label?: string;
+  /** When set, this slot is a reference (convergence) to another already-authored node — every field
+   * below is unused/blank. Lets two different paths lead to the same underlying question without
+   * duplicating it. Created via the tree editor's "jump to an existing question" picker. */
+  ref?: EscalationPath;
   /** The one-time "would you like to switch?" confirmation shown when the swap invite fires. */
   inviteQuestion: string;
   /** Ongoing daily phrasing once accepted — same shape as QuestionRoot.blockQuestions: accepting

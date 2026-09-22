@@ -124,6 +124,17 @@ export interface EscalationNode {
    * "Label" column only, read-only in the app (Admin's Question Map), purely for telling rows apart at
    * a glance. No functional effect: never shown to end users, never affects question content. */
   label?: string;
+  /** When set, this slot is a reference (convergence) to another already-authored node instead of its
+   * own content — every field below is unused (kept blank) and ignored everywhere the tree is read;
+   * `children` here is also unused, since escalating further uses the REFERENCED node's own children,
+   * not a separate copy. Lets two different paths through the tree lead to the same underlying question
+   * without duplicating it (see recommendations.ts's resolveNode, which follows this transparently).
+   * The account's own breadcrumb (QuestionOverride.path) is never rewritten to the target — it stays
+   * exactly the path actually walked, so which route got here is never lost, only the content is shared.
+   * Admin-authored via the tree editor's "jump to an existing question" picker; a node with `ref` set
+   * should never itself be the TARGET of another ref (single-hop by convention, though resolution
+   * tolerates a chain defensively). */
+  ref?: EscalationPath;
   /** The one-time "would you like to switch?" confirmation shown when the swap invite fires. */
   inviteQuestion: string;
   /** Ongoing daily phrasing once accepted — same shape as QuestionRoot.blockQuestions: accepting

@@ -3,6 +3,7 @@ import type {
   AnswerRecord,
   BlockId,
   Category,
+  EscalationNode,
   EscalationPath,
   EscalationStep,
   Env,
@@ -17,6 +18,7 @@ import { CATEGORIES, CATEGORY_LABEL } from "../types";
 import { errorResponse, json } from "../http";
 import { getState } from "../state";
 import { getQuestionRoot } from "../config";
+import { derefNode } from "../recommendations";
 
 export interface AnalyticsUserSummary {
   /** The raw KV user id (an email or "anon:<uuid>") — not shown, just the key for drilling into
@@ -311,26 +313,34 @@ function stepLabel(step: EscalationStep, parentYes: FollowupPrompt, parentNo: Fo
   return `${step.valence === "yes" ? "Yes" : "No"}: ${label}`;
 }
 
-/** Breadcrumb-style label for a path, e.g. "Friends → Mixed (no-streak)" — walks the LIVE tree from the
- * root, so it reads exactly like admin.ts's own breadcrumbs. If the tree has since been restructured and
- * a step along the way no longer resolves, stops there rather than guessing at deeper steps — the path
- * itself (returned alongside the label) still uniquely identifies which answers belong to it regardless
- * of whether the tree still has a live node at that position. */
+/** The dropdown label for a path — the target node's own admin-set `label` if it has one, else its
+ * `inviteQuestion`, else (nothing set yet, or the tree's since been restructured and the path no longer
+ * resolves) the breadcrumb trail itself, e.g. "Friends → Mixed (no-streak)", walked from the root so it
+ * reads exactly like admin.ts's own breadcrumbs. Dereferences through any `ref` (convergence) the path
+ * passes through along the way, same as recommendations.ts's resolveNode — a converged node's label
+ * should read the same regardless of which path led there. Stops the trail early if a step no longer
+ * resolves rather than guessing at deeper steps — the path itself (returned alongside the label) still
+ * uniquely identifies which answers belong to it regardless of whether the tree still has a live node
+ * there. */
 function pathLabel(root: QuestionRoot, path: EscalationPath): string {
-  if (path.length === 0) return "Routine question";
+  if (path.length === 0) return root.label || "Routine question";
   const labels: string[] = [];
   let parentYes = root.yes;
   let parentNo = root.no;
   let children = root.children;
+  let node: EscalationNode | null = null;
   for (const step of path) {
     labels.push(stepLabel(step, parentYes, parentNo));
-    const node = step.category === null ? (step.valence === "yes" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
+    const next = step.category === null ? (step.valence === "yes" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
+    node = next ? derefNode(root, next) : null;
     if (!node) break;
     parentYes = node.yes;
     parentNo = node.no;
     children = node.children;
   }
-  return labels.join(" → ");
+  const breadcrumb = labels.join(" → ");
+  if (labels.length < path.length || !node) return breadcrumb;
+  return node.label || node.inviteQuestion || breadcrumb;
 }
 
 /** Denormalizes an override's 4-block question into one representative string for a human-scannable

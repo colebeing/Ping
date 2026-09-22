@@ -24,6 +24,8 @@ const QUESTIONS_HEADER = [
   "Path ID",
   "Breadcrumb",
   "Label",
+  "Ref path (do not edit)",
+  "Ref (Path ID)",
   "Invite question",
   "Morning",
   "Midday",
@@ -101,6 +103,8 @@ function questionsRowValues(
   id: string,
   breadcrumb: string,
   label: string,
+  refPathKey: string,
+  refId: string,
   inviteQuestion: string,
   blockQuestions: Record<LiveBlockId, string>,
   yes: FollowupPrompt,
@@ -112,6 +116,8 @@ function questionsRowValues(
     id,
     breadcrumb,
     label,
+    refPathKey,
+    refId,
     inviteQuestion,
     blockQuestions.q1,
     blockQuestions.q2,
@@ -125,6 +131,9 @@ function questionsRowValues(
   ];
 }
 
+const BLANK_BLOCK_QUESTIONS: Record<LiveBlockId, string> = { q1: "", q2: "", q3: "", q4: "" };
+const BLANK_FOLLOWUP: FollowupPrompt = { prompt: "", options: { environment: "", people: "", impact: "", capacity: "" } };
+
 function optionsRowValues(path: EscalationPath, id: string, optionNumber: number, option: DigInOption): string[] {
   return [pathKey(path), `${id}${optionNumber}`, String(optionNumber), option.label, option.blockQuestions.q1, option.blockQuestions.q2, option.blockQuestions.q3, option.blockQuestions.q4];
 }
@@ -133,7 +142,7 @@ function optionsRowValues(path: EscalationPath, id: string, optionNumber: number
  * dig-in option — same depth-first walk frontend/src/views/admin.ts's collectRows already uses for
  * the Question Map, just producing full rows instead of a preview. */
 export function flattenTree(root: QuestionRoot): { questions: string[][]; options: string[][] } {
-  const questions: string[][] = [questionsRowValues([], pathId([]), "Routine question", root.label ?? "", "", root.blockQuestions, root.yes, root.no, "")];
+  const questions: string[][] = [questionsRowValues([], pathId([]), "Routine question", root.label ?? "", "", "", "", root.blockQuestions, root.yes, root.no, "")];
   const options: string[][] = [];
 
   const walk = (children: EscalationChildren, path: EscalationPath, breadcrumbPrefix: string) => {
@@ -143,7 +152,14 @@ export function flattenTree(root: QuestionRoot): { questions: string[][]; option
       const childPath = [...path, step];
       const id = pathId(childPath);
       const breadcrumb = `${breadcrumbPrefix} → ${stepLabel(step)}`;
-      questions.push(questionsRowValues(childPath, id, breadcrumb, child.label ?? "", child.inviteQuestion, child.blockQuestions, child.yes, child.no, child.digIn?.prompt ?? ""));
+      if (child.ref) {
+        // A reference (convergence — see EscalationNode.ref) has no content or children of its own:
+        // everything lives at the target's own row instead, so this row stops here, blank apart from
+        // where it points.
+        questions.push(questionsRowValues(childPath, id, breadcrumb, child.label ?? "", pathKey(child.ref), pathId(child.ref), "", BLANK_BLOCK_QUESTIONS, BLANK_FOLLOWUP, BLANK_FOLLOWUP, ""));
+        continue;
+      }
+      questions.push(questionsRowValues(childPath, id, breadcrumb, child.label ?? "", "", "", child.inviteQuestion, child.blockQuestions, child.yes, child.no, child.digIn?.prompt ?? ""));
       if (child.digIn) {
         child.digIn.options.forEach((option, i) => {
           if (!option.label) return;
@@ -193,6 +209,9 @@ interface ParsedQuestionRow {
   path: EscalationPath;
   key: string;
   label: string;
+  /** Non-null when this row is a reference (convergence) to another row instead of carrying its own
+   * content — see EscalationNode.ref. */
+  refPath: EscalationPath | null;
   inviteQuestion: string;
   blockQuestions: Record<LiveBlockId, string>;
   yes: FollowupPrompt;
@@ -235,16 +254,27 @@ export function reconstructTree(questionsValues: string[][], optionsValues: stri
     seenKeys.add(key);
     // Columns 1-2 (Path ID, Breadcrumb) are skipped here deliberately — display-only renderings of
     // `path` (see pathId/stepLabel), never read back on pull. Label (3) IS read back — unlike those
-    // two, it's admin-editable content, not derived from the path.
+    // two, it's admin-editable content, not derived from the path. Column 5 (Ref Path ID) is likewise
+    // display-only, derived from column 4 — only column 4 itself is read back.
+    let refPath: EscalationPath | null = null;
+    const refPathRaw = row[4];
+    if (refPathRaw) {
+      refPath = parsePath(refPathRaw);
+      if (!refPath) {
+        errors.push(`Questions row ${rowNum}: ref path isn't valid`);
+        continue;
+      }
+    }
     questionRows.push({
       path,
       key,
       label: row[3] ?? "",
-      inviteQuestion: row[4] ?? "",
-      blockQuestions: { q1: row[5] ?? "", q2: row[6] ?? "", q3: row[7] ?? "", q4: row[8] ?? "" },
-      yes: { prompt: row[9] ?? "", options: optionsFromColumns(row, 10) },
-      no: { prompt: row[14] ?? "", options: optionsFromColumns(row, 15) },
-      digInPrompt: row[19] ?? "",
+      refPath,
+      inviteQuestion: row[6] ?? "",
+      blockQuestions: { q1: row[7] ?? "", q2: row[8] ?? "", q3: row[9] ?? "", q4: row[10] ?? "" },
+      yes: { prompt: row[11] ?? "", options: optionsFromColumns(row, 12) },
+      no: { prompt: row[16] ?? "", options: optionsFromColumns(row, 17) },
+      digInPrompt: row[21] ?? "",
     });
   }
 
@@ -257,6 +287,27 @@ export function reconstructTree(questionsValues: string[][], optionsValues: stri
     if (r.path.length === 0) continue;
     const parentKey = pathKey(r.path.slice(0, -1));
     if (!byKey.has(parentKey)) errors.push(`Questions row for path ${r.key}: its parent (${parentKey}) has no row of its own`);
+  }
+
+  // A reference row (see EscalationNode.ref) has no content or children of its own — everything comes
+  // from the row it points to, so that target has to actually exist, has to be a real row (not itself
+  // a reference — no chains authored via the Sheet), can't be the row's own path, and nothing else can
+  // be nested underneath a reference row, since there'd be nowhere real for it to live.
+  for (const r of questionRows) {
+    if (!r.refPath) continue;
+    const refKey = pathKey(r.refPath);
+    if (refKey === r.key) {
+      errors.push(`Questions row for path ${r.key}: ref path can't point to itself`);
+      continue;
+    }
+    const target = byKey.get(refKey);
+    if (!target) {
+      errors.push(`Questions row for path ${r.key}: ref path ${refKey} has no matching Questions row`);
+    } else if (target.refPath) {
+      errors.push(`Questions row for path ${r.key}: ref path ${refKey} is itself a reference — chained references aren't allowed`);
+    }
+    const hasChildRow = questionRows.some((other) => other !== r && other.path.length > r.path.length && pathKey(other.path.slice(0, r.path.length)) === r.key);
+    if (hasChildRow) errors.push(`Questions row for path ${r.key}: a reference row can't have rows of its own underneath it`);
   }
 
   const optionRows: ParsedOptionRow[] = [];
@@ -307,6 +358,21 @@ export function reconstructTree(questionsValues: string[][], optionsValues: stri
     for (const step of SLOTS) {
       const row = byKey.get(pathKey([...parentPath, step]));
       if (!row) continue;
+      if (row.refPath) {
+        // Validated above: refPath resolves, isn't itself a reference, and nothing is nested under
+        // this row — so an empty, childless shell is exactly right, same convention emptyNode()/
+        // acceptRecommendation use elsewhere for "this field is unused".
+        setChildAt(children, step, {
+          label: row.label || undefined,
+          ref: row.refPath,
+          inviteQuestion: "",
+          blockQuestions: { q1: "", q2: "", q3: "", q4: "" },
+          yes: { prompt: "", options: { environment: "", people: "", impact: "", capacity: "" } },
+          no: { prompt: "", options: { environment: "", people: "", impact: "", capacity: "" } },
+          children: { yes: {}, no: {} },
+        });
+        continue;
+      }
       setChildAt(children, step, {
         label: row.label || undefined,
         inviteQuestion: row.inviteQuestion,

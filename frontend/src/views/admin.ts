@@ -25,12 +25,31 @@ function emptyFollowup(): FollowupPrompt {
   return { prompt: "", options: Object.fromEntries(CATEGORY_ORDER.map((c) => [c, ""])) as FollowupPrompt["options"] };
 }
 
+// Order-matched to CATEGORY_ORDER (environment/people/impact/capacity) — a deliberately looser, more
+// conversational framing than the admin-facing CATEGORY_LABEL names, since these are the literal button
+// text an end user taps.
+const DEFAULT_CATEGORY_ANSWERS = ["Chance", "Others", "Plans", "Myself"] as const;
+
+/** Sensible starting content for a newly authored node's follow-up — every field here is a real,
+ * editable value from the moment the node exists (not a blank the runtime silently substitutes for),
+ * so the admin only ever has to type something if they actually want it to read differently. */
+function defaultFollowup(valence: Answer): FollowupPrompt {
+  return {
+    prompt: valence === "yes" ? "What helped most?" : "What got in the way?",
+    options: Object.fromEntries(CATEGORY_ORDER.map((c, i) => [c, DEFAULT_CATEGORY_ANSWERS[i]])) as FollowupPrompt["options"],
+  };
+}
+
+/** A brand-new swap invite's only genuinely required fields are the invite question itself and the
+ * first (Morning) timeslot question — see renderBlockQuestionsFields, which mirrors that single
+ * question into all four slots until an admin explicitly diverges. Follow-up prompt/options start
+ * filled with defaultFollowup's defaults rather than blank, for the same reason. */
 function emptyNode(): EscalationNode {
   return {
     inviteQuestion: "",
     blockQuestions: { q1: "", q2: "", q3: "", q4: "" },
-    yes: emptyFollowup(),
-    no: emptyFollowup(),
+    yes: defaultFollowup("yes"),
+    no: defaultFollowup("no"),
     children: { yes: {}, no: {} },
   };
 }
@@ -56,7 +75,22 @@ function setChildAt(children: EscalationChildren, step: EscalationStep, node: Es
   }
 }
 
-/** Walks the tree from the root along `path` — mirrors backend/src/recommendations.ts's resolveNode. */
+/** Follows a node's `ref` chain (if any) to the real node it ultimately points to — mirrors
+ * backend/src/recommendations.ts's own derefNode, including the cycle guard. */
+function derefNode(root: QuestionRoot, node: EscalationNode, seen: Set<string> = new Set()): EscalationNode | null {
+  if (!node.ref) return node;
+  const key = JSON.stringify(node.ref);
+  if (seen.has(key)) return null;
+  seen.add(key);
+  const target = resolveNode(root, node.ref);
+  return target ? derefNode(root, target, seen) : null;
+}
+
+/** Walks the tree from the root along `path` — mirrors backend/src/recommendations.ts's resolveNode.
+ * Returns the RAW node at the final step (a reference's own empty shell, not silently swapped for its
+ * target) so callers like renderNodeEditor can detect `.ref` and show it as what it is, but still
+ * dereferences through any `ref` passed through along the WAY there, since further escalation from an
+ * intermediate reference has to use the real target's own children, not the empty shell's. */
 function resolveNode(root: QuestionRoot, path: EscalationPath): EscalationNode | null {
   let node: EscalationNode | null = null;
   let children: EscalationChildren = root.children;
@@ -64,9 +98,46 @@ function resolveNode(root: QuestionRoot, path: EscalationPath): EscalationNode |
     const next = childAt(children, step);
     if (!next) return null;
     node = next;
-    children = next.children;
+    const resolved = derefNode(root, next);
+    if (!resolved) return null;
+    children = resolved.children;
   }
   return node;
+}
+
+/** What a node's row should show as its "question" — a reference (see EscalationNode.ref) has none of
+ * its own, so this shows what it points to instead, same label-then-invite-question priority the
+ * "jump to an existing question" picker's own options use. */
+function nodePreviewText(root: QuestionRoot, node: EscalationNode): string {
+  if (node.ref) {
+    const target = derefNode(root, node);
+    return `→ ${target?.label || target?.inviteQuestion || "(broken reference)"}`;
+  }
+  return node.inviteQuestion || "(no question text yet)";
+}
+
+interface RefTarget {
+  path: EscalationPath;
+  display: string;
+}
+
+/** Every real (non-reference) node in the tree, root included, for the "jump to an existing question"
+ * picker — a reference can't itself be a target (no chains authored from the UI; resolution tolerates
+ * them defensively, but nothing should create one). Same label-then-invite-question priority the
+ * Sheet's own Path ID/analytics dropdowns use. */
+function collectRefTargets(root: QuestionRoot): RefTarget[] {
+  const targets: RefTarget[] = [{ path: [], display: root.label || "Routine question" }];
+  const walk = (children: EscalationChildren, path: EscalationPath) => {
+    for (const step of SLOTS) {
+      const child = childAt(children, step);
+      if (!child || child.ref) continue;
+      const childPath = [...path, step];
+      targets.push({ path: childPath, display: child.label || child.inviteQuestion || "(no question text yet)" });
+      walk(child.children, childPath);
+    }
+  };
+  walk(root.children, []);
+  return targets;
 }
 
 /** Round-trips an EscalationPath through the URL hash (e.g. "#admin/yes.people/no.general") so a
@@ -155,7 +226,7 @@ function collectRows(root: QuestionRoot): MapRow[] {
       if (!child) continue;
       const childPath = [...path, step];
       const labels = [...priorLabels, dynamicStepLabel(step, parentYes, parentNo)];
-      rows.push({ path: childPath, label: labels.join(" → "), customLabel: child.label, questionPreview: child.inviteQuestion });
+      rows.push({ path: childPath, label: labels.join(" → "), customLabel: child.label, questionPreview: nodePreviewText(root, child) });
       walk(child.children, childPath, child.yes, child.no, labels);
     }
   };
@@ -188,6 +259,18 @@ function diffBlockQuestions(prefix: string, from: Record<string, string>, to: Re
 function diffNode(from: EscalationNode, to: EscalationNode): string[] {
   const changes: string[] = [];
   diffField("Label", from.label ?? "", to.label ?? "", changes);
+
+  // A reference's other fields are blank on both sides regardless of which target it points to, so
+  // comparing them would silently hide the one change that actually matters here.
+  const fromRef = from.ref ? JSON.stringify(from.ref) : "";
+  const toRef = to.ref ? JSON.stringify(to.ref) : "";
+  if (fromRef !== toRef) {
+    if (!from.ref) changes.push("Became a reference to another question");
+    else if (!to.ref) changes.push("No longer a reference — now its own question");
+    else changes.push("Reference target changed");
+  }
+  if (from.ref || to.ref) return changes;
+
   diffField("Swap invite", from.inviteQuestion, to.inviteQuestion, changes);
   if (!from.digIn && !to.digIn) {
     diffBlockQuestions("", from.blockQuestions, to.blockQuestions, changes);
@@ -597,7 +680,7 @@ function renderQuestionMap(root: QuestionRoot, navigate: (path: EscalationPath) 
       btn.type = "button";
       btn.className = "map-slot-btn" + (existing ? " filled" : " empty");
       btn.textContent = existing ? "✓" : "–";
-      btn.title = existing ? existing.inviteQuestion : "Not yet configured";
+      btn.title = existing ? nodePreviewText(root, existing) : "Not yet configured";
       btn.addEventListener("click", () => {
         // Mirrors renderLeaf's own "add a swap invite" affordance — an empty slot has nothing to
         // navigate to yet, so create the blank node first, same as clicking it from inside the tree
@@ -676,6 +759,39 @@ function renderNodeEditor(root: QuestionRoot, path: EscalationPath, navigate: (p
   }
   card.appendChild(h);
 
+  // A reference (see EscalationNode.ref) has no content of its own to edit — everything here comes
+  // from whatever it points to, so show that instead of the normal editable form, which would just be
+  // dead inputs. Its OWN invite/label are still real (see collectRefTargets/nodePreviewText); only
+  // block questions, follow-up, digIn, and further escalation are shared with the target.
+  if (node?.ref) {
+    const refNote = document.createElement("p");
+    const target = derefNode(root, node);
+    refNote.textContent = `This slot is a reference — it shares its content with "${target?.label || target?.inviteQuestion || "(no question text yet)"}", so editing that question updates this one too.`;
+    card.appendChild(refNote);
+
+    const goBtn = document.createElement("button");
+    goBtn.type = "button";
+    goBtn.className = "btn";
+    goBtn.textContent = "Go to the real question →";
+    goBtn.addEventListener("click", () => navigate(node.ref!));
+    card.appendChild(goBtn);
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "link-btn";
+    removeBtn.style.marginLeft = "12px";
+    removeBtn.textContent = "Remove reference — start a fresh question here instead";
+    removeBtn.addEventListener("click", () => {
+      const parentPath = path.slice(0, -1);
+      const parentChildren = parentPath.length === 0 ? root.children : resolveNode(root, parentPath)!.children;
+      setChildAt(parentChildren, path[path.length - 1], emptyNode());
+      navigate(path);
+    });
+    card.appendChild(removeBtn);
+
+    return card;
+  }
+
   if (path.length > 0) {
     const inviteNote = document.createElement("p");
     inviteNote.className = "muted";
@@ -716,8 +832,8 @@ function renderNodeEditor(root: QuestionRoot, path: EscalationPath, navigate: (p
   card.appendChild(renderFollowupEditor(no, "No → WHY"));
 
   const children = path.length === 0 ? root.children : node!.children;
-  card.appendChild(renderBranchGroup("Yes-path swap invites", "yes", yes, children, path, navigate));
-  card.appendChild(renderBranchGroup("No-path swap invites", "no", no, children, path, navigate));
+  card.appendChild(renderBranchGroup("Yes-path swap invites", "yes", yes, children, root, path, navigate));
+  card.appendChild(renderBranchGroup("No-path swap invites", "no", no, children, root, path, navigate));
 
   return card;
 }
@@ -793,6 +909,7 @@ function renderBranchGroup(
   valence: Answer,
   prompt: FollowupPrompt,
   children: EscalationChildren,
+  root: QuestionRoot,
   path: EscalationPath,
   navigate: (path: EscalationPath) => void,
 ): HTMLElement {
@@ -808,9 +925,9 @@ function renderBranchGroup(
   // Each leaf's true label is this node's own configured option text for that category — the literal
   // button text a real user taps — falling back to CATEGORY_LABEL only while it's still blank.
   for (const cat of CATEGORY_ORDER) {
-    wrap.appendChild(renderLeaf(prompt.options[cat] || CATEGORY_LABEL[cat], { valence, category: cat }, children, path, navigate));
+    wrap.appendChild(renderLeaf(prompt.options[cat] || CATEGORY_LABEL[cat], { valence, category: cat }, children, root, path, navigate));
   }
-  wrap.appendChild(renderLeaf("Mixed", { valence, category: null }, children, path, navigate));
+  wrap.appendChild(renderLeaf("Mixed", { valence, category: null }, children, root, path, navigate));
 
   return wrap;
 }
@@ -819,6 +936,7 @@ function renderLeaf(
   label: string,
   step: EscalationStep,
   children: EscalationChildren,
+  root: QuestionRoot,
   path: EscalationPath,
   navigate: (path: EscalationPath) => void,
 ): HTMLElement {
@@ -834,7 +952,7 @@ function renderLeaf(
   if (existing) {
     const preview = document.createElement("p");
     preview.className = "leaf-preview muted";
-    preview.textContent = existing.inviteQuestion || "(no question text yet)";
+    preview.textContent = nodePreviewText(root, existing);
     row.appendChild(preview);
 
     const openBtn = document.createElement("button");
@@ -853,6 +971,47 @@ function renderLeaf(
       navigate([...path, step]);
     });
     row.appendChild(addBtn);
+
+    // Convergence (see EscalationNode.ref's own doc comment): as a path goes deeper, it can lead back
+    // to a question that already exists elsewhere instead of always authoring a new one — the account's
+    // own breadcrumb still records the path actually walked, only the content is shared.
+    const targets = collectRefTargets(root);
+    if (targets.length > 0) {
+      const refRow = document.createElement("div");
+      refRow.className = "leaf-ref-row";
+      const refSelect = document.createElement("select");
+      const blankOpt = document.createElement("option");
+      blankOpt.value = "";
+      blankOpt.textContent = "— or jump to an existing question —";
+      refSelect.appendChild(blankOpt);
+      for (const target of targets) {
+        const opt = document.createElement("option");
+        opt.value = JSON.stringify(target.path);
+        opt.textContent = target.display;
+        refSelect.appendChild(opt);
+      }
+      refRow.appendChild(refSelect);
+
+      const jumpBtn = document.createElement("button");
+      jumpBtn.type = "button";
+      jumpBtn.className = "link-btn";
+      jumpBtn.textContent = "Jump →";
+      jumpBtn.addEventListener("click", () => {
+        if (!refSelect.value) return;
+        const targetPath = JSON.parse(refSelect.value) as EscalationPath;
+        setChildAt(children, step, {
+          ref: targetPath,
+          inviteQuestion: "",
+          blockQuestions: { q1: "", q2: "", q3: "", q4: "" },
+          yes: emptyFollowup(),
+          no: emptyFollowup(),
+          children: { yes: {}, no: {} },
+        });
+        navigate([...path, step]);
+      });
+      refRow.appendChild(jumpBtn);
+      row.appendChild(refRow);
+    }
   }
 
   return row;
@@ -958,18 +1117,33 @@ function textInput(value: string, onChange: (v: string) => void, placeholder?: s
 }
 
 /**
- * The four timed-question fields (Morning/Midday/Afternoon/Evening), each with its own "Copy to all"
- * button — writes that one field's current text into the other three instantly, so a question that's
- * identical across timeslots only has to be typed once. Purely a one-time copy, not a standing link:
- * every field stays independently editable afterward for whichever slot should read differently. Used
- * identically for the root question, an escalation node's own timed questions, and a dig-in option's.
+ * Defaults to ONE shared field that writes into all four timeslots at once — the vast majority of
+ * questions are a single sentence asked identically morning to night, so that should be the effortless
+ * path, not "type it once, then remember to click Copy to all." An expander reveals the four
+ * independent timeslot fields (unchanged from before, Copy to all included) for the real minority case
+ * that needs different wording per time of day. Starts expanded only when the four already differ —
+ * existing per-timeslot content is shown as what it is, never silently collapsed and hidden.
  */
 function renderBlockQuestionsFields(blockQuestions: Record<string, string>): HTMLElement {
   const wrap = document.createElement("div");
-  const inputs: Partial<Record<string, HTMLInputElement>> = {};
+  const allSame = ROOT_BLOCK_FIELDS.every(([, block]) => blockQuestions[block] === blockQuestions.q1);
 
+  const collapsed = document.createElement("div");
+  collapsed.appendChild(fieldLabel("Question — every timeslot"));
+  const singleInput = textInput(blockQuestions.q1, (v) => {
+    for (const [, block] of ROOT_BLOCK_FIELDS) blockQuestions[block] = v;
+  });
+  collapsed.appendChild(singleInput);
+  const expandBtn = document.createElement("button");
+  expandBtn.type = "button";
+  expandBtn.className = "link-btn";
+  expandBtn.textContent = "Use different questions per time of day";
+  collapsed.appendChild(expandBtn);
+
+  const expanded = document.createElement("div");
+  const inputs: Partial<Record<string, HTMLInputElement>> = {};
   for (const [label, block] of ROOT_BLOCK_FIELDS) {
-    wrap.appendChild(fieldLabel(`${label} question`));
+    expanded.appendChild(fieldLabel(`${label} question`));
     const row = document.createElement("div");
     row.className = "block-question-row";
 
@@ -993,9 +1167,32 @@ function renderBlockQuestionsFields(blockQuestions: Record<string, string>): HTM
     });
     row.appendChild(copyBtn);
 
-    wrap.appendChild(row);
+    expanded.appendChild(row);
   }
+  const collapseBtn = document.createElement("button");
+  collapseBtn.type = "button";
+  collapseBtn.className = "link-btn";
+  collapseBtn.textContent = "Use one question for every time of day";
+  expanded.appendChild(collapseBtn);
 
+  const setExpanded = (isExpanded: boolean) => {
+    collapsed.hidden = isExpanded;
+    expanded.hidden = !isExpanded;
+  };
+  expandBtn.addEventListener("click", () => setExpanded(true));
+  collapseBtn.addEventListener("click", () => {
+    const value = blockQuestions.q1;
+    for (const [, block] of ROOT_BLOCK_FIELDS) {
+      blockQuestions[block] = value;
+      const input = inputs[block];
+      if (input) input.value = value;
+    }
+    singleInput.value = value;
+    setExpanded(false);
+  });
+  setExpanded(!allSame);
+
+  wrap.append(collapsed, expanded);
   return wrap;
 }
 

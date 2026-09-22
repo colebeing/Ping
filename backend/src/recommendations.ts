@@ -28,18 +28,35 @@ function declinedStreakKey(valence: Answer, category: Category | null): string {
   return `${valence}:${category ?? "general"}`;
 }
 
-/** Walks the escalation tree from the root along `path`, step by step. `[]` means "the root" — callers
- * that need root's own children just use `root.children` directly instead of calling this with `[]`.
- * Returns null if any step along the way is missing — shouldn't happen for a real stored override
- * (every step it was built from once existed), but a defensive null beats a throw. */
+/** Follows a node's `ref` chain (if any) to the real node it ultimately points to — see
+ * EscalationNode.ref's own doc comment. A `seen` set guards against a cycle even though the admin UI
+ * only ever creates a single hop straight to an already-real (non-ref) node; a broken/cyclic chain
+ * resolves to null rather than looping forever. */
+export function derefNode(root: QuestionRoot, node: EscalationNode, seen: Set<string> = new Set()): EscalationNode | null {
+  if (!node.ref) return node;
+  const key = JSON.stringify(node.ref);
+  if (seen.has(key)) return null;
+  seen.add(key);
+  const target = resolveNode(root, node.ref);
+  return target ? derefNode(root, target, seen) : null;
+}
+
+/** Walks the escalation tree from the root along `path`, step by step, transparently following any
+ * `ref` (convergence) it passes through along the way — a referenced slot's own `children` is unused,
+ * so escalating further from it has to use the REAL target's children, not the empty shell's. `[]`
+ * means "the root" — callers that need root's own children just use `root.children` directly instead of
+ * calling this with `[]`. Returns null if any step along the way is missing — shouldn't happen for a
+ * real stored override (every step it was built from once existed), but a defensive null beats a throw. */
 export function resolveNode(root: QuestionRoot, path: EscalationPath): EscalationNode | null {
   let node: EscalationNode | null = null;
   let children: EscalationChildren = root.children;
   for (const step of path) {
     const next = step.category === null ? (step.valence === "yes" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
     if (!next) return null;
-    node = next;
-    children = next.children;
+    const resolved = derefNode(root, next);
+    if (!resolved) return null;
+    node = resolved;
+    children = resolved.children;
   }
   return node;
 }
@@ -134,8 +151,12 @@ export function detectStreaks(
     return newRecs;
   }
 
-  const child = step.category === null ? (step.valence === "yes" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
-  if (!child) return newRecs; // nothing authored at this slot — no swap invite offered, no error
+  const slot = step.category === null ? (step.valence === "yes" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
+  if (!slot) return newRecs; // nothing authored at this slot — no swap invite offered, no error
+  // The slot itself might be a reference (see EscalationNode.ref) — its own fields are blank, so the
+  // nudge's content has to come from whatever it actually points to, not the empty shell.
+  const child = derefNode(root, slot);
+  if (!child) return newRecs;
 
   const candidatePath = [...currentPath, step];
 
