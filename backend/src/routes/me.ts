@@ -1,9 +1,9 @@
 import type { Env } from "../types";
 import { json } from "../http";
 import { getState, saveState, todayLocal } from "../state";
-import { getUser } from "../auth";
+import { getSessionToken, getUser } from "../auth";
 
-export async function handleMe(_request: Request, env: Env, userId: string): Promise<Response> {
+export async function handleMe(request: Request, env: Env, userId: string): Promise<Response> {
   const [state, user] = await Promise.all([getState(env, userId), getUser(env, userId)]);
 
   // /api/me is called on every app open and every tab switch — recording
@@ -29,5 +29,9 @@ export async function handleMe(_request: Request, env: Env, userId: string): Pro
     fcmTokenCount: state.fcmTokens.length,
     isAdmin: user?.isAdmin === true,
     homeNudge,
+    // Sessions minted before the frontend kept its own copy of the token live only in the cookie —
+    // hand it over while the cookie still works, so the session survives the browser later blocking
+    // it as third-party. Only when cookie-authenticated: a Bearer request already has its token.
+    ...(request.headers.has("Authorization") ? {} : { sessionToken: getSessionToken(request) ?? undefined }),
   });
 }
