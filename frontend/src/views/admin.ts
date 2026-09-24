@@ -340,42 +340,45 @@ function diffQuestionRoots(current: QuestionRoot, candidate: QuestionRoot): Diff
   return entries;
 }
 
-/** Push writes the whole live tree out (a full replace, KV is always the source of truth on that
- * direction); Pull reads it back but never writes to KV itself — it hands back a candidate tree the
- * admin reviews via diffQuestionRoots before "Apply" replaces config.questionRoot in memory, same as
- * any other edit (still needs the page's own "Save all changes" to actually go live). */
+/** Save is the only way anything goes out to the Sheet — it saves, then pushes the whole live tree (a
+ * full replace, KV is always the source of truth on that direction), so the Sheet can never drift from
+ * what's live and there's no separate push to wonder about. Pull reads it back but never writes to KV
+ * itself — it hands back a candidate tree the admin reviews via diffQuestionRoots before "Apply"
+ * replaces config.questionRoot in memory, same as any other edit (still needs Save to go live). */
 function renderSheetSyncSection(
-  pushStatus: string,
+  saving: boolean,
+  saveStatus: string,
   pullStatus: string,
   pullPreview: { root: QuestionRoot; diff: DiffEntry[] } | null,
-  handlers: { onPush: () => void; onPull: () => void; onApply: () => void; onCancel: () => void },
+  handlers: { onSave: () => void; onPull: () => void; onApply: () => void; onCancel: () => void },
 ): HTMLElement {
   const card = document.createElement("div");
   card.className = "card";
 
   const h = document.createElement("h3");
-  h.textContent = "Google Sheet sync";
+  h.textContent = "Save & Google Sheet";
   card.appendChild(h);
 
   const note = document.createElement("p");
   note.className = "muted";
   note.textContent =
-    "Save all changes below now pushes here automatically, so the Sheet never drifts from what's actually live. Use this button only to push again without changing anything else. Pull reads the Sheet back and shows exactly what would change before anything here is touched.";
+    "Save all changes makes every edit on this page live (trigger settings included) and updates the Sheet to match. Pull reads the Sheet back and shows exactly what would change before anything here is touched.";
   card.appendChild(note);
 
-  const pushRow = document.createElement("div");
-  const pushBtn = document.createElement("button");
-  pushBtn.type = "button";
-  pushBtn.className = "btn";
-  pushBtn.textContent = "Push to Sheet";
-  pushBtn.addEventListener("click", handlers.onPush);
-  pushRow.appendChild(pushBtn);
-  const pushStatusEl = document.createElement("span");
-  pushStatusEl.className = "muted";
-  pushStatusEl.style.marginLeft = "8px";
-  pushStatusEl.textContent = pushStatus;
-  pushRow.appendChild(pushStatusEl);
-  card.appendChild(pushRow);
+  const saveRow = document.createElement("div");
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.className = "btn btn-primary";
+  saveBtn.textContent = saving ? "Saving…" : "Save all changes";
+  if (saving) saveBtn.setAttribute("disabled", "true");
+  saveBtn.addEventListener("click", handlers.onSave);
+  saveRow.appendChild(saveBtn);
+  const saveStatusEl = document.createElement("span");
+  saveStatusEl.className = "muted";
+  saveStatusEl.style.marginLeft = "8px";
+  saveStatusEl.textContent = saveStatus;
+  saveRow.appendChild(saveStatusEl);
+  card.appendChild(saveRow);
 
   const pullRow = document.createElement("div");
   pullRow.style.marginTop = "10px";
@@ -543,24 +546,15 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
 
     const sheetCard = document.createElement("div");
     root.appendChild(sheetCard);
-    let pushStatus = "";
+    let saving = false;
+    let saveStatus = "";
     let pullStatus = "";
     let pullPreview: { root: QuestionRoot; diff: DiffEntry[] } | null = null;
     const renderSheetCard = () => {
       sheetCard.innerHTML = "";
       sheetCard.appendChild(
-        renderSheetSyncSection(pushStatus, pullStatus, pullPreview, {
-          onPush: async () => {
-            pushStatus = "Pushing…";
-            renderSheetCard();
-            try {
-              await api.pushQuestionsToSheet();
-              pushStatus = "Pushed.";
-            } catch (err) {
-              pushStatus = err instanceof Error ? err.message : "Push failed.";
-            }
-            renderSheetCard();
-          },
+        renderSheetSyncSection(saving, saveStatus, pullStatus, pullPreview, {
+          onSave: () => void saveAndPush(),
           onPull: async () => {
             pullStatus = "Pulling…";
             pullPreview = null;
@@ -582,7 +576,7 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
             if (!pullPreview) return;
             config.questionRoot = pullPreview.root;
             pullPreview = null;
-            pullStatus = "Applied — click Save all changes below to make it live.";
+            pullStatus = "Applied — click Save all changes to make it live.";
             currentPath = [];
             renderBoth();
             renderSheetCard();
@@ -601,39 +595,27 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
     // handlePushToSheet), so it only makes sense once the save has actually landed there — a save that
     // fails must not attempt it at all, or the Sheet would get whatever it last held, not what was edited.
     async function saveAndPush(): Promise<{ ok: true } | { ok: false; message: string }> {
-      try {
-        await api.saveAdminConfig(config);
-      } catch (err) {
-        return { ok: false, message: `Saving failed: ${err instanceof Error ? err.message : "unknown error"}` };
-      }
-      try {
-        await api.pushQuestionsToSheet();
-        pushStatus = "Pushed.";
-        return { ok: true };
-      } catch (err) {
-        pushStatus = err instanceof Error ? err.message : "Push failed.";
-        return { ok: false, message: `Saved, but the Sheet push failed: ${pushStatus}` };
-      } finally {
-        renderSheetCard();
-      }
+      saving = true;
+      saveStatus = "";
+      renderSheetCard();
+      const result = await (async (): Promise<{ ok: true } | { ok: false; message: string }> => {
+        try {
+          await api.saveAdminConfig(config);
+        } catch (err) {
+          return { ok: false, message: `Saving failed: ${err instanceof Error ? err.message : "unknown error"}` };
+        }
+        try {
+          await api.pushQuestionsToSheet();
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, message: `Saved, but the Sheet update failed: ${err instanceof Error ? err.message : "unknown error"}` };
+        }
+      })();
+      saving = false;
+      saveStatus = result.ok ? "Saved — the Sheet is up to date." : result.message;
+      renderSheetCard();
+      return result;
     }
-
-    const status = document.createElement("p");
-    status.className = "muted";
-
-    const saveBtn = document.createElement("button");
-    saveBtn.className = "btn btn-primary";
-    saveBtn.textContent = "Save all changes";
-    saveBtn.addEventListener("click", async () => {
-      saveBtn.textContent = "Saving…";
-      saveBtn.setAttribute("disabled", "true");
-      const result = await saveAndPush();
-      status.textContent = result.ok ? "Saved and pushed to Sheet." : result.message;
-      saveBtn.textContent = "Save all changes";
-      saveBtn.removeAttribute("disabled");
-    });
-    root.appendChild(saveBtn);
-    root.appendChild(status);
   } catch (err) {
     root.innerHTML = `<div class="card error">Couldn't load admin config.</div>`;
     console.error(err);
