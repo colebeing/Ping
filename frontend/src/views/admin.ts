@@ -343,8 +343,8 @@ function diffQuestionRoots(current: QuestionRoot, candidate: QuestionRoot): Diff
 /** Save is the only way anything goes out to the Sheet — it saves, then pushes the whole live tree (a
  * full replace, KV is always the source of truth on that direction), so the Sheet can never drift from
  * what's live and there's no separate push to wonder about. Pull reads it back but never writes to KV
- * itself — it hands back a candidate tree the admin reviews via diffQuestionRoots before "Apply"
- * replaces config.questionRoot in memory, same as any other edit (still needs Save to go live). */
+ * itself — it hands back a candidate tree the admin reviews via diffQuestionRoots, and only "Apply &
+ * save" replaces config.questionRoot and saves it (with the rest of the page's pending edits). */
 function renderSheetSyncSection(
   saving: boolean,
   saveStatus: string,
@@ -362,7 +362,7 @@ function renderSheetSyncSection(
   const note = document.createElement("p");
   note.className = "muted";
   note.textContent =
-    "Save all changes makes every edit on this page live (trigger settings included) and updates the Sheet to match. Pull reads the Sheet back and shows exactly what would change before anything here is touched.";
+    "Save all changes makes every edit on this page live (trigger settings included) and updates the Sheet to match. Pull reads the Sheet back and shows exactly what would change; Apply & save then makes it live.";
   card.appendChild(note);
 
   const saveRow = document.createElement("div");
@@ -438,7 +438,7 @@ function renderSheetSyncSection(
       const applyBtn = document.createElement("button");
       applyBtn.type = "button";
       applyBtn.className = "btn btn-primary";
-      applyBtn.textContent = "Apply";
+      applyBtn.textContent = "Apply & save";
       applyBtn.addEventListener("click", handlers.onApply);
       actionRow.appendChild(applyBtn);
     }
@@ -572,13 +572,19 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
             }
             renderSheetCard();
           },
-          onApply: () => {
+          // Reviewing the diff IS the confirmation step, so applying saves straight away rather than
+          // leaving the pulled tree sitting unsaved behind a second button.
+          onApply: async () => {
             if (!pullPreview) return;
             config.questionRoot = pullPreview.root;
             pullPreview = null;
-            pullStatus = "Applied — click Save all changes to make it live.";
+            pullStatus = "";
             currentPath = [];
             renderBoth();
+            const result = await saveAndPush();
+            // On failure, the save status next to Save all changes already says exactly what happened
+            // (including "saved, but the Sheet update failed", where it IS live) — don't repeat it here.
+            pullStatus = result.ok ? "Applied and saved — it's live." : "";
             renderSheetCard();
           },
           onCancel: () => {
