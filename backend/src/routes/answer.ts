@@ -2,7 +2,7 @@ import { CATEGORIES, isLiveBlockId, type Answer, type AnswerRecord, type BlockId
 import { errorResponse, json, readJson } from "../http";
 import { getState, saveState, resolveDate, hasPushEnabled } from "../state";
 import { getQuestionRoot, getTriggerConfig } from "../config";
-import { detectStreaks, resolveOverrideContent } from "../recommendations";
+import { detectStreaks, pendingReturnInvite, resolveOverrideContent } from "../recommendations";
 import { getUser } from "../auth";
 import { sendRecommendationPush } from "../push";
 
@@ -72,6 +72,15 @@ export async function handleAnswer(request: Request, env: Env, userId: string): 
   };
   if (existingIdx !== -1) state.answers[existingIdx] = record;
   else state.answers.push(record);
+
+  // Answering at all (e.g. an older notification's quick-answer) means the question isn't going
+  // unanswered anymore — a still-open step-back invite is moot, so it resolves the same as a decline:
+  // the current question stays and the unanswered clock restarts.
+  const returnInvite = pendingReturnInvite(state);
+  if (returnInvite) {
+    returnInvite.status = "declined";
+    returnInvite.resolvedAt = record.timestamp;
+  }
 
   await saveState(env, userId, state);
 

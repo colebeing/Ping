@@ -2,7 +2,7 @@ import { isBlockId, isLiveBlockId, type FollowupPrompt, type Env } from "../type
 import { errorResponse, json } from "../http";
 import { getState, saveState, todayLocal, resolveDate } from "../state";
 import { getConfig, getQuestionRoot, getTriggerConfig } from "../config";
-import { checkRetirement, resolveNode, resolveOverrideContent } from "../recommendations";
+import { checkUnanswered, pendingReturnInvite, resolveNode, resolveOverrideContent } from "../recommendations";
 
 export async function handleGetQuestion(request: Request, env: Env, userId: string): Promise<Response> {
   const url = new URL(request.url);
@@ -13,10 +13,10 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
   const today = todayLocal(state.cadence.timezone);
   const date = resolveDate(state.cadence.timezone, url.searchParams.get("date"));
 
-  // Override retirement is always evaluated against real "today", regardless of which date's card is being viewed.
-  const before = JSON.stringify(state.activeOverride);
-  checkRetirement(state, today, await getTriggerConfig(env));
-  if (JSON.stringify(state.activeOverride) !== before) await saveState(env, userId, state);
+  // The unanswered step-back check is always evaluated against real "today", regardless of which date's
+  // card is being viewed.
+  const [root, thresholds] = await Promise.all([getQuestionRoot(env), getTriggerConfig(env)]);
+  if (checkUnanswered(state, root, thresholds)) await saveState(env, userId, state);
 
   // The account's single active override (if any) applies across all four live blocks — irrelevant to
   // a legacy block, which never had one.
@@ -29,7 +29,6 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
   let yes: FollowupPrompt;
   let no: FollowupPrompt;
   if (isLiveBlockId(block)) {
-    const root = await getQuestionRoot(env);
     if (existingAnswer) {
       // Resolve against the escalation-tree node that was actually active the moment THIS answer was
       // given (root if the account was still on its routine question then), never today's
@@ -82,8 +81,12 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
   // was accepted, or was declined — no reason for it to disappear once acted on, or once the day it
   // fired stops being "today".
   const recommendation = existingAnswer
-    ? (state.recommendationHistory.find((n) => n.block === block && n.asOfTimestamp === existingAnswer.timestamp) ?? null)
+    ? (state.recommendationHistory.find((n) => n.trigger !== "unanswered" && n.block === block && n.asOfTimestamp === existingAnswer.timestamp) ?? null)
     : null;
+
+  // A pending step-back invite (see checkUnanswered) is asked in place of today's still-unanswered
+  // question — never on a past day in History, and never over an answer already given.
+  const returnInvite = isLiveBlockId(block) && date === today && !existingAnswer ? (pendingReturnInvite(state) ?? null) : null;
 
   return json({
     block,
@@ -92,5 +95,6 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
     overridden: Boolean(override),
     existingAnswer: existingAnswer ? { ...existingAnswer, followup } : null,
     recommendation,
+    returnInvite,
   });
 }

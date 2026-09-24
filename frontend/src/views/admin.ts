@@ -1123,7 +1123,13 @@ function renderTriggersSection(config: AdminConfig): HTMLElement {
       (v) => (config.triggers.generalNoThreshold = v),
     ),
   );
-  card.appendChild(numberField("Retire an accepted suggestion after (days)", config.triggers.retireAfterDays, (v) => (config.triggers.retireAfterDays = v)));
+  card.appendChild(
+    numberField(
+      "Offer a step back after this many days with no answers",
+      config.triggers.returnAfterUnansweredDays,
+      (v) => (config.triggers.returnAfterUnansweredDays = v),
+    ),
+  );
 
   return card;
 }

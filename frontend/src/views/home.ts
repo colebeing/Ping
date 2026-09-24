@@ -150,7 +150,7 @@ export async function renderHome(root: HTMLElement, onSettings: () => void): Pro
       const container = document.createElement("div");
       container.className = block === current ? "today-hero" : "";
       root.appendChild(container);
-      void mountBlockCard(container, block, today, () => void refreshNudge());
+      void mountBlockCard(container, block, today, () => void refreshNudge(), () => void renderHome(root, onSettings));
     }
 
     const toggle = document.createElement("button");

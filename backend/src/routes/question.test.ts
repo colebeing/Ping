@@ -28,10 +28,10 @@ function buildRoot(): QuestionRoot {
 function buildEnv(state: UserState, root: QuestionRoot): { env: Env; configKV: FakeKV } {
   const configKV = new FakeKV();
   configKV.seed("config:question-root", root);
-  // checkRetirement runs against the real wall-clock date on every request — a huge retireAfterDays
-  // keeps it from retiring activeOverride out from under a fixture whose acceptedAt is a fixed past
-  // date, which isn't what these tests are about.
-  configKV.seed("config:triggers", { categoryYesThreshold: 3, categoryNoThreshold: 3, generalYesThreshold: 3, generalNoThreshold: 3, retireAfterDays: 999999 });
+  // checkUnanswered runs against the real wall-clock date on every request — a huge
+  // returnAfterUnansweredDays keeps it from offering a step-back invite out from under a fixture whose
+  // acceptedAt is a fixed past date, which isn't what these tests are about.
+  configKV.seed("config:triggers", { categoryYesThreshold: 3, categoryNoThreshold: 3, generalYesThreshold: 3, generalNoThreshold: 3, returnAfterUnansweredDays: 999999 });
   const stateKV = new FakeKV();
   stateKV.seed("state:user-1", state);
   return { env: { CONFIG_KV: configKV, STATE_KV: stateKV } as unknown as Env, configKV };

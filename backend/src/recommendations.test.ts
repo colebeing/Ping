@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   acceptRecommendation,
-  checkRetirement,
+  checkUnanswered,
   declineRecommendation,
   derefNode,
   detectStreaks,
   isUnfinishedNode,
+  pendingReturnInvite,
   resolveNode,
   resolveOverrideContent,
+  RETURN_TO_ROUTINE_INVITE,
 } from "./recommendations";
 import { defaultState } from "./state";
 import { makeNode } from "./test/helpers";
@@ -18,7 +20,7 @@ const THRESHOLDS: TriggerConfig = {
   categoryNoThreshold: 3,
   generalYesThreshold: 3,
   generalNoThreshold: 3,
-  retireAfterDays: 7,
+  returnAfterUnansweredDays: 3,
 };
 
 function rootWith(children: Partial<QuestionRoot["children"]> = {}): QuestionRoot {
@@ -285,7 +287,7 @@ describe("acceptRecommendation / declineRecommendation", () => {
   });
 });
 
-describe("checkRetirement", () => {
+describe("checkUnanswered / pendingReturnInvite", () => {
   function accepted(overrides: Partial<UserState["activeOverride"]> = {}): NonNullable<UserState["activeOverride"]> {
     return {
       path: [{ valence: "yes", category: "people" }],
@@ -301,32 +303,57 @@ describe("checkRetirement", () => {
 
   it("does nothing when no override is active", () => {
     const state = defaultState();
-    checkRetirement(state, "2024-02-01", THRESHOLDS);
-    expect(state.activeOverride).toBeUndefined();
+    expect(checkUnanswered(state, rootWith(), THRESHOLDS, new Date("2024-02-01"))).toBeNull();
+    expect(state.recommendationHistory).toHaveLength(0);
   });
 
-  it("does nothing before retireAfterDays has elapsed", () => {
+  it("does nothing before returnAfterUnansweredDays has elapsed", () => {
     const state: UserState = { ...defaultState(), activeOverride: accepted() };
-    checkRetirement(state, "2024-01-05", THRESHOLDS); // only 4 days, threshold is 7
-    expect(state.activeOverride).toBeDefined();
+    // only 2 full days since acceptedAt, threshold is 3
+    expect(checkUnanswered(state, rootWith(), THRESHOLDS, new Date("2024-01-03"))).toBeNull();
+    expect(pendingReturnInvite(state)).toBeUndefined();
   });
 
-  it("retires once the threshold holds with no 'no' answer since acceptance", () => {
-    const override = accepted();
-    const state: UserState = { ...defaultState(), activeOverride: override };
-    checkRetirement(state, "2024-01-08", THRESHOLDS); // exactly 7 days, no answers at all
-    expect(state.activeOverride).toBeUndefined();
-    expect(state.retiredOverrides).toEqual([override]);
+  it("offers a step-back invite once the threshold holds with no answers at all", () => {
+    const state: UserState = { ...defaultState(), activeOverride: accepted() };
+    // exactly 4 full days since acceptedAt, no answers at all
+    const invite = checkUnanswered(state, rootWith(), THRESHOLDS, new Date("2024-01-05"));
+    expect(invite).not.toBeNull();
+    expect(invite?.trigger).toBe("unanswered");
+    expect(invite?.status).toBe("pending");
+    // The override's own path is a single step, so its parent is the root itself.
+    expect(invite?.node.inviteQuestion).toBe(RETURN_TO_ROUTINE_INVITE);
+    expect(pendingReturnInvite(state)).toEqual(invite);
   });
 
-  it("does not retire if any live-block answer since acceptance was 'no'", () => {
-    const override = accepted();
+  it("offers the parent node's own invite when stepping back to a real authored node, not the root", () => {
+    const parent = makeNode({ label: "parent" });
+    const root = rootWith({ yes: { people: parent } });
+    const deepPath = [
+      { valence: "yes" as const, category: "people" as const },
+      { valence: "yes" as const, category: "impact" as const },
+    ];
+    const state: UserState = { ...defaultState(), activeOverride: accepted({ path: deepPath }) };
+    const invite = checkUnanswered(state, root, THRESHOLDS, new Date("2024-01-05"));
+    expect(invite?.node.inviteQuestion).toBe(parent.inviteQuestion);
+    expect(invite?.path).toEqual([{ valence: "yes", category: "people" }]);
+  });
+
+  it("does not trigger if any live-block answer was given since acceptance — the clock restarts from it", () => {
     const state: UserState = {
       ...defaultState(),
-      activeOverride: override,
-      answers: [answer({ date: "2024-01-03", block: "q2", answer: "no", category: "impact" })],
+      activeOverride: accepted(),
+      answers: [answer({ date: "2024-01-03", block: "q2", answer: "no", category: "impact", timestamp: "2024-01-03T08:00:00.000Z" })],
     };
-    checkRetirement(state, "2024-01-08", THRESHOLDS);
-    expect(state.activeOverride).toEqual(override);
+    // 2 days since that answer (not 4 days since acceptedAt) — still under threshold
+    expect(checkUnanswered(state, rootWith(), THRESHOLDS, new Date("2024-01-05"))).toBeNull();
+  });
+
+  it("never re-offers while a step-back invite is already pending", () => {
+    const state: UserState = { ...defaultState(), activeOverride: accepted() };
+    const first = checkUnanswered(state, rootWith(), THRESHOLDS, new Date("2024-01-05"));
+    expect(first).not.toBeNull();
+    expect(checkUnanswered(state, rootWith(), THRESHOLDS, new Date("2024-01-10"))).toBeNull();
+    expect(state.recommendationHistory).toHaveLength(1);
   });
 });

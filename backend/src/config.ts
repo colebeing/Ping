@@ -62,7 +62,7 @@ export const DEFAULT_TRIGGERS: TriggerConfig = {
   categoryNoThreshold: 3,
   generalYesThreshold: 3,
   generalNoThreshold: 3,
-  retireAfterDays: 7,
+  returnAfterUnansweredDays: 3,
 };
 
 // Phrased as an explicit "Would you like to...?" confirmation, deliberately distinct in voice from the
@@ -270,16 +270,21 @@ export async function getFullAdminConfig(env: Env): Promise<FullAdminConfig> {
 export async function getTriggerConfig(env: Env): Promise<TriggerConfig> {
   const stored = await env.CONFIG_KV.get<TriggerConfig>("config:triggers", "json");
   if (!stored) return DEFAULT_TRIGGERS;
-  if ("categoryYesThreshold" in stored) return stored;
+  // The old retireAfterDays ("held N days with no 'no'") is dropped rather than carried into
+  // returnAfterUnansweredDays — a different rule entirely, so its tuned value (7) doesn't transfer.
+  const { retireAfterDays: _dropped, ...rest } = stored as TriggerConfig & { retireAfterDays?: number };
+  if ("categoryYesThreshold" in rest) {
+    return { ...rest, returnAfterUnansweredDays: rest.returnAfterUnansweredDays ?? DEFAULT_TRIGGERS.returnAfterUnansweredDays };
+  }
 
-  const old = stored as unknown as { streakThreshold?: number; retireAfterDays?: number };
+  const old = stored as unknown as { streakThreshold?: number };
   const legacy = old.streakThreshold ?? DEFAULT_TRIGGERS.categoryYesThreshold;
   return {
     categoryYesThreshold: legacy,
     categoryNoThreshold: legacy,
     generalYesThreshold: legacy,
     generalNoThreshold: legacy,
-    retireAfterDays: old.retireAfterDays ?? DEFAULT_TRIGGERS.retireAfterDays,
+    returnAfterUnansweredDays: DEFAULT_TRIGGERS.returnAfterUnansweredDays,
   };
 }
 

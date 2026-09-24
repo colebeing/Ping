@@ -38,6 +38,12 @@ type Step =
   // Only reached from "recommendation" when the invitation's own node has a digIn — a one-time pick
   // among up to 4 admin-defined options before the swap actually takes effect. See DigIn's doc comment.
   | { kind: "digIn"; recommendation: RecommendationNudge; next: DoneStep }
+  // Asked in place of the question itself when the swapped-in question went unanswered for a few days
+  // (see the backend's checkUnanswered): its parent's swap invite, or a plain "go back to your usual
+  // check-in?". Resolving it either way changes what every one of today's cards should show, so it
+  // hands off to onQuestionChanged rather than stepping on to a follow-up.
+  | { kind: "returnInvite"; invite: RecommendationNudge }
+  | { kind: "returnDigIn"; invite: RecommendationNudge }
   | DoneStep;
 
 /**
@@ -46,14 +52,24 @@ type Step =
  * (every day shown, so old ones can be filled in too, not just viewed).
  * `onDone` fires once, the moment this block's category gets picked — lets a
  * caller react live (e.g. History unlocking Evening once Morning completes).
+ * `onQuestionChanged` fires once a step-back invite is accepted or declined — defaults to re-mounting
+ * just this card; Home passes a full re-render so every other card showing the same invite updates too.
  */
-export async function mountBlockCard(container: HTMLElement, block: BlockId, date?: string, onDone?: () => void): Promise<void> {
+export async function mountBlockCard(
+  container: HTMLElement,
+  block: BlockId,
+  date?: string,
+  onDone?: () => void,
+  onQuestionChanged?: () => void,
+): Promise<void> {
   container.innerHTML = `<div class="card">Loading…</div>`;
   try {
     const q = await api.getQuestion(block, date);
     let step: Step;
 
-    if (!q.existingAnswer) {
+    if (!q.existingAnswer && q.returnInvite) {
+      step = { kind: "returnInvite", invite: q.returnInvite };
+    } else if (!q.existingAnswer) {
       step = { kind: "question" };
     } else if (!q.existingAnswer.category) {
       // Answered yes/no already (e.g. from a notification action) but the
@@ -92,7 +108,8 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
 
       const question = document.createElement("span");
       question.className = "block-question";
-      question.textContent = q.text;
+      question.textContent =
+        step.kind === "returnInvite" ? step.invite.node.inviteQuestion : step.kind === "returnDigIn" ? step.invite.node.digIn!.prompt : q.text;
       header.appendChild(question);
 
       if (step.kind === "done") {
@@ -151,6 +168,24 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
         wrap.appendChild(row);
 
         card.appendChild(wrap);
+      } else if (step.kind === "returnInvite") {
+        const row = document.createElement("div");
+        row.className = "btn-row";
+        const current = step;
+        row.append(
+          button("Yes", "btn btn-primary", () => resolveReturnInvite(current.invite, true)),
+          button("No, keep my current question", "btn", () => resolveReturnInvite(current.invite, false)),
+        );
+        card.appendChild(row);
+      } else if (step.kind === "returnDigIn") {
+        const grid = document.createElement("div");
+        grid.className = "option-grid";
+        const invite = step.invite;
+        invite.node.digIn!.options.forEach((option, index) => {
+          if (!option.label) return;
+          grid.appendChild(button(option.label, "btn", () => void api.acceptRecommendation(invite.id, index).then(questionChanged)));
+        });
+        card.appendChild(grid);
       } else if (step.kind === "digIn") {
         const digIn = step.recommendation.node.digIn!;
         const wrap = document.createElement("div");
@@ -228,6 +263,24 @@ export async function mountBlockCard(container: HTMLElement, block: BlockId, dat
 
       container.innerHTML = "";
       container.appendChild(card);
+    };
+
+    const questionChanged = () => (onQuestionChanged ? onQuestionChanged() : void mountBlockCard(container, block, date, onDone));
+
+    const resolveReturnInvite = async (invite: RecommendationNudge, accept: boolean) => {
+      if (!accept) {
+        await api.declineRecommendation(invite.id);
+        questionChanged();
+        return;
+      }
+      // Same as a streak invite: a digIn node needs one of its options picked before it can be accepted.
+      if (invite.node.digIn) {
+        step = { kind: "returnDigIn", invite };
+        paint();
+        return;
+      }
+      await api.acceptRecommendation(invite.id);
+      questionChanged();
     };
 
     const submitAnswer = async (answer: Answer) => {

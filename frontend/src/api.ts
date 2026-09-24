@@ -38,6 +38,9 @@ export interface QuestionResponse {
   /** Whichever swap invitation this exact answer earned, if any — stays attached indefinitely (any
    * date, any status), not just for today's own card while still unresolved. See blockCard.ts. */
   recommendation: RecommendationNudge | null;
+  /** A pending step-back invite, asked in place of this question — only ever set on today's
+   * still-unanswered cards. */
+  returnInvite: RecommendationNudge | null;
 }
 
 export interface AnswerResponse {
@@ -68,7 +71,8 @@ export interface TriggerConfig {
   categoryNoThreshold: number;
   generalYesThreshold: number;
   generalNoThreshold: number;
-  retireAfterDays: number;
+  /** Full days in a row with no answers before a swapped-in question offers its parent's invite. */
+  returnAfterUnansweredDays: number;
 }
 
 /** One step down the escalation tree: which valence-branch and which category (null = the general,
@@ -175,6 +179,9 @@ export interface RecommendationNudge extends NudgeBase {
   category: Category | null;
   valence: Answer;
   asOfTimestamp: string;
+  /** Absent/"streak" = earned by an answer. "unanswered" = a step back up the tree, offered in place of
+   * the question after it went unanswered for a few days (see QuestionResponse.returnInvite). */
+  trigger?: "streak" | "unanswered";
 }
 
 /** Earned at follow-up totals 1/3/10 while push is off — renders at most one at a time on Home. */

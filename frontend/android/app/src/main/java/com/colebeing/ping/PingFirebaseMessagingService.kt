@@ -47,7 +47,10 @@ class PingFirebaseMessagingService : FirebaseMessagingService() {
             val inviteQuestion = message.data["inviteQuestion"] ?: return
             val digInPrompt = message.data["digInPrompt"]
             val digInOptions = message.data["digInOptions"]?.let(::parseDigInOptions)
-            showRecommendationNotification(this, recommendationId, inviteQuestion, digInPrompt, digInOptions)
+            // A "step back" invite (the active question went unanswered for a few days) carries its own
+            // title; a streak invite doesn't send one, so the long-standing default still applies.
+            val title = message.data["title"] ?: "Noticed a pattern"
+            showRecommendationNotification(this, recommendationId, inviteQuestion, digInPrompt, digInOptions, title)
             return
         }
 
@@ -218,6 +221,7 @@ fun showRecommendationNotification(
     inviteQuestion: String,
     digInPrompt: String? = null,
     digInOptions: List<Pair<Int, String>>? = null,
+    title: String = "Noticed a pattern",
 ) {
     ensureChannel(context)
     val yesExtras = mutableMapOf("recommendationId" to recommendationId, "accept" to "true")
@@ -240,7 +244,7 @@ fun showRecommendationNotification(
 
     val notification = NotificationCompat.Builder(context, PingFirebaseMessagingService.CHANNEL_ID)
         .setSmallIcon(android.R.drawable.ic_dialog_info)
-        .setContentTitle("Noticed a pattern")
+        .setContentTitle(title)
         .setStyle(NotificationCompat.DecoratedCustomViewStyle())
         .setCustomContentView(buildButtonRow())
         .setCustomBigContentView(buildButtonRow())

@@ -15,6 +15,7 @@ import {
   type TriggerConfig,
   type UserState,
 } from "./types";
+import { todayLocal } from "./state";
 
 function daysBetween(a: string, b: string): number {
   const msPerDay = 24 * 60 * 60 * 1000;
@@ -221,6 +222,17 @@ export function acceptRecommendation(state: UserState, recommendationId: string,
   // Never removed, whatever its prior status — accepting a long-declined (or still-pending) invite from
   // wherever it's shown is exactly the point of keeping this history around at all.
   rec.status = "accepted";
+  rec.resolvedAt = new Date().toISOString();
+  if (rec.trigger === "unanswered" && state.activeOverride) {
+    // A step back retires the question being stepped out of — the one place an override retires now.
+    state.retiredOverrides.push(state.activeOverride);
+  }
+  if (rec.path.length === 0) {
+    // Stepping back to the routine question itself — no override at all (declines reset as below).
+    state.activeOverride = undefined;
+    state.declinedStreaks = {};
+    return "ok";
+  }
   state.activeOverride = {
     path: rec.path,
     blockQuestions,
@@ -246,29 +258,84 @@ export function declineRecommendation(state: UserState, recommendationId: string
   const rec = state.recommendationHistory.find((n) => n.id === recommendationId);
   if (!rec) return false;
   rec.status = "declined";
-  state.declinedStreaks[declinedStreakKey(rec.valence, rec.category)] = { asOfTimestamp: rec.asOfTimestamp };
+  rec.resolvedAt = new Date().toISOString();
+  // A declined step-back isn't a streak — its resolvedAt restarts checkUnanswered's clock instead.
+  if (rec.trigger !== "unanswered") state.declinedStreaks[declinedStreakKey(rec.valence, rec.category)] = { asOfTimestamp: rec.asOfTimestamp };
   return true;
 }
 
-/** Lazily retires a promoted question once its boundary has held for thresholds.retireAfterDays with
- * no "no" answer since acceptance — reverts fully to the root question, not "one level back": a
- * QuestionOverride only ever carries its own current path, not a stack of previously-accepted parent
- * nodes, so a user who advanced root -> A -> B has retiring B jump straight back to root, discarding
- * A's accepted state too. Same flat-reset behavior this always had; the tree just gives it a real (if
- * rare) way to lose more state than a single-level override ever could. */
-export function checkRetirement(state: UserState, todayStr: string, thresholds: TriggerConfig): void {
-  const override = state.activeOverride;
-  if (!override) return;
-  const acceptedDate = override.acceptedAt.slice(0, 10);
-  if (daysBetween(acceptedDate, todayStr) < thresholds.retireAfterDays) return;
+/** Offered in place of a parent invite when the parent is the routine question itself, which has no
+ * invite question of its own. */
+export const RETURN_TO_ROUTINE_INVITE = "Want to go back to your usual check-in?";
 
-  // Held across the whole account now — a "no" on ANY of the four blocks means the swapped-in
-  // question isn't landing, since all four ask their own variant of the same active node.
-  const heldWithNoSetback = !state.answers.some(
-    (a) => (LIVE_BLOCKS as string[]).includes(a.block) && a.date >= acceptedDate && a.answer === "no",
-  );
-  if (heldWithNoSetback) {
-    state.retiredOverrides.push(override);
-    state.activeOverride = undefined;
+/** The still-open "step back" invite, if any — shown in place of the question on today's unanswered
+ * cards (routes/question.ts) and sent in place of the question's push (push.ts). */
+export function pendingReturnInvite(state: UserState): RecommendationNudge | undefined {
+  return state.recommendationHistory.find((n) => n.trigger === "unanswered" && n.status === "pending");
+}
+
+/**
+ * The only way a swapped-in question retires: it goes completely unanswered — no answer in any block —
+ * for thresholds.returnAfterUnansweredDays full calendar days in a row. Rather than silently switching
+ * the question back, this offers its parent's swap invite in the question's place (the parent being the
+ * routine question gets RETURN_TO_ROUTINE_INVITE instead, since the root has no invite of its own).
+ * Accepting steps back exactly one level (see acceptRecommendation); declining keeps the current
+ * question and restarts the clock from the decline. Answering at all — including a "no" — never counts
+ * against a question: only silence does. Lazy, like everything else here: run whenever the app asks for
+ * a question or a push is due, so it reaches notification-only users too. Returns the new invite (also
+ * pushed onto recommendationHistory), or null if nothing changed.
+ */
+export function checkUnanswered(state: UserState, root: QuestionRoot, thresholds: TriggerConfig, now = new Date()): RecommendationNudge | null {
+  const override = state.activeOverride;
+  if (!override || pendingReturnInvite(state)) return null;
+
+  const tz = state.cadence.timezone;
+  const localDate = (iso: string) => todayLocal(tz, new Date(iso));
+  // The clock starts from whichever came last: accepting this question, the latest answer given (by
+  // when it was given — backfilling a past day in History is engagement too), or declining a previous
+  // step-back invite from this same question.
+  const starts = [localDate(override.acceptedAt)];
+  for (const a of state.answers) {
+    if (isLiveBlockId(a.block)) starts.push(a.date, localDate(a.timestamp));
   }
+  for (const n of state.recommendationHistory) {
+    if (n.trigger === "unanswered" && n.resolvedAt && n.fromPath && pathsEqual(n.fromPath, override.path)) starts.push(localDate(n.resolvedAt));
+  }
+  const clockStart = starts.reduce((latest, d) => (d > latest ? d : latest));
+  // Answered Monday, then nothing Tuesday/Wednesday/Thursday (3 full days) — offered from Friday.
+  if (daysBetween(clockStart, todayLocal(tz, now)) <= thresholds.returnAfterUnansweredDays) return null;
+
+  // The parent's invite, if the parent is a real, finished node — otherwise (the parent is the routine
+  // question, or has since been removed/blanked in Admin) the fixed "go back to routine" invite.
+  let parentPath = override.path.slice(0, -1);
+  const parent = parentPath.length > 0 ? resolveNode(root, parentPath) : null;
+  let node: RecommendationNudge["node"];
+  if (parent && !isUnfinishedNode(parent)) {
+    node = { inviteQuestion: parent.inviteQuestion, blockQuestions: parent.blockQuestions, yes: parent.yes, no: parent.no, digIn: parent.digIn };
+  } else {
+    parentPath = [];
+    node = { inviteQuestion: RETURN_TO_ROUTINE_INVITE, blockQuestions: root.blockQuestions, yes: root.yes, no: root.no };
+  }
+
+  const lastStep = parentPath[parentPath.length - 1];
+  const createdAt = now.toISOString();
+  const invite: RecommendationNudge = {
+    id: crypto.randomUUID(),
+    kind: "recommendation",
+    trigger: "unanswered",
+    status: "pending",
+    // Not tied to any answer or block — display/logging only (see RecommendationNudge.block).
+    block: LIVE_BLOCKS[0],
+    path: parentPath,
+    fromPath: override.path,
+    node,
+    category: lastStep?.category ?? null,
+    // The routine question has no step of its own — the valence of the branch being stepped out of.
+    valence: lastStep?.valence ?? override.path[0]?.valence ?? "yes",
+    // Never matches an AnswerRecord.timestamp, so routes/question.ts never attaches it to an answer.
+    asOfTimestamp: createdAt,
+    createdAt,
+  };
+  state.recommendationHistory.push(invite);
+  return invite;
 }

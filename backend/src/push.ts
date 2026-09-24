@@ -1,8 +1,8 @@
 import { buildPushPayload, type PushMessage, type PushSubscription as WebPushSubscription, type VapidKeys } from "@block65/webcrypto-web-push";
 import { LIVE_BLOCKS, isLiveBlockId, type BlockId, type Cadence, type Env, type LiveBlockId, type PushSubscriptionJSON, type RecommendationNudge } from "./types";
 import { getState, saveState, todayLocal } from "./state";
-import { getConfig, getQuestionRoot } from "./config";
-import { resolveOverrideContent } from "./recommendations";
+import { getConfig, getQuestionRoot, getTriggerConfig } from "./config";
+import { checkUnanswered, pendingReturnInvite, resolveOverrideContent } from "./recommendations";
 import { sendFcmPush, fcmConfigured, type SendOutcome } from "./fcm";
 
 /** Which of q1-q4 are actually live for this user right now (not skipped), and what time each is due. */
@@ -133,14 +133,19 @@ async function applyPushOutcome(env: Env, userId: string, block: BlockId, result
  * already lands the user in-app for the WHY follow-up, where a pending recommendation is already
  * shown inline, so a webpush notification here would just be redundant.
  */
-export async function sendRecommendationPush(env: Env, tokens: string[], nudge: RecommendationNudge): Promise<{ token: string; outcome: SendOutcome }[]> {
+export async function sendRecommendationPush(
+  env: Env,
+  tokens: string[],
+  nudge: RecommendationNudge,
+  title = "Noticed a pattern",
+): Promise<{ token: string; outcome: SendOutcome }[]> {
   if (!fcmConfigured(env) || tokens.length === 0) return [];
 
   const data: Record<string, string> = {
     kind: "recommendation",
-    // title/body drive iOS's real APNs alert directly (see fcm.ts) — Android ignores them and builds
-    // its own interactive layout instead, reading inviteQuestion below.
-    title: "Noticed a pattern",
+    // title/body drive iOS's real APNs alert directly (see fcm.ts); Android reads title for its own
+    // interactive layout's heading and inviteQuestion below for the rest.
+    title,
     body: nudge.node.inviteQuestion,
     recommendationId: nudge.id,
     inviteQuestion: nudge.node.inviteQuestion,
@@ -177,7 +182,11 @@ export async function checkAndNotifyUser(env: Env, userId: string): Promise<void
   if (state.pushSubscriptions.length === 0 && state.fcmTokens.length === 0) return;
 
   const today = todayLocal(state.cadence.timezone);
-  const [root, config] = await Promise.all([getQuestionRoot(env), getConfig(env)]);
+  const [root, config, thresholds] = await Promise.all([getQuestionRoot(env), getConfig(env), getTriggerConfig(env)]);
+  // Evaluated here too, not just when the app asks for a question — someone who's gone quiet is by
+  // definition not opening the app, so otherwise they'd never be offered the step back at all.
+  if (checkUnanswered(state, root, thresholds)) await saveState(env, userId, state);
+  const returnInvite = pendingReturnInvite(state);
 
   for (const { block, time } of activeBlockTimes(state.cadence)) {
     if (state.lastNotified[block] === today) continue;
@@ -186,10 +195,29 @@ export async function checkAndNotifyUser(env: Env, userId: string): Promise<void
     // interrupt for, so sending would just be noise.
     if (state.answers.some((a) => a.date === today && a.block === block)) continue;
 
-    const body = blockPushBody(state, block, root, config);
-    const result = await sendBlockPush(env, body, block, state.pushSubscriptions, state.fcmTokens);
+    const result = returnInvite
+      ? await sendReturnInvitePush(env, returnInvite, state.pushSubscriptions, state.fcmTokens)
+      : await sendBlockPush(env, blockPushBody(state, block, root, config), block, state.pushSubscriptions, state.fcmTokens);
     await applyPushOutcome(env, userId, block, result, /* markNotifiedIfSent */ true);
   }
+}
+
+/**
+ * The step-back invite (see checkUnanswered), sent at a check-in time in place of the question itself.
+ * Web push deliberately carries no `block`: the service worker only adds its one-tap Yes/No answer
+ * actions to a block notification, and those would answer the question this is replacing — without a
+ * block, tapping it just opens the app, where the invite is waiting on today's card. Native gets the
+ * same interactive accept/decline notification a streak invite uses.
+ */
+async function sendReturnInvitePush(env: Env, invite: RecommendationNudge, subs: PushSubscriptionJSON[], tokens: string[]): Promise<PushOutcome> {
+  const webpush: { sub: PushSubscriptionJSON; outcome: SendOutcome }[] = [];
+  for (const sub of subs) {
+    const outcome = await sendPush(env, sub, { data: JSON.stringify({ title: "Ping", body: invite.node.inviteQuestion }), options: { ttl: 3600 } });
+    webpush.push({ sub, outcome });
+  }
+  const fcm = await sendRecommendationPush(env, tokens, invite, "Ping");
+  const anySent = webpush.some((w) => w.outcome === "sent") || fcm.some((f) => f.outcome === "sent");
+  return { anySent, webpush, fcm };
 }
 
 /** On-demand send for testing — ignores cadence/lastNotified entirely, and never marks the block notified. */

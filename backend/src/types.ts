@@ -77,8 +77,9 @@ export interface TriggerConfig {
   categoryNoThreshold: number;
   generalYesThreshold: number;
   generalNoThreshold: number;
-  /** Days an accepted recommendation must hold (no "no" answer) before it retires. */
-  retireAfterDays: number;
+  /** Full calendar days in a row with no answers at all while a swapped-in question is active before
+   * its parent's swap invite is offered in its place — see recommendations.ts's checkUnanswered. */
+  returnAfterUnansweredDays: number;
 }
 
 /** One step down the escalation tree: which valence-branch ("yes" = do-more-of-what's-working,
@@ -234,6 +235,15 @@ export interface RecommendationNudge extends NudgeBase {
    * date: responses are counted globally across all four blocks now, so same-day responses need to be
    * told apart precisely. */
   asOfTimestamp: string;
+  /** Absent means "streak" (the original mechanic, earned by an answer). "unanswered" is a step back up
+   * the tree: the active swapped-in question went unanswered for returnAfterUnansweredDays, so this
+   * offers its parent (or, when the parent is the routine question, a fixed "go back" invite) — shown
+   * in place of the question itself rather than attached to any answer. See checkUnanswered. */
+  trigger?: "streak" | "unanswered";
+  /** For an "unanswered" invite: the active question's path it would step back from. */
+  fromPath?: EscalationPath;
+  /** When it was accepted or declined — restarts the unanswered clock after a decline. */
+  resolvedAt?: string;
 }
 
 /** Asks to enable push notifications — triggered by a global follow-up-count checkpoint, not tied to
