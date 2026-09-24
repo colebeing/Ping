@@ -150,6 +150,8 @@ export interface AdminConfig {
   blocks: Record<"1" | "2" | "combined", BlockContent>;
   triggers: TriggerConfig;
   questionRoot: QuestionRoot;
+  /** Read-only — the linked Google Sheet, when one is configured on the server. Ignored on save. */
+  sheetUrl?: string;
 }
 
 interface NudgeBase {

@@ -44,6 +44,12 @@ async function redeemGoogleHandoff(): Promise<void> {
 
 async function boot(): Promise<void> {
   await redeemGoogleHandoff();
+  // A password-reset email link's form lives on the auth screen — and since every visitor has at
+  // least an anonymous session, boot would otherwise always skip straight past it into the app.
+  if (new URLSearchParams(location.search).has("reset")) {
+    showAuth();
+    return;
+  }
   try {
     const me = await api.me();
     showApp(me.isAdmin);
@@ -51,17 +57,21 @@ async function boot(): Promise<void> {
     // Only a genuine "no session" (401) should mint a fresh anonymous account — a transient
     // network/5xx failure must never trigger that side effect for someone who actually already
     // has a valid session, so it falls back to the login screen instead.
-    if (err instanceof ApiError && err.status === 401) {
-      try {
-        await api.startAnonymous();
-        const me = await api.me();
-        showApp(me.isAdmin);
-      } catch {
-        showAuth();
-      }
-    } else {
-      showAuth();
-    }
+    if (err instanceof ApiError && err.status === 401) await startFresh();
+    else showAuth();
+  }
+}
+
+/** A brand-new anonymous account — the first-visit experience, and also where logging out lands,
+ * so logging out never leaves you at a sign-in wall you didn't ask for. Signing into an existing
+ * account is its own explicit choice (Settings' "Already have an account? Sign in"). */
+async function startFresh(): Promise<void> {
+  try {
+    await api.startAnonymous();
+    const me = await api.me();
+    showApp(me.isAdmin);
+  } catch {
+    showAuth();
   }
 }
 
@@ -131,6 +141,13 @@ function showApp(isAdmin: boolean): void {
   // need to route to.
   goToBlock = (_block) => goHome();
 
+  const teardown = () => {
+    tabs?.remove();
+    document.body.classList.remove("no-tabs");
+    // replaceState, not location.hash — that would fire this instance's own hashchange listener.
+    history.replaceState(null, "", location.pathname + location.search);
+  };
+
   const renderActive = () => {
     // Admin's question map/tree can run wide with real content — widen the shared #app container for
     // it specifically (gated by a min-width media query, so phone widths are untouched) rather than
@@ -140,11 +157,18 @@ function showApp(isAdmin: boolean): void {
     else if (active === "admin") void renderAdmin(content);
     else if (active === "analytics") void renderAnalytics(content);
     else
-      void renderSettings(content, goHome, () => {
-        tabs?.remove();
-        document.body.classList.remove("no-tabs");
-        showAuth();
-      });
+      void renderSettings(
+        content,
+        goHome,
+        () => {
+          teardown();
+          void startFresh();
+        },
+        () => {
+          teardown();
+          showAuth();
+        },
+      );
     if (tabs) {
       for (const btn of Array.from(tabs.children) as HTMLButtonElement[]) {
         btn.classList.toggle("active", btn.dataset.tab === active);

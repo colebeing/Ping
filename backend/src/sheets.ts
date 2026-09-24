@@ -181,6 +181,16 @@ function optionsFromColumns(row: string[], startCol: number): Record<Category, s
   return Object.fromEntries(CATEGORIES.map((c, i) => [c, row[startCol + i] ?? ""])) as Record<Category, string>;
 }
 
+/** Morning/Midday/Afternoon/Evening from 4 consecutive columns starting at `startCol`. A blank later
+ * timeslot falls back to Morning — the same "one question for every timeslot until you diverge"
+ * convention Admin's own editor uses (renderBlockQuestionsFields), so a row filled in with just its
+ * Morning question reads the same way in the Sheet as it would have in Admin. */
+function blockQuestionsFromColumns(row: string[], startCol: number): Record<LiveBlockId, string> {
+  const q1 = row[startCol] ?? "";
+  const or = (v: string | undefined) => (v?.trim() ? v : q1);
+  return { q1, q2: or(row[startCol + 1]), q3: or(row[startCol + 2]), q4: or(row[startCol + 3]) };
+}
+
 function parsePath(raw: string | undefined): EscalationPath | null {
   if (!raw) return null;
   let parsed: unknown;
@@ -271,7 +281,7 @@ export function reconstructTree(questionsValues: string[][], optionsValues: stri
       label: row[3] ?? "",
       refPath,
       inviteQuestion: row[6] ?? "",
-      blockQuestions: { q1: row[7] ?? "", q2: row[8] ?? "", q3: row[9] ?? "", q4: row[10] ?? "" },
+      blockQuestions: blockQuestionsFromColumns(row, 7),
       yes: { prompt: row[11] ?? "", options: optionsFromColumns(row, 12) },
       no: { prompt: row[16] ?? "", options: optionsFromColumns(row, 17) },
       digInPrompt: row[21] ?? "",
@@ -332,7 +342,7 @@ export function reconstructTree(questionsValues: string[][], optionsValues: stri
       errors.push(`Follow-up options row ${rowNum}: option # must be 1-4`);
       continue;
     }
-    const parsedRow: ParsedOptionRow = { key, optionNumber, label: row[3] ?? "", blockQuestions: { q1: row[4] ?? "", q2: row[5] ?? "", q3: row[6] ?? "", q4: row[7] ?? "" } };
+    const parsedRow: ParsedOptionRow = { key, optionNumber, label: row[3] ?? "", blockQuestions: blockQuestionsFromColumns(row, 4) };
     optionRows.push(parsedRow);
     const arr = optionsByKey.get(key) ?? [];
     arr.push(parsedRow);

@@ -113,7 +113,7 @@ function nodePreviewText(root: QuestionRoot, node: EscalationNode): string {
     const target = derefNode(root, node);
     return `→ ${target?.label || target?.inviteQuestion || "(broken reference)"}`;
   }
-  return node.inviteQuestion || "(no question text yet)";
+  return node.inviteQuestion || "(blank — fill it in on the Sheet)";
 }
 
 interface RefTarget {
@@ -202,6 +202,10 @@ const SLOTS: EscalationStep[] = [
   ...CATEGORY_ORDER.map((category) => ({ valence: "no" as const, category })),
   { valence: "no" as const, category: null },
 ];
+
+/** Adds a blank swap invite at `step` under the node at `parentPath` (whose children are `children`).
+ * See renderAdmin's own addInvite for what that actually does. */
+type AddInvite = (children: EscalationChildren, parentPath: EscalationPath, step: EscalationStep) => void;
 
 interface MapRow {
   path: EscalationPath;
@@ -467,6 +471,11 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
     const mapCard = document.createElement("div");
     root.appendChild(mapCard);
 
+    const inviteNotice = document.createElement("p");
+    inviteNotice.className = "muted";
+    inviteNotice.setAttribute("role", "status");
+    root.appendChild(inviteNotice);
+
     const treeCard = document.createElement("div");
     root.appendChild(treeCard);
 
@@ -499,11 +508,34 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
       mapExpanded = !mapExpanded;
       renderBoth();
     };
+    // Content is authored in the Sheet, not here — so adding a swap invite doesn't jump into an editor
+    // for it. It adds the blank node, saves, and pushes, so a blank row is waiting in the Sheet to fill
+    // in (then Pull from Sheet brings it back). A blank node is never offered to users in the meantime
+    // (see the backend's isUnfinishedNode). Saving here saves every other pending edit on the page too.
+    const addInvite: AddInvite = (children, parentPath, step) => {
+      setChildAt(children, step, emptyNode());
+      renderBoth();
+      const where = collectRows(config.questionRoot).find((r) => JSON.stringify(r.path) === JSON.stringify([...parentPath, step]))?.label ?? "that slot";
+      inviteNotice.textContent = `Adding a blank swap invite at ${where}…`;
+      void saveAndPush().then((result) => {
+        inviteNotice.textContent = result.ok
+          ? `Blank swap invite added at ${where} — fill in its row in the Sheet, then Pull from Sheet.`
+          : `Added at ${where}. ${result.message}`;
+        if (result.ok && config.sheetUrl) {
+          const link = document.createElement("a");
+          link.href = config.sheetUrl;
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.textContent = " Open Sheet →";
+          inviteNotice.appendChild(link);
+        }
+      });
+    };
     const renderBoth = () => {
       mapCard.innerHTML = "";
-      mapCard.appendChild(renderQuestionMap(config.questionRoot, navigateFromMap, mapExpanded, toggleMap));
+      mapCard.appendChild(renderQuestionMap(config.questionRoot, navigateFromMap, mapExpanded, toggleMap, addInvite));
       treeCard.innerHTML = "";
-      treeCard.appendChild(renderNodeEditor(config.questionRoot, currentPath, navigate));
+      treeCard.appendChild(renderNodeEditor(config.questionRoot, currentPath, navigate, addInvite));
     };
     renderBoth();
 
@@ -565,6 +597,27 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
     };
     renderSheetCard();
 
+    // Shared by Save all changes and addInvite. The Sheet push reads the tree back out of KV (see
+    // handlePushToSheet), so it only makes sense once the save has actually landed there — a save that
+    // fails must not attempt it at all, or the Sheet would get whatever it last held, not what was edited.
+    async function saveAndPush(): Promise<{ ok: true } | { ok: false; message: string }> {
+      try {
+        await api.saveAdminConfig(config);
+      } catch (err) {
+        return { ok: false, message: `Saving failed: ${err instanceof Error ? err.message : "unknown error"}` };
+      }
+      try {
+        await api.pushQuestionsToSheet();
+        pushStatus = "Pushed.";
+        return { ok: true };
+      } catch (err) {
+        pushStatus = err instanceof Error ? err.message : "Push failed.";
+        return { ok: false, message: `Saved, but the Sheet push failed: ${pushStatus}` };
+      } finally {
+        renderSheetCard();
+      }
+    }
+
     const status = document.createElement("p");
     status.className = "muted";
 
@@ -574,23 +627,8 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
     saveBtn.addEventListener("click", async () => {
       saveBtn.textContent = "Saving…";
       saveBtn.setAttribute("disabled", "true");
-      try {
-        await api.saveAdminConfig(config);
-        // The Sheet push reads the tree back out of KV (see handlePushToSheet), so it only makes sense
-        // once the save above has actually landed there — a save that fails must not attempt this at
-        // all, or the Sheet would silently get pushed whatever it last held, not what was just edited.
-        try {
-          await api.pushQuestionsToSheet();
-          pushStatus = "Pushed.";
-          status.textContent = "Saved and pushed to Sheet.";
-        } catch (err) {
-          pushStatus = err instanceof Error ? err.message : "Push failed.";
-          status.textContent = `Saved, but the Sheet push failed: ${pushStatus}`;
-        }
-        renderSheetCard();
-      } catch (err) {
-        status.textContent = err instanceof Error ? err.message : "Save failed.";
-      }
+      const result = await saveAndPush();
+      status.textContent = result.ok ? "Saved and pushed to Sheet." : result.message;
       saveBtn.textContent = "Save all changes";
       saveBtn.removeAttribute("disabled");
     });
@@ -612,7 +650,13 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
  * wide table isn't needed on every visit — `expanded`/`onToggle` are owned by renderAdmin, not this
  * function, so the state survives this card being torn down and rebuilt on every navigation.
  */
-function renderQuestionMap(root: QuestionRoot, navigate: (path: EscalationPath) => void, expanded: boolean, onToggle: () => void): HTMLElement {
+function renderQuestionMap(
+  root: QuestionRoot,
+  navigate: (path: EscalationPath) => void,
+  expanded: boolean,
+  onToggle: () => void,
+  addInvite: AddInvite,
+): HTMLElement {
   const card = document.createElement("div");
   card.className = "card";
 
@@ -680,13 +724,12 @@ function renderQuestionMap(root: QuestionRoot, navigate: (path: EscalationPath) 
       btn.type = "button";
       btn.className = "map-slot-btn" + (existing ? " filled" : " empty");
       btn.textContent = existing ? "✓" : "–";
-      btn.title = existing ? nodePreviewText(root, existing) : "Not yet configured";
+      btn.title = existing ? nodePreviewText(root, existing) : "Not yet configured — click to add a blank swap invite to the Sheet";
       btn.addEventListener("click", () => {
-        // Mirrors renderLeaf's own "add a swap invite" affordance — an empty slot has nothing to
-        // navigate to yet, so create the blank node first, same as clicking it from inside the tree
-        // editor itself would.
-        if (!existing) setChildAt(children, slot, emptyNode());
-        navigate([...row.path, slot]);
+        // Same as renderLeaf's own "add a swap invite": an empty slot gets a blank row in the Sheet,
+        // staying right here rather than jumping into the editor for it.
+        if (existing) navigate([...row.path, slot]);
+        else addInvite(children, row.path, slot);
       });
       cell.appendChild(btn);
       tr.appendChild(cell);
@@ -709,7 +752,7 @@ function renderQuestionMap(root: QuestionRoot, navigate: (path: EscalationPath) 
  * once for the No-path). `navigate` re-renders this same card at a different path — see renderAdmin's
  * `renderBoth`.
  */
-function renderNodeEditor(root: QuestionRoot, path: EscalationPath, navigate: (path: EscalationPath) => void): HTMLElement {
+function renderNodeEditor(root: QuestionRoot, path: EscalationPath, navigate: (path: EscalationPath) => void, addInvite: AddInvite): HTMLElement {
   const card = document.createElement("div");
   card.className = "card";
 
@@ -832,8 +875,8 @@ function renderNodeEditor(root: QuestionRoot, path: EscalationPath, navigate: (p
   card.appendChild(renderFollowupEditor(no, "No → WHY"));
 
   const children = path.length === 0 ? root.children : node!.children;
-  card.appendChild(renderBranchGroup("Yes-path swap invites", "yes", yes, children, root, path, navigate));
-  card.appendChild(renderBranchGroup("No-path swap invites", "no", no, children, root, path, navigate));
+  card.appendChild(renderBranchGroup("Yes-path swap invites", "yes", yes, children, root, path, navigate, addInvite));
+  card.appendChild(renderBranchGroup("No-path swap invites", "no", no, children, root, path, navigate, addInvite));
 
   return card;
 }
@@ -912,6 +955,7 @@ function renderBranchGroup(
   root: QuestionRoot,
   path: EscalationPath,
   navigate: (path: EscalationPath) => void,
+  addInvite: AddInvite,
 ): HTMLElement {
   const wrap = document.createElement("div");
   wrap.style.marginTop = "16px";
@@ -925,9 +969,9 @@ function renderBranchGroup(
   // Each leaf's true label is this node's own configured option text for that category — the literal
   // button text a real user taps — falling back to CATEGORY_LABEL only while it's still blank.
   for (const cat of CATEGORY_ORDER) {
-    wrap.appendChild(renderLeaf(prompt.options[cat] || CATEGORY_LABEL[cat], { valence, category: cat }, children, root, path, navigate));
+    wrap.appendChild(renderLeaf(prompt.options[cat] || CATEGORY_LABEL[cat], { valence, category: cat }, children, root, path, navigate, addInvite));
   }
-  wrap.appendChild(renderLeaf("Mixed", { valence, category: null }, children, root, path, navigate));
+  wrap.appendChild(renderLeaf("Mixed", { valence, category: null }, children, root, path, navigate, addInvite));
 
   return wrap;
 }
@@ -939,6 +983,7 @@ function renderLeaf(
   root: QuestionRoot,
   path: EscalationPath,
   navigate: (path: EscalationPath) => void,
+  addInvite: AddInvite,
 ): HTMLElement {
   const row = document.createElement("div");
   row.className = "leaf-row";
@@ -966,10 +1011,7 @@ function renderLeaf(
     addBtn.type = "button";
     addBtn.className = "link-btn";
     addBtn.textContent = "Not yet configured — add a swap invite";
-    addBtn.addEventListener("click", () => {
-      setChildAt(children, step, emptyNode());
-      navigate([...path, step]);
-    });
+    addBtn.addEventListener("click", () => addInvite(children, path, step));
     row.appendChild(addBtn);
 
     // Convergence (see EscalationNode.ref's own doc comment): as a path goes deeper, it can lead back

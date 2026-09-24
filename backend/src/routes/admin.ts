@@ -3,7 +3,8 @@ import { errorResponse, json, readJson } from "../http";
 import { getFullAdminConfig, saveFullAdminConfig, getConfigAuditLog, type FullAdminConfig } from "../config";
 
 export async function handleGetAdminConfig(_request: Request, env: Env): Promise<Response> {
-  return json(await getFullAdminConfig(env));
+  const sheetUrl = env.SHEETS_SPREADSHEET_ID ? `https://docs.google.com/spreadsheets/d/${env.SHEETS_SPREADSHEET_ID}/edit` : undefined;
+  return json({ ...(await getFullAdminConfig(env)), sheetUrl });
 }
 
 export async function handleSaveAdminConfig(request: Request, env: Env, userId: string): Promise<Response> {

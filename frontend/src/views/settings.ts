@@ -19,11 +19,28 @@ async function endSession(): Promise<void> {
     } catch (err) {
       console.error("[ping] firebase sign-out failed", err);
     }
+  } else {
+    // Otherwise this browser keeps getting the old account's notifications — and a Yes/No tap on one
+    // would now be recorded against whichever account is signed in next. The fresh account asks to
+    // enable notifications again, which subscribes anew under the new account.
+    try {
+      const sub = await (await navigator.serviceWorker?.getRegistration())?.pushManager.getSubscription();
+      await sub?.unsubscribe();
+    } catch (err) {
+      console.error("[ping] push unsubscribe failed", err);
+    }
   }
   await api.logout();
 }
 
-export async function renderSettings(root: HTMLElement, onHome: () => void, onLogout: () => void): Promise<void> {
+/** onLogout lands on a fresh anonymous account; onSignIn (the claim card's "Sign in" link) is the one
+ * path that deliberately goes to the sign-in screen. */
+export async function renderSettings(
+  root: HTMLElement,
+  onHome: () => void,
+  onLogout: () => void,
+  onSignIn: () => void,
+): Promise<void> {
   root.innerHTML = `<h2>Settings</h2><div class="card">Loading…</div>`;
   try {
     const me = await api.me();
@@ -55,23 +72,27 @@ export async function renderSettings(root: HTMLElement, onHome: () => void, onLo
       me.email !== null
         ? `<p class="muted">Signed in as</p><h3>${escapeHtml(me.email)}</h3>`
         : `<p class="muted">Using Ping without an account</p><h3>Not saved yet</h3>`;
-    const logout = document.createElement("button");
-    logout.className = "btn";
-    logout.textContent = "Log out";
-    logout.addEventListener("click", async () => {
-      await endSession();
-      onLogout();
-    });
-    account.appendChild(logout);
+    // Only for saved accounts: logging out of an unsaved one would silently discard every answer on it
+    // (it lands on a fresh anonymous account that looks identical), with no way to ever get back in.
+    if (me.email !== null) {
+      const logout = document.createElement("button");
+      logout.className = "btn";
+      logout.textContent = "Log out";
+      logout.addEventListener("click", async () => {
+        await endSession();
+        onLogout();
+      });
+      account.appendChild(logout);
+    }
     root.appendChild(account);
 
     if (me.email === null) {
       root.appendChild(
         renderClaimCard(
-          () => void renderSettings(root, onHome, onLogout),
+          () => void renderSettings(root, onHome, onLogout, onSignIn),
           async () => {
             await endSession();
-            onLogout();
+            onSignIn();
           },
         ),
       );

@@ -28,6 +28,14 @@ function declinedStreakKey(valence: Answer, category: Category | null): string {
   return `${valence}:${category ?? "general"}`;
 }
 
+/** A swap invite added in Admin but not yet filled in (Admin adds blanks straight into the Sheet to be
+ * authored there) — treated exactly like an unauthored slot until it has its two genuinely required
+ * fields: the invite question and the Morning question (the other timeslots fall back to Morning on
+ * pull). Otherwise a real user could be offered an invite with no text. */
+export function isUnfinishedNode(node: EscalationNode): boolean {
+  return !node.inviteQuestion.trim() || !node.blockQuestions.q1.trim();
+}
+
 /** Follows a node's `ref` chain (if any) to the real node it ultimately points to — see
  * EscalationNode.ref's own doc comment. A `seen` set guards against a cycle even though the admin UI
  * only ever creates a single hop straight to an already-real (non-ref) node; a broken/cyclic chain
@@ -156,7 +164,7 @@ export function detectStreaks(
   // The slot itself might be a reference (see EscalationNode.ref) — its own fields are blank, so the
   // nudge's content has to come from whatever it actually points to, not the empty shell.
   const child = derefNode(root, slot);
-  if (!child) return newRecs;
+  if (!child || isUnfinishedNode(child)) return newRecs;
 
   const candidatePath = [...currentPath, step];
 
