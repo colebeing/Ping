@@ -44,7 +44,7 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
   }
 
   const token = await createSession(env, user.id);
-  return json({ email: user.email }, 200, { "Set-Cookie": sessionCookieHeader(token) });
+  return json({ email: user.email, sessionToken: token }, 200, { "Set-Cookie": sessionCookieHeader(token) });
 }
 
 export async function handleLogout(request: Request, env: Env): Promise<Response> {

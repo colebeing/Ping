@@ -6,6 +6,7 @@ import { currentBlockForCadence } from "./today";
 import { CHEVRON_LEFT_SVG, HOME_ICON_SVG } from "../icons";
 import { getNativeGoogleIdToken } from "../googleSignIn";
 import { BLOCK_LABEL } from "../blockCard";
+import { OAUTH_ERROR_MESSAGES } from "./auth";
 
 /** Shared by the Log out button and the claim card's "Sign in" link — both need the exact same
  * teardown (Ping's own session, plus the native Google account picker's separately-cached Firebase
@@ -238,12 +239,37 @@ function renderClaimCard(onClaimed: () => void, onSignIn: () => void): HTMLEleme
   const errorEl = document.createElement("div");
   errorEl.className = "error";
 
-  // Web's Google button is a full-page redirect that never hands back an ID token to claim with —
-  // password claim covers web; native gets the extra option since it can hand one over directly.
-  if (Capacitor.isNativePlatform()) {
-    const google = document.createElement("button");
-    google.className = "btn btn-primary";
-    google.textContent = "Continue with Google";
+  // A failed web Google claim redirects back here with ?claim-error= (see the backend's
+  // handleGoogleCallback) — shown once, then stripped so a refresh doesn't repeat it.
+  const claimError = new URLSearchParams(location.search).get("claim-error");
+  if (claimError) {
+    errorEl.textContent = OAUTH_ERROR_MESSAGES[claimError] ?? "Couldn't save your account.";
+    history.replaceState(null, "", location.pathname + location.hash);
+  }
+
+  const google = document.createElement("button");
+  google.className = "btn btn-primary";
+  google.textContent = "Continue with Google";
+
+  if (!Capacitor.isNativePlatform()) {
+    // Web's Google flow is a full-page redirect that never hands back an ID token to claim with, so
+    // the backend remembers which account to claim and the redirect finishes it (landing back via
+    // main.ts's google-handoff, same as a plain sign-in).
+    google.addEventListener("click", async () => {
+      errorEl.textContent = "";
+      google.setAttribute("disabled", "true");
+      try {
+        const { url } = await api.startGoogleClaim();
+        window.location.href = url;
+      } catch (err) {
+        console.error("[ping] starting web google claim failed", err);
+        const detail = describeError(err);
+        errorEl.textContent = detail ? `Couldn't save your account: ${detail}` : "Couldn't save your account.";
+        google.removeAttribute("disabled");
+      }
+    });
+    card.append(google, errorEl);
+  } else {
     google.addEventListener("click", async () => {
       errorEl.textContent = "";
       google.setAttribute("disabled", "true");
@@ -265,8 +291,6 @@ function renderClaimCard(onClaimed: () => void, onSignIn: () => void): HTMLEleme
       }
     });
     card.append(google, errorEl);
-  } else {
-    card.appendChild(errorEl);
   }
 
   const emailGroup = document.createElement("div");

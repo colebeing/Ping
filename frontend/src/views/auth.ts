@@ -5,10 +5,11 @@ import { describeError } from "../errorDetail";
 
 type Mode = "start" | "forgot" | "forgot-sent" | "reset" | "reset-done";
 
-const OAUTH_ERROR_MESSAGES: Record<string, string> = {
+export const OAUTH_ERROR_MESSAGES: Record<string, string> = {
   "google-auth-failed": "Google sign-in didn't work. Try again?",
   "google-auth-expired": "That sign-in attempt expired. Try again.",
   "google-email-unverified": "That Google account's email isn't verified.",
+  "google-claim-failed": "Couldn't save your account to that Google account. Try again?",
 };
 
 export function renderAuth(root: HTMLElement, onAuthed: () => void): void {

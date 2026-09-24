@@ -5,6 +5,22 @@ const SHELL_FILES = ["./manifest.webmanifest", "./icon.svg"];
 // keep in sync with frontend/.env.example / the deploy workflow's VITE_API_BASE.
 const API_BASE = "https://ping-backend.colebeing.workers.dev";
 
+// The page mirrors its session token here (see api.ts's setSessionToken) because a service worker
+// can't read localStorage, and browsers blocking third-party cookies never send the session cookie
+// to the Worker. Keep these two names in sync with api.ts.
+const AUTH_CACHE_NAME = "ping-auth";
+const AUTH_CACHE_URL = "./__session-token";
+
+async function authHeaders() {
+  try {
+    const res = await (await caches.open(AUTH_CACHE_NAME)).match(AUTH_CACHE_URL);
+    const token = res ? await res.text() : "";
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_FILES)));
   self.skipWaiting();
@@ -12,7 +28,7 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))),
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME && k !== AUTH_CACHE_NAME).map((k) => caches.delete(k)))),
   );
   self.clients.claim();
 });
@@ -109,7 +125,7 @@ async function reportNotificationClick(block) {
     await fetch(`${API_BASE}/api/push/clicked`, {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
       body: JSON.stringify({ block }),
     });
   } catch (err) {
@@ -122,7 +138,7 @@ async function answerFromNotification(block, answer) {
     const res = await fetch(`${API_BASE}/api/answer`, {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
       body: JSON.stringify({ block, answer }),
     });
     // fetch() only rejects on a network-level failure, not an HTTP error

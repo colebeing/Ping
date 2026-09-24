@@ -10,8 +10,8 @@ import { handleSubscribe, handleGetVapidPublicKey, handleTestPush, handleRegiste
 import { handleGetAdminConfig, handleSaveAdminConfig, handleGetConfigAuditLog } from "./routes/admin";
 import { handlePushToSheet, handlePullFromSheet } from "./routes/sheets";
 import { handleGetAnalytics, handleGetUserProfile } from "./routes/analytics";
-import { handleGoogleStart, handleGoogleCallback, handleGoogleTokenSignIn } from "./routes/googleAuth";
-import { handleStartAnonymous, handleClaimWithPassword, handleClaimWithGoogle } from "./routes/account";
+import { handleGoogleStart, handleGoogleCallback, handleGoogleTokenSignIn, handleGoogleHandoff } from "./routes/googleAuth";
+import { handleStartAnonymous, handleClaimWithPassword, handleClaimWithGoogle, handleStartGoogleClaim } from "./routes/account";
 import { PushScheduler } from "./scheduler";
 
 export { PushScheduler };
@@ -37,6 +37,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === "/api/auth/google/start" && method === "GET") return handleGoogleStart(request, env);
   if (pathname === "/api/auth/google/callback" && method === "GET") return handleGoogleCallback(request, env);
   if (pathname === "/api/auth/google/token" && method === "POST") return handleGoogleTokenSignIn(request, env);
+  if (pathname === "/api/auth/google/handoff" && method === "POST") return handleGoogleHandoff(request, env);
   if (pathname === "/api/account/start" && method === "POST") return handleStartAnonymous(request, env);
 
   // Everything below requires a session.
@@ -55,6 +56,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === "/api/push/clicked" && method === "POST") return handleNotificationClicked(request, env, userId);
   if (pathname === "/api/account/claim/password" && method === "POST") return handleClaimWithPassword(request, env, userId);
   if (pathname === "/api/account/claim/google" && method === "POST") return handleClaimWithGoogle(request, env, userId);
+  if (pathname === "/api/account/claim/google/start" && method === "POST") return handleStartGoogleClaim(request, env, userId);
 
   const dismissNudgeMatch = pathname.match(/^\/api\/nudges\/([^/]+)\/dismiss$/);
   if (dismissNudgeMatch && method === "POST") return handleDismissNudge(request, env, userId, dismissNudgeMatch[1]);

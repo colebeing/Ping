@@ -8,16 +8,17 @@ import {
   getSessionToken,
   getUser,
   hashPassword,
+  normalizeEmail,
   sessionCookieHeader,
 } from "../auth";
-import { googleConfigured, verifyGoogleIdToken } from "../google-auth";
+import { buildGoogleAuthUrl, callbackUrl, createOAuthState, googleConfigured, verifyGoogleIdToken } from "../google-auth";
 
 /** The zero-friction entry point — mints an anonymous account and session with no credentials at
  * all, so "grant notifications" can be the only thing standing between opening Ping and using it. */
 export async function handleStartAnonymous(_request: Request, env: Env): Promise<Response> {
   const user = await createAnonymousUser(env);
   const token = await createSession(env, user.id);
-  return json({ email: null }, 201, { "Set-Cookie": sessionCookieHeader(token) });
+  return json({ email: null, sessionToken: token }, 201, { "Set-Cookie": sessionCookieHeader(token) });
 }
 
 interface ClaimPasswordBody {
@@ -39,7 +40,7 @@ export async function handleClaimWithPassword(request: Request, env: Env, userId
     const oldToken = getSessionToken(request);
     if (oldToken) await destroySession(env, oldToken);
     const token = await createSession(env, user.id);
-    return json({ email: user.email }, 200, { "Set-Cookie": sessionCookieHeader(token) });
+    return json({ email: user.email, sessionToken: token }, 200, { "Set-Cookie": sessionCookieHeader(token) });
   } catch (err) {
     return errorResponse(err instanceof Error ? err.message : "Couldn't save your account", 409);
   }
@@ -50,9 +51,8 @@ interface ClaimGoogleBody {
 }
 
 /**
- * Native-only for now — the web Google flow is a full-page redirect that never hands the frontend
- * an ID token to POST here, unlike the native picker's signInWithGoogle(). Web users can still claim
- * with email+password, which works everywhere.
+ * Native's path — the native picker's signInWithGoogle() hands over an ID token directly. Web's
+ * redirect flow never does, so it claims via handleStartGoogleClaim below instead.
  *
  * Unlike password-claim below, a taken email here isn't a conflict to reject: verifyGoogleIdToken
  * already cryptographically proves the user owns this email (a freely-typed password proves nothing
@@ -72,13 +72,39 @@ export async function handleClaimWithGoogle(request: Request, env: Env, userId: 
   if (!info.email_verified) return errorResponse("That Google account's email isn't verified", 401);
 
   try {
-    const existing = await getUser(env, info.email);
-    const user: UserRecord = existing ?? (await claimAccount(env, userId, info.email, null));
-    const oldToken = getSessionToken(request);
-    if (oldToken) await destroySession(env, oldToken);
-    const token = await createSession(env, user.id);
-    return json({ email: user.email }, 200, { "Set-Cookie": sessionCookieHeader(token) });
+    const token = await claimOrLoginWithGoogleEmail(env, userId, getSessionToken(request), info.email);
+    return json({ email: normalizeEmail(info.email), sessionToken: token }, 200, { "Set-Cookie": sessionCookieHeader(token) });
   } catch (err) {
     return errorResponse(err instanceof Error ? err.message : "Couldn't save your account", 409);
   }
+}
+
+/**
+ * The claim decision above, shared with the web redirect flow (googleAuth.ts's callback): attach a
+ * verified Google email to the anonymous account, or just log into it if it already has an account.
+ * Replaces the anonymous session with a fresh one under the resulting account; returns its token.
+ */
+export async function claimOrLoginWithGoogleEmail(
+  env: Env,
+  fromUserId: string,
+  fromSessionToken: string | null,
+  email: string,
+): Promise<string> {
+  const existing = await getUser(env, email);
+  const user: UserRecord = existing ?? (await claimAccount(env, fromUserId, email, null));
+  if (fromSessionToken) await destroySession(env, fromSessionToken);
+  return createSession(env, user.id);
+}
+
+/**
+ * Web's counterpart to handleClaimWithGoogle: the web Google flow is a full-page redirect that never
+ * hands the frontend an ID token, so instead this records which anonymous account to claim in the
+ * OAuth state and returns the Google URL for the frontend to navigate to. The callback finishes it.
+ */
+export async function handleStartGoogleClaim(request: Request, env: Env, userId: string): Promise<Response> {
+  if (!googleConfigured(env)) return errorResponse("Google sign-in isn't configured on the server", 501);
+  const user = await getUser(env, userId);
+  if (user?.email) return errorResponse("This account already has an email saved", 409);
+  const state = await createOAuthState(env, { fromUserId: userId, fromSessionToken: getSessionToken(request) });
+  return json({ url: buildGoogleAuthUrl(env, callbackUrl(request.url), state) });
 }

@@ -4,6 +4,10 @@ const STATE_TTL_SECONDS = 10 * 60; // 10 minutes — plenty for the redirect rou
 
 interface OAuthState {
   expiresAt: number;
+  /** Set when this redirect was started from Settings' "Save your account" card — the callback then
+   * attaches the Google email to this anonymous account instead of signing into a separate one. A
+   * full-page redirect can't carry the session's Bearer header, so it rides along in the state. */
+  claim?: { fromUserId: string; fromSessionToken: string | null };
 }
 
 export function googleConfigured(env: Env): boolean {
@@ -14,10 +18,11 @@ export function callbackUrl(requestUrl: string): string {
   return `${new URL(requestUrl).origin}/api/auth/google/callback`;
 }
 
-/** The nonce itself is the CSRF protection for the OAuth redirect round-trip — no invite gating anymore, so there's nothing else to carry through it. */
-export async function createOAuthState(env: Env): Promise<string> {
+/** The nonce itself is the CSRF protection for the OAuth redirect round-trip; the only other thing
+ * carried through it is an optional claim target (see OAuthState.claim). */
+export async function createOAuthState(env: Env, claim?: OAuthState["claim"]): Promise<string> {
   const nonce = crypto.randomUUID();
-  const record: OAuthState = { expiresAt: Date.now() + STATE_TTL_SECONDS * 1000 };
+  const record: OAuthState = { expiresAt: Date.now() + STATE_TTL_SECONDS * 1000, ...(claim ? { claim } : {}) };
   await env.STATE_KV.put(`oauth-state:${nonce}`, JSON.stringify(record), { expirationTtl: STATE_TTL_SECONDS });
   return nonce;
 }

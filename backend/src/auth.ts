@@ -147,6 +147,29 @@ export async function createSession(env: Env, userId: string): Promise<string> {
   return token;
 }
 
+/** How long the one-time code handed back after the web Google redirect stays redeemable — it only
+ * ever needs to cover the page load right after that redirect. */
+const GOOGLE_HANDOFF_TTL_SECONDS = 120;
+
+/**
+ * The web Google flow ends on a full-page redirect from this Worker's origin, so it can't return the
+ * session token in a JSON body like every other sign-in path. Putting the token itself in the URL
+ * would leave a long-lived credential in browser history — instead the redirect carries a
+ * short-lived, single-use code the frontend immediately trades for the real token.
+ */
+export async function createGoogleHandoffCode(env: Env, sessionToken: string): Promise<string> {
+  const code = crypto.randomUUID();
+  await env.STATE_KV.put(`google-handoff:${code}`, sessionToken, { expirationTtl: GOOGLE_HANDOFF_TTL_SECONDS });
+  return code;
+}
+
+export async function consumeGoogleHandoffCode(env: Env, code: string): Promise<string | null> {
+  const token = await env.STATE_KV.get(`google-handoff:${code}`);
+  if (!token) return null;
+  await env.STATE_KV.delete(`google-handoff:${code}`);
+  return token;
+}
+
 export async function destroySession(env: Env, token: string): Promise<void> {
   await env.STATE_KV.delete(`session:${token}`);
 }
@@ -180,13 +203,22 @@ export function clearSessionCookieHeader(): string {
   return `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0`;
 }
 
-export async function requireAuth(request: Request, env: Env): Promise<string | null> {
-  // The native Android wrapper's background notification-action handler has no cookie jar to send —
-  // it authenticates with its own long-lived device token instead, checked first.
+function bearerToken(request: Request): string | null {
   const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) {
-    const deviceToken = await env.STATE_KV.get<DeviceTokenRecord>(`devicetoken:${authHeader.slice(7)}`, "json");
+  return authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+}
+
+export async function requireAuth(request: Request, env: Env): Promise<string | null> {
+  // A Bearer token is either the native Android wrapper's long-lived device token (its background
+  // notification-action handler has no cookie jar) or a plain session token. The web frontend sends
+  // its session this way too, because browsers that block third-party cookies (Safari, Brave, Firefox
+  // strict, Chrome incognito) never send the cookie from GitHub Pages to this Worker's origin.
+  const bearer = bearerToken(request);
+  if (bearer) {
+    const deviceToken = await env.STATE_KV.get<DeviceTokenRecord>(`devicetoken:${bearer}`, "json");
     if (deviceToken) return deviceToken.userId;
+    const session = await env.STATE_KV.get<SessionRecord>(`session:${bearer}`, "json");
+    if (session) return session.userId;
   }
 
   const cookies = parseCookies(request.headers.get("Cookie"));
@@ -197,7 +229,11 @@ export async function requireAuth(request: Request, env: Env): Promise<string | 
   return session.userId;
 }
 
+/** Whichever session this request is using — Bearer first, matching requireAuth — so logout and
+ * claim destroy the right one. A device token isn't a session:* key, so "destroying" it is a no-op. */
 export function getSessionToken(request: Request): string | null {
+  const bearer = bearerToken(request);
+  if (bearer) return bearer;
   const cookies = parseCookies(request.headers.get("Cookie"));
   return cookies[SESSION_COOKIE] ?? null;
 }

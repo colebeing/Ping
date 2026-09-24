@@ -1,6 +1,14 @@
 import type { Env } from "../types";
 import { errorResponse, json, readJson } from "../http";
-import { getUser, createUserFromGoogle, createSession, sessionCookieHeader } from "../auth";
+import {
+  getUser,
+  createUserFromGoogle,
+  createSession,
+  sessionCookieHeader,
+  createGoogleHandoffCode,
+  consumeGoogleHandoffCode,
+} from "../auth";
+import { claimOrLoginWithGoogleEmail } from "./account";
 import {
   googleConfigured,
   callbackUrl,
@@ -37,25 +45,43 @@ export async function handleGoogleCallback(request: Request, env: Env): Promise<
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const stateParam = url.searchParams.get("state");
-  if (!code || !stateParam) return Response.redirect(`${front}/?error=google-auth-failed`, 302);
-
-  const state = await consumeOAuthState(env, stateParam);
-  if (!state) return Response.redirect(`${front}/?error=google-auth-expired`, 302);
+  // Consumed before anything else can fail, so a failed claim attempt (including cancelling on
+  // Google's own screen, which still returns the state) lands back on Settings where it started —
+  // not the sign-in screen, which an anonymous user already in the app would never see.
+  const state = stateParam ? await consumeOAuthState(env, stateParam) : null;
+  const fail = (kind: string) =>
+    Response.redirect(state?.claim ? `${front}/?claim-error=${kind}#settings` : `${front}/?error=${kind}`, 302);
+  if (!code || !stateParam) return fail("google-auth-failed");
+  if (!state) return fail("google-auth-expired");
 
   try {
     const redirectUri = callbackUrl(request.url);
     const tokens = await exchangeCodeForToken(env, code, redirectUri);
     const info = await getGoogleUserInfo(tokens.access_token);
-    if (!info.email_verified) return Response.redirect(`${front}/?error=google-email-unverified`, 302);
+    if (!info.email_verified) return fail("google-email-unverified");
 
-    const sessionToken = await loginOrSignUpWithGoogleEmail(env, info.email);
+    let sessionToken: string;
+    if (state.claim) {
+      try {
+        sessionToken = await claimOrLoginWithGoogleEmail(env, state.claim.fromUserId, state.claim.fromSessionToken, info.email);
+      } catch (err) {
+        console.error("Google claim failed", err);
+        return fail("google-claim-failed");
+      }
+    } else {
+      sessionToken = await loginOrSignUpWithGoogleEmail(env, info.email);
+    }
+    // The cookie alone isn't enough — browsers blocking third-party cookies won't send it from the
+    // frontend's origin — so also hand back a one-time code (in the fragment, never sent to any
+    // server) that the frontend trades for the token via handleGoogleHandoff below.
+    const handoffCode = await createGoogleHandoffCode(env, sessionToken);
     return new Response(null, {
       status: 302,
-      headers: { Location: `${front}/`, "Set-Cookie": sessionCookieHeader(sessionToken) },
+      headers: { Location: `${front}/#google-handoff=${handoffCode}`, "Set-Cookie": sessionCookieHeader(sessionToken) },
     });
   } catch (err) {
     console.error("Google auth callback failed", err);
-    return Response.redirect(`${front}/?error=google-auth-failed`, 302);
+    return fail("google-auth-failed");
   }
 }
 
@@ -79,5 +105,14 @@ export async function handleGoogleTokenSignIn(request: Request, env: Env): Promi
   if (!info.email_verified) return errorResponse("That Google account's email isn't verified", 401);
 
   const sessionToken = await loginOrSignUpWithGoogleEmail(env, info.email);
-  return json({ email: info.email }, 200, { "Set-Cookie": sessionCookieHeader(sessionToken) });
+  return json({ email: info.email, sessionToken }, 200, { "Set-Cookie": sessionCookieHeader(sessionToken) });
+}
+
+/** Trades the one-time code from handleGoogleCallback's redirect for the session token itself. */
+export async function handleGoogleHandoff(request: Request, env: Env): Promise<Response> {
+  const { code } = await readJson<{ code: string }>(request);
+  if (!code) return errorResponse("code is required", 400);
+  const sessionToken = await consumeGoogleHandoffCode(env, code);
+  if (!sessionToken) return errorResponse("That sign-in attempt expired. Try again.", 401);
+  return json({ sessionToken });
 }

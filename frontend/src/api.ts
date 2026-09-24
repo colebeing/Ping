@@ -259,17 +259,62 @@ class ApiError extends Error {
   }
 }
 
+// The session cookie alone can't be relied on: GitHub Pages and the Worker are different sites, and
+// any browser blocking third-party cookies (Safari, Brave, Firefox strict, Chrome incognito) silently
+// drops it — which used to bounce those visitors straight to the login screen, since even the
+// anonymous account's session never stuck. So the token is also kept here and sent as a Bearer
+// header; the cookie stays as a fallback for sessions minted before this existed.
+const SESSION_TOKEN_KEY = "ping_session_token";
+// sw.js can't read localStorage, but it can read the Cache API — mirrored there so notification
+// Yes/No taps authenticate the same way. Keep these two names in sync with sw.js.
+const AUTH_CACHE_NAME = "ping-auth";
+const AUTH_CACHE_URL = "./__session-token";
+
+function getSessionToken(): string | null {
+  try {
+    return localStorage.getItem(SESSION_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setSessionToken(token: string | null): void {
+  try {
+    if (token) localStorage.setItem(SESSION_TOKEN_KEY, token);
+    else localStorage.removeItem(SESSION_TOKEN_KEY);
+  } catch {
+    // Storage blocked — the cookie fallback is all that's left.
+  }
+  if ("caches" in window) {
+    void caches
+      .open(AUTH_CACHE_NAME)
+      .then(async (cache) => {
+        if (token) await cache.put(AUTH_CACHE_URL, new Response(token));
+        else await cache.delete(AUTH_CACHE_URL);
+      })
+      .catch(() => {});
+  }
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getSessionToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     ...init,
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new ApiError(body.error ?? "Request failed", res.status);
   }
-  return res.json() as Promise<T>;
+  const body = await res.json();
+  // Every endpoint that mints a session (anonymous start, login, Google, claim) returns it here.
+  if (typeof body?.sessionToken === "string") setSessionToken(body.sessionToken);
+  return body as T;
 }
 
 export const api = {
@@ -277,7 +322,16 @@ export const api = {
    * and signing in are the same action, so there's no separate signup call. */
   login: (email: string, password: string) =>
     request<{ email: string }>("/api/login", { method: "POST", body: JSON.stringify({ email, password }) }),
-  logout: () => request<{ ok: true }>("/api/logout", { method: "POST" }),
+  logout: async () => {
+    try {
+      return await request<{ ok: true }>("/api/logout", { method: "POST" });
+    } finally {
+      setSessionToken(null);
+    }
+  },
+  /** Redeems the one-time code the web Google redirect lands back with (see main.ts's boot). */
+  redeemGoogleHandoff: (code: string) =>
+    request<{ sessionToken: string }>("/api/auth/google/handoff", { method: "POST", body: JSON.stringify({ code }) }),
   me: () =>
     request<{
       email: string | null;
@@ -294,6 +348,8 @@ export const api = {
   startAnonymous: () => request<{ email: null }>("/api/account/start", { method: "POST" }),
   claimWithPassword: (email: string, password: string) =>
     request<{ email: string }>("/api/account/claim/password", { method: "POST", body: JSON.stringify({ email, password }) }),
+  /** Web's Google claim: returns Google's consent URL to navigate to; the redirect finishes the claim. */
+  startGoogleClaim: () => request<{ url: string }>("/api/account/claim/google/start", { method: "POST" }),
   claimWithGoogleIdToken: (idToken: string) =>
     request<{ email: string }>("/api/account/claim/google", { method: "POST", body: JSON.stringify({ idToken }) }),
 
@@ -347,7 +403,7 @@ export const api = {
    * show the whole list instead of just the first/only message. Never writes to KV — see the route's
    * own doc comment (backend/src/routes/sheets.ts). */
   pullQuestionsFromSheet: async (): Promise<{ root: QuestionRoot } | { errors: string[] }> => {
-    const res = await fetch(`${API_BASE}/api/admin/sheets/pull`, { credentials: "include" });
+    const res = await fetch(`${API_BASE}/api/admin/sheets/pull`, { credentials: "include", headers: authHeaders() });
     const body = await res.json().catch(() => ({}));
     if (res.ok) return body as { root: QuestionRoot };
     if (Array.isArray(body.errors)) return { errors: body.errors };

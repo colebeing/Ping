@@ -27,7 +27,23 @@ type Tab = "home" | "settings" | "admin" | "analytics";
 const app = document.getElementById("app");
 if (!app) throw new Error("Missing #app root element");
 
+/** The web Google redirect lands back with a one-time code in the fragment (see the backend's
+ * handleGoogleCallback) — trade it for the session token before anything reads the session. On
+ * failure, leave the auth screen's existing ?error= message for whenever it's shown. */
+async function redeemGoogleHandoff(): Promise<void> {
+  const match = location.hash.match(/^#google-handoff=([\w-]+)$/);
+  if (!match) return;
+  history.replaceState(null, "", location.pathname + location.search);
+  try {
+    await api.redeemGoogleHandoff(match[1]);
+  } catch (err) {
+    console.error("[ping] google handoff failed", err);
+    history.replaceState(null, "", `${location.pathname}?error=google-auth-expired`);
+  }
+}
+
 async function boot(): Promise<void> {
+  await redeemGoogleHandoff();
   try {
     const me = await api.me();
     showApp(me.isAdmin);

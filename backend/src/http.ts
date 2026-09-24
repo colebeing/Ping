@@ -50,7 +50,7 @@ export function handlePreflight(request: Request, env: Env): Response {
     headers: {
       ...corsHeaders(request, env),
       "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
     },
   });
 }
