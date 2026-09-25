@@ -67,7 +67,7 @@ npx wrangler secret put GOOGLE_CLIENT_SECRET
 
 Until both secrets are set, `/api/auth/google/start` returns 501 rather than breaking — verified. Google sign-in works the same as password signup: logging into an *existing* account (matched by email) or creating a *new* one both just work, no invite needed for either.
 
-Run locally: `npm run dev`. Deploy: `npm run deploy`.
+Run locally: `npm run dev`. Test: `npm test` (vitest — pure-function coverage of `recommendations.ts`'s escalation-tree/streak/override logic and the date-resolution rules in `state.ts`, plus a route-level regression test for `routes/question.ts`; nothing touches real KV). Deploy: `npm run deploy`.
 
 ## Frontend setup
 

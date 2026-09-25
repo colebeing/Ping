@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "generate-seed-fallback": "tsx scripts/generate-config-seed.ts",
     "seed": "wrangler kv key put --binding=CONFIG_KV config --path=./scripts/config-seed.json --remote && wrangler kv key put --binding=CONFIG_KV config:question-root --path=./scripts/question-root-seed.json --remote"
   },
@@ -13,6 +15,7 @@
     "@cloudflare/workers-types": "^5.20260825.1",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
+    "vitest": "^5.0.1",
     "wrangler": "^4.125.0"
   },
   "dependencies": {
