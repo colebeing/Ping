@@ -45,7 +45,7 @@ export function derefNode(root: QuestionRoot, node: EscalationNode, seen: Set<st
   const key = JSON.stringify(node.ref);
   if (seen.has(key)) return null;
   seen.add(key);
-  const target = resolveNode(root, node.ref);
+  const target = resolveNode(root, node.ref, seen);
   return target ? derefNode(root, target, seen) : null;
 }
 
@@ -54,14 +54,18 @@ export function derefNode(root: QuestionRoot, node: EscalationNode, seen: Set<st
  * so escalating further from it has to use the REAL target's children, not the empty shell's. `[]`
  * means "the root" — callers that need root's own children just use `root.children` directly instead of
  * calling this with `[]`. Returns null if any step along the way is missing — shouldn't happen for a
- * real stored override (every step it was built from once existed), but a defensive null beats a throw. */
-export function resolveNode(root: QuestionRoot, path: EscalationPath): EscalationNode | null {
+ * real stored override (every step it was built from once existed), but a defensive null beats a throw.
+ * `seen` is threaded through to derefNode across every step, not just within a single hop — otherwise a
+ * ref chain that loops back to itself would recurse through resolveNode/derefNode forever, one fresh
+ * empty Set per hop, rather than actually getting caught by the guard derefNode's own doc comment
+ * promises. */
+export function resolveNode(root: QuestionRoot, path: EscalationPath, seen: Set<string> = new Set()): EscalationNode | null {
   let node: EscalationNode | null = null;
   let children: EscalationChildren = root.children;
   for (const step of path) {
     const next = step.category === null ? (step.valence === "yes" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
     if (!next) return null;
-    const resolved = derefNode(root, next);
+    const resolved = derefNode(root, next, seen);
     if (!resolved) return null;
     node = resolved;
     children = resolved.children;
