@@ -2,7 +2,7 @@ import { isBlockId, isLiveBlockId, type FollowupPrompt, type Env } from "../type
 import { errorResponse, json } from "../http";
 import { getState, saveState, todayLocal, resolveDate } from "../state";
 import { getConfig, getQuestionRoot, getTriggerConfig } from "../config";
-import { checkRetirement, resolveOverrideContent } from "../recommendations";
+import { checkRetirement, resolveNode, resolveOverrideContent } from "../recommendations";
 
 export async function handleGetQuestion(request: Request, env: Env, userId: string): Promise<Response> {
   const url = new URL(request.url);
@@ -21,6 +21,8 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
   // The account's single active override (if any) applies across all four live blocks — irrelevant to
   // a legacy block, which never had one.
   const override = isLiveBlockId(block) ? state.activeOverride : undefined;
+  const existingAnswer = state.answers.find((a) => a.date === date && a.block === block);
+
   // Live blocks (q1-q4) source their base question/follow-up from the escalation tree; the 3 frozen
   // legacy blocks ("1"/"2"/"combined") still read from AppConfig, exactly as before this tree existed.
   let question: string;
@@ -28,9 +30,20 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
   let no: FollowupPrompt;
   if (isLiveBlockId(block)) {
     const root = await getQuestionRoot(env);
-    // Live-resolved against the current tree when an override is active, not its own frozen snapshot —
-    // an admin's later edit to this question should reach the app the same as it reaches Admin itself.
-    if (override) {
+    if (existingAnswer) {
+      // Resolve against the escalation-tree node that was actually active the moment THIS answer was
+      // given (root if the account was still on its routine question then), never today's
+      // activeOverride — otherwise accepting a swap invite later would retroactively rewrite what every
+      // earlier day in History shows, even days answered before the swap ever happened. See
+      // AnswerRecord.path's own doc comment.
+      const path = existingAnswer.path ?? [];
+      const node = path.length > 0 ? resolveNode(root, path) : null;
+      question = node ? node.blockQuestions[block] : root.blockQuestions[block];
+      yes = node ? node.yes : root.yes;
+      no = node ? node.no : root.no;
+    } else if (override) {
+      // Live-resolved against the current tree when an override is active, not its own frozen snapshot —
+      // an admin's later edit to this question should reach the app the same as it reaches Admin itself.
       const live = resolveOverrideContent(root, override);
       question = live.blockQuestions[block];
       yes = live.yes;
@@ -53,7 +66,6 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
   // anchor which "today" is meant, a complete question can plausibly contain the word more than once.
   const text = date === today ? question : question.replace(/\btoday\b/g, "the day");
 
-  const existingAnswer = state.answers.find((a) => a.date === date && a.block === block);
   let followup: { prompt: string; optionLabel: string } | undefined;
   if (existingAnswer?.category) {
     // yes/no above are already the live-resolved content either way (override or not) — no need to
