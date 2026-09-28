@@ -80,8 +80,29 @@ export async function createUserFromGoogle(env: Env, email: string): Promise<Use
 /** The zero-friction entry point — id doubles as its own normalized "email" for getUser's
  * re-normalization (already-lowercase strings are a no-op under .trim().toLowerCase()), so no
  * separate anonymous-lookup path is needed anywhere else in the codebase. */
-export async function createAnonymousUser(env: Env): Promise<UserRecord> {
-  return putNewUserRecord(env, `${ANON_ID_PREFIX}${crypto.randomUUID()}`);
+export async function createAnonymousUser(env: Env, referredBy?: string): Promise<UserRecord> {
+  return putNewUserRecord(env, `${ANON_ID_PREFIX}${crypto.randomUUID()}`, referredBy ? { referredBy } : {});
+}
+
+// No 0/O/1/I/l — a code someone might read aloud or retype shouldn't have lookalikes.
+const REFERRAL_ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz";
+const REFERRAL_CODE_LENGTH = 8;
+const REFERRAL_CODE_PATTERN = new RegExp(`^[${REFERRAL_ALPHABET}]{${REFERRAL_CODE_LENGTH}}$`);
+
+/** Shape check only — a code is never looked up at signup (an unknown one is just stored as-is and
+ * matches nobody), so this exists to keep arbitrary junk out of a KV record, not to authenticate. */
+export function isValidReferralCode(code: unknown): code is string {
+  return typeof code === "string" && REFERRAL_CODE_PATTERN.test(code);
+}
+
+export async function getOrCreateReferralCode(env: Env, userId: string): Promise<string> {
+  const user = await getUser(env, userId);
+  if (!user) throw new Error("User not found");
+  if (user.referralCode) return user.referralCode;
+  const bytes = crypto.getRandomValues(new Uint8Array(REFERRAL_CODE_LENGTH));
+  const referralCode = Array.from(bytes, (b) => REFERRAL_ALPHABET[b % REFERRAL_ALPHABET.length]).join("");
+  await env.STATE_KV.put(`user:${user.id}`, JSON.stringify({ ...user, referralCode }));
+  return referralCode;
 }
 
 /**

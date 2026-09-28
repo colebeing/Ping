@@ -15,6 +15,10 @@ export class FakeKV {
     this.store.set(key, value);
   }
 
+  async delete(key: string): Promise<void> {
+    this.store.delete(key);
+  }
+
   /** Test setup shortcut — equivalent to a prior `put` with the value already serialized. */
   seed(key: string, value: unknown): void {
     this.store.set(key, JSON.stringify(value));

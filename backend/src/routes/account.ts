@@ -5,9 +5,11 @@ import {
   createAnonymousUser,
   createSession,
   destroySession,
+  getOrCreateReferralCode,
   getSessionToken,
   getUser,
   hashPassword,
+  isValidReferralCode,
   normalizeEmail,
   sessionCookieHeader,
 } from "../auth";
@@ -15,8 +17,11 @@ import { buildGoogleAuthUrl, callbackUrl, createOAuthState, googleConfigured, ve
 
 /** The zero-friction entry point — mints an anonymous account and session with no credentials at
  * all, so "grant notifications" can be the only thing standing between opening Ping and using it. */
-export async function handleStartAnonymous(_request: Request, env: Env): Promise<Response> {
-  const user = await createAnonymousUser(env);
+export async function handleStartAnonymous(request: Request, env: Env): Promise<Response> {
+  // Optional body: the invite link's ?ref= code. A missing/garbled body just means "no referral" —
+  // it must never stand between a new visitor and their account.
+  const { ref } = await readJson<{ ref?: unknown }>(request).catch(() => ({ ref: undefined }));
+  const user = await createAnonymousUser(env, isValidReferralCode(ref) ? ref : undefined);
   const token = await createSession(env, user.id);
   return json({ email: null, sessionToken: token }, 201, { "Set-Cookie": sessionCookieHeader(token) });
 }
@@ -107,4 +112,9 @@ export async function handleStartGoogleClaim(request: Request, env: Env, userId:
   if (user?.email) return errorResponse("This account already has an email saved", 409);
   const state = await createOAuthState(env, { fromUserId: userId, fromSessionToken: getSessionToken(request) });
   return json({ url: buildGoogleAuthUrl(env, callbackUrl(request.url), state) });
+}
+
+/** The code the "Invite a friend" share embeds in its link. */
+export async function handleGetReferralCode(_request: Request, env: Env, userId: string): Promise<Response> {
+  return json({ code: await getOrCreateReferralCode(env, userId) });
 }

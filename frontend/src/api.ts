@@ -234,6 +234,8 @@ export interface AnalyticsUserSummary {
   activeDayStreak: number;
   topCategory: Category | null;
   lastNotification: { block: BlockId; channel: "webpush" | "fcm"; outcome: "sent" | "failed"; timestamp: string } | null;
+  invitedCount: number;
+  wasInvited: boolean;
 }
 
 /** One entry per distinct escalation-tree path anyone (across all users) has ever answered under —
@@ -372,7 +374,10 @@ export const api = {
 
   /** The zero-friction entry point — mints an anonymous account + session with no credentials, so
    * granting notifications can be the only thing standing between opening Ping and using it. */
-  startAnonymous: () => request<{ email: null }>("/api/account/start", { method: "POST" }),
+  startAnonymous: (ref?: string) =>
+    request<{ email: null }>("/api/account/start", { method: "POST", body: JSON.stringify(ref ? { ref } : {}) }),
+  /** The opaque code this user's invite link carries — see invite.ts. */
+  getReferralCode: () => request<{ code: string }>("/api/account/referral"),
   claimWithPassword: (email: string, password: string) =>
     request<{ email: string }>("/api/account/claim/password", { method: "POST", body: JSON.stringify({ email, password }) }),
   /** Web's Google claim: returns Google's consent URL to navigate to; the redirect finishes the claim. */

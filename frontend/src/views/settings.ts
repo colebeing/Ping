@@ -2,6 +2,7 @@ import { Capacitor } from "@capacitor/core";
 import { api, ApiError, LIVE_BLOCKS, type LiveBlockId } from "../api";
 import { describeError } from "../errorDetail";
 import { enablePushNotifications } from "../push-setup";
+import { inviteAvailable, inviteFriend } from "../invite";
 import { currentBlockForCadence } from "./today";
 import { CHEVRON_LEFT_SVG, HOME_ICON_SVG } from "../icons";
 import { getNativeGoogleIdToken } from "../googleSignIn";
@@ -242,6 +243,25 @@ export async function renderSettings(
     }
 
     root.appendChild(pushCard);
+
+    if (inviteAvailable()) {
+      const inviteCard = document.createElement("div");
+      inviteCard.className = "card";
+      inviteCard.innerHTML = `<h3>Invite a friend</h3><p>Send them a link — they can start right away, no account needed.</p>`;
+      const inviteBtn = document.createElement("button");
+      inviteBtn.className = "btn";
+      inviteBtn.textContent = "Invite a friend";
+      inviteBtn.addEventListener("click", async () => {
+        try {
+          const result = await inviteFriend();
+          if (result === "copied") inviteBtn.textContent = "Link copied";
+        } catch (err) {
+          inviteBtn.textContent = describeError(err) || "Couldn't open share";
+        }
+      });
+      inviteCard.appendChild(inviteBtn);
+      root.appendChild(inviteCard);
+    }
   } catch (err) {
     root.innerHTML = `<div class="card error">Couldn't load settings.</div>`;
     console.error(err);

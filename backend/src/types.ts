@@ -404,6 +404,14 @@ export interface UserRecord {
   salt?: string;
   createdAt: string;
   isAdmin?: boolean;
+  /** Minted lazily the first time the user opens the invite share (see auth.ts's getOrCreateReferralCode).
+   * Random and opaque on purpose — never derived from the id/email, so a shared link leaks nothing about
+   * the sender. Survives claimAccount, whose `...fromUser` spread carries it across the id change. */
+  referralCode?: string;
+  /** The referralCode of whoever's link this account was first created from. Set once, at anonymous
+   * account creation only — an existing account opening someone's link is never re-attributed. A
+   * backend-only diagnostic (see analytics.ts's invitedCount), never shown to users. */
+  referredBy?: string;
 }
 
 /** Non-expiring, like DeviceTokenRecord below — a sign-in shouldn't silently log someone out. The

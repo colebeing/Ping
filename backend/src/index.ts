@@ -11,7 +11,7 @@ import { handleGetAdminConfig, handleSaveAdminConfig, handleGetConfigAuditLog } 
 import { handlePushToSheet, handlePullFromSheet } from "./routes/sheets";
 import { handleGetAnalytics, handleGetUserProfile } from "./routes/analytics";
 import { handleGoogleStart, handleGoogleCallback, handleGoogleTokenSignIn, handleGoogleHandoff } from "./routes/googleAuth";
-import { handleStartAnonymous, handleClaimWithPassword, handleClaimWithGoogle, handleStartGoogleClaim } from "./routes/account";
+import { handleStartAnonymous, handleClaimWithPassword, handleClaimWithGoogle, handleStartGoogleClaim, handleGetReferralCode } from "./routes/account";
 import { PushScheduler } from "./scheduler";
 
 export { PushScheduler };
@@ -54,7 +54,8 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === "/api/push/register-fcm" && method === "POST") return handleRegisterFcmToken(request, env, userId);
   if (pathname === "/api/push/test" && method === "POST") return handleTestPush(request, env, userId);
   if (pathname === "/api/push/clicked" && method === "POST") return handleNotificationClicked(request, env, userId);
-  if (pathname === "/api/account/claim/password" && method === "POST") return handleClaimWithPassword(request, env, userId);
+  if (pathname === "/api/account/referral" && method === "GET") return handleGetReferralCode(request, env, userId);
+  if (pathname === "/api/account/claim/password"&& method === "POST") return handleClaimWithPassword(request, env, userId);
   if (pathname === "/api/account/claim/google" && method === "POST") return handleClaimWithGoogle(request, env, userId);
   if (pathname === "/api/account/claim/google/start" && method === "POST") return handleStartGoogleClaim(request, env, userId);
 

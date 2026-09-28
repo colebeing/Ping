@@ -32,6 +32,9 @@ export interface AnalyticsUserSummary {
   topCategory: Category | null;
   /** Most recent send attempt (sent or failed — "clicked" isn't a delivery outcome), so a silently-failing device shows up here instead of only being discoverable by reading raw state. */
   lastNotification: { block: BlockId; channel: NotificationEvent["channel"]; outcome: "sent" | "failed"; timestamp: string } | null;
+  /** Accounts first created from this user's invite link. Backend diagnostic only — see UserRecord.referredBy. */
+  invitedCount: number;
+  wasInvited: boolean;
 }
 
 /** One entry per distinct escalation-tree path anyone (across all users) has ever answered under —
@@ -138,6 +141,8 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
   };
   const dailyCounts = new Map<string, number>();
   const users: AnalyticsUserSummary[] = [];
+  const invitedByCode = new Map<string, number>();
+  const referralCodeById = new Map<string, string>();
   // Seeded with routine question up front so it's always present (even at 0), same convention as
   // handleGetUserProfile's own per-path breakdown.
   const pathBuckets = new Map<string, { path: EscalationPath; totalAnswers: number; categoryTotals: Record<Category, { yes: number; no: number }> }>();
@@ -215,8 +220,13 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
       activeDayStreak: activeDayStreak(state.answers, todayStr),
       topCategory,
       lastNotification,
+      invitedCount: 0,
+      wasInvited: !!user.referredBy,
     });
+    if (user.referredBy) invitedByCode.set(user.referredBy, (invitedByCode.get(user.referredBy) ?? 0) + 1);
+    if (user.referralCode) referralCodeById.set(userId, user.referralCode);
   }
+  for (const u of users) u.invitedCount = invitedByCode.get(referralCodeById.get(u.id) ?? "") ?? 0;
 
   users.sort((a, b) => (b.lastActive ?? "").localeCompare(a.lastActive ?? ""));
 

@@ -5,6 +5,7 @@ import { renderHome } from "./views/home";
 import { renderSettings } from "./views/settings";
 import { renderAdmin } from "./views/admin";
 import { renderAnalytics } from "./views/analytics";
+import { captureReferral, takePendingReferral } from "./invite";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -43,6 +44,7 @@ async function redeemGoogleHandoff(): Promise<void> {
 }
 
 async function boot(): Promise<void> {
+  captureReferral();
   await redeemGoogleHandoff();
   // A password-reset email link's form lives on the auth screen — and since every visitor has at
   // least an anonymous session, boot would otherwise always skip straight past it into the app.
@@ -67,7 +69,7 @@ async function boot(): Promise<void> {
  * account is its own explicit choice (Settings' "Already have an account? Sign in"). */
 async function startFresh(): Promise<void> {
   try {
-    await api.startAnonymous();
+    await api.startAnonymous(takePendingReferral());
     const me = await api.me();
     showApp(me.isAdmin);
   } catch {
