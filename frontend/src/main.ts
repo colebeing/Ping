@@ -6,6 +6,7 @@ import { renderSettings } from "./views/settings";
 import { renderAdmin } from "./views/admin";
 import { renderAnalytics } from "./views/analytics";
 import { captureReferral, takePendingReferral } from "./invite";
+import { describeError } from "./errorDetail";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -53,14 +54,32 @@ async function boot(): Promise<void> {
     return;
   }
   try {
-    const me = await api.me();
+    const me = await withRetry(() => api.me());
     showApp(me.isAdmin);
   } catch (err) {
-    // Only a genuine "no session" (401) should mint a fresh anonymous account — a transient
-    // network/5xx failure must never trigger that side effect for someone who actually already
-    // has a valid session, so it falls back to the login screen instead.
+    // Only a genuine "no session" (401) should mint a fresh anonymous account — a network/5xx failure
+    // must never trigger that side effect for someone who may already have a valid session, so after
+    // its retries it offers to try again instead.
     if (err instanceof ApiError && err.status === 401) await startFresh();
-    else showAuth();
+    else showConnectError(err);
+  }
+}
+
+// A cold start (e.g. the Android app's first launch right after clearing its data) can hit a network
+// that isn't quite up yet — worth a couple of quiet retries before saying anything at all.
+const RETRY_DELAYS_MS = [1000, 3000];
+
+/** Retries only what could plausibly succeed a moment later: a request that never got a response,
+ * a server error, or rate limiting. A real answer like 401 comes straight back. */
+async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const transient = !(err instanceof ApiError) || err.status >= 500 || err.status === 429;
+      if (!transient || attempt >= RETRY_DELAYS_MS.length) throw err;
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+    }
   }
 }
 
@@ -68,13 +87,43 @@ async function boot(): Promise<void> {
  * so logging out never leaves you at a sign-in wall you didn't ask for. Signing into an existing
  * account is its own explicit choice (Settings' "Already have an account? Sign in"). */
 async function startFresh(): Promise<void> {
+  const ref = takePendingReferral();
   try {
-    await api.startAnonymous(takePendingReferral());
-    const me = await api.me();
+    // Retried as two separate steps, never as one: if the account was created but loading it failed,
+    // retrying the whole thing would mint a second account and orphan the first.
+    await withRetry(() => api.startAnonymous(ref));
+    const me = await withRetry(() => api.me());
     showApp(me.isAdmin);
-  } catch {
-    showAuth();
+  } catch (err) {
+    showConnectError(err);
   }
+}
+
+/** Where a failed start lands instead of the sign-in screen, which nobody asked for — showing what
+ * actually went wrong, so a report from a phone says more than "it showed the login page". "Try again"
+ * re-runs boot from the top: if the anonymous account did get created, its saved session picks up
+ * from there rather than creating another. */
+function showConnectError(err: unknown): void {
+  console.error("[ping] couldn't start", err);
+  goToBlock = null;
+  app!.innerHTML = "";
+  const card = document.createElement("div");
+  card.className = "card";
+  const heading = document.createElement("h3");
+  heading.textContent = "Couldn't connect to Ping";
+  const detail = document.createElement("p");
+  detail.className = "muted";
+  detail.textContent = describeError(err) ?? "Check your connection and try again.";
+  const retry = document.createElement("button");
+  retry.className = "btn btn-primary";
+  retry.textContent = "Try again";
+  retry.addEventListener("click", () => {
+    retry.setAttribute("disabled", "true");
+    retry.textContent = "Connecting…";
+    void boot();
+  });
+  card.append(heading, detail, retry);
+  app!.appendChild(card);
 }
 
 function showAuth(): void {
