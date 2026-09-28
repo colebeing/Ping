@@ -8,11 +8,13 @@ import {
   type EscalationChildren,
   type EscalationNode,
   type FollowupPrompt,
+  type GapWarning,
   type LiveBlockId,
   type QuestionRoot,
   type TriggerConfig,
 } from "./types";
 import { CATEGORY_RENAME, migrateFollowupPromptCategories } from "./category-migration";
+import { derefNode, isUnfinishedNode, resolveNode } from "./recommendations";
 
 // This is the fallback used only if CONFIG_KV is empty. The Admin UI is the canonical, sole place to
 // edit live content — see scripts/generate-config-seed.ts for regenerating scripts/config-seed.json
@@ -289,21 +291,60 @@ export async function getTriggerConfig(env: Env): Promise<TriggerConfig> {
 }
 
 const CONFIG_AUDIT_LOG_LIMIT = 50;
+const GAP_WARNING_LIMIT = 200;
+
+/** Whether the slot a GapWarning names has since been authored (finished, or a reference to a finished
+ * node) in `root` — same slot lookup + ref-following + isUnfinishedNode check detectStreaks itself uses
+ * to decide whether to propose a recommendation there. A warning whose slot resolves this way is stale:
+ * the gap it flagged no longer exists, so it's pruned on the next admin save (see saveFullAdminConfig)
+ * rather than lingering in the Admin UI forever. */
+function isGapWarningResolved(root: QuestionRoot, warning: Pick<GapWarning, "path">): boolean {
+  const step = warning.path[warning.path.length - 1];
+  if (!step) return false; // shouldn't happen — a gap warning's path is always at least one step deep
+  const parentPath = warning.path.slice(0, -1);
+  const parentChildren = parentPath.length === 0 ? root.children : resolveNode(root, parentPath)?.children;
+  if (!parentChildren) return false;
+  const slot = step.category === null ? (step.valence === "yes" ? parentChildren.generalYes : parentChildren.generalNo) : parentChildren[step.valence][step.category];
+  const child = slot ? derefNode(root, slot) : null;
+  return Boolean(child && !isUnfinishedNode(child));
+}
 
 export async function saveFullAdminConfig(env: Env, full: FullAdminConfig, editedBy: string): Promise<void> {
   const log = await getConfigAuditLog(env);
   log.push({ editedBy, editedAt: new Date().toISOString() });
   while (log.length > CONFIG_AUDIT_LOG_LIMIT) log.shift();
 
+  // Whichever gap warnings this save just filled in (or removed the slot for) no longer describe a real
+  // gap — drop them here rather than leaving a stale "hot" flag sitting in the Admin UI forever.
+  const remainingGapWarnings = (await getGapWarnings(env)).filter((w) => !isGapWarningResolved(full.questionRoot, w));
+
   await Promise.all([
     env.CONFIG_KV.put("config", JSON.stringify({ blocks: full.blocks })),
     env.CONFIG_KV.put("config:triggers", JSON.stringify(full.triggers)),
     env.CONFIG_KV.put("config:question-root", JSON.stringify(full.questionRoot)),
     env.CONFIG_KV.put("config:audit-log", JSON.stringify(log)),
+    env.CONFIG_KV.put("config:gap-warnings", JSON.stringify(remainingGapWarnings)),
   ]);
 }
 
 /** Who changed the admin config and when — global (not per-user), most recent last, capped to the last 50 saves. */
 export async function getConfigAuditLog(env: Env): Promise<ConfigAuditEntry[]> {
   return (await env.CONFIG_KV.get<ConfigAuditEntry[]>("config:audit-log", "json")) ?? [];
+}
+
+/** Every open one-away gap warning (see GapWarning), oldest first — global, not per-user, capped to the
+ * most recent 200. Pruned of resolved ones on every admin save (see saveFullAdminConfig), so what's left
+ * is a best-effort "still open as of the last save" list, not necessarily live-exact the instant a gap
+ * gets filled via some other path (there isn't one — Admin's save is the only way a slot gets authored). */
+export async function getGapWarnings(env: Env): Promise<GapWarning[]> {
+  return (await env.CONFIG_KV.get<GapWarning[]>("config:gap-warnings", "json")) ?? [];
+}
+
+/** Appends one newly-fired gap warning (see recommendations.ts's checkGapWarning) — called from
+ * routes/answer.ts right after a matching answer, alongside (not instead of) the admin-email attempt. */
+export async function recordGapWarning(env: Env, warning: GapWarning): Promise<void> {
+  const list = await getGapWarnings(env);
+  list.push(warning);
+  while (list.length > GAP_WARNING_LIMIT) list.shift();
+  await env.CONFIG_KV.put("config:gap-warnings", JSON.stringify(list));
 }

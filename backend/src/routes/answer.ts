@@ -1,10 +1,11 @@
-import { CATEGORIES, isLiveBlockId, type Answer, type AnswerRecord, type BlockId, type Category, type Env, type Nudge, type UserRecord, type UserState } from "../types";
+import { CATEGORIES, isLiveBlockId, type Answer, type AnswerRecord, type BlockId, type Category, type Env, type GapWarning, type Nudge, type UserRecord, type UserState } from "../types";
 import { errorResponse, json, readJson } from "../http";
 import { getState, saveState, resolveDate, hasPushEnabled } from "../state";
-import { getQuestionRoot, getTriggerConfig } from "../config";
-import { detectStreaks, pendingReturnInvite, resolveOverrideContent } from "../recommendations";
+import { getQuestionRoot, getTriggerConfig, recordGapWarning } from "../config";
+import { checkGapWarning, detectStreaks, pendingReturnInvite, resolveOverrideContent } from "../recommendations";
 import { getUser } from "../auth";
 import { sendRecommendationPush } from "../push";
+import { sendGapWarningEmail } from "../email";
 
 /**
  * Checkpoint-triggered nudges — a global follow-up-count table, deliberately a different shape from
@@ -127,6 +128,22 @@ export async function handleFollowup(request: Request, env: Env, userId: string)
   const newRecs = detectStreaks(state, thresholds, root, { block: body.block, answer: record.answer, category: body.category, timestamp: record.timestamp });
   state.recommendationHistory.push(...newRecs);
   runCheckpointTriggers(state, user);
+
+  // One response short of a streak whose destination slot isn't authored yet — detectStreaks itself
+  // would silently accept that gap forever (never even reaching this far, since it only checks AT
+  // threshold); this is the admin's one chance to hear about it before the next matching answer arrives.
+  // Persisted globally regardless of whether the email send below succeeds — the Admin UI's gap map is
+  // the fallback channel (see routes/admin.ts, getGapWarnings).
+  const gapWarningCandidate = checkGapWarning(state, thresholds, root, { answer: record.answer, category: body.category, timestamp: record.timestamp });
+  if (gapWarningCandidate) {
+    const gapWarning: GapWarning = { id: crypto.randomUUID(), userId, email: user?.email ?? null, createdAt: new Date().toISOString(), ...gapWarningCandidate };
+    await recordGapWarning(env, gapWarning);
+    try {
+      await sendGapWarningEmail(env, gapWarning);
+    } catch (err) {
+      console.error("gap warning email failed", err);
+    }
+  }
 
   // Fire a dedicated push for each new swap invite — otherwise a native install only ever sees one via
   // the notification-tap chain (see sendRecommendationPush's doc comment), which silently drops it the

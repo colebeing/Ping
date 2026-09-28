@@ -778,3 +778,12 @@ body.no-tabs #app {
   color: var(--text-dim);
   opacity: 0.5;
 }
+
+/* One response away from a streak with no swap question ready — see recommendations.ts's
+   checkGapWarning. Same amber as the "no" answer color (see Hypersafe's own note on that choice):
+   pointing at where attention is needed, not a failure state. */
+.map-slot-btn.hot {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  font-weight: 700;
+}

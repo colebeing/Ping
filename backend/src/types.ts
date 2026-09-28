@@ -276,6 +276,27 @@ export interface DeclinedStreak {
   asOfTimestamp: string;
 }
 
+/**
+ * An admin heads-up: this account is one response away from completing a streak whose destination slot
+ * in the escalation tree isn't authored yet (missing, or started but not finished — see
+ * isUnfinishedNode) — the case detectStreaks itself silently accepts forever, since it only ever checks
+ * AT threshold, not one short of it. See recommendations.ts's checkGapWarning. Persisted globally (not
+ * per-user, unlike everything else here) under config:gap-warnings, since the Admin UI's gap map needs
+ * to flag it without scanning every account's own state — cleared automatically once the slot it names
+ * gets authored (see config.ts's saveFullAdminConfig).
+ */
+export interface GapWarning {
+  id: string;
+  userId: string;
+  email: string | null;
+  path: EscalationPath;
+  valence: Answer;
+  category: Category | null;
+  count: number;
+  threshold: number;
+  createdAt: string;
+}
+
 export interface AnswerRecord {
   date: string; // YYYY-MM-DD, user-local
   block: BlockId;
@@ -350,6 +371,10 @@ export interface UserState {
   recommendationHistory: RecommendationNudge[];
   /** Keyed by "<valence>:<category-or-'general'>", see DeclinedStreak's own doc comment. */
   declinedStreaks: Partial<Record<string, DeclinedStreak>>;
+  /** Keyed and reset exactly like declinedStreaks — dedupes the one-away gap warning (see GapWarning,
+   * recommendations.ts's checkGapWarning) so the same tree position only ever fires one admin heads-up,
+   * not one per matching answer while the gap stays unauthored. */
+  notifiedGaps: Partial<Record<string, string>>;
   /** Lifetime count of completed follow-ups (category picked), incremented once per handleFollowup
    * call. Deliberately NOT decremented on edit — this exists purely to trigger nudge checkpoints once
    * each, not to stay an accurate "current" count. Do not derive
@@ -420,4 +445,7 @@ export interface Env {
   /** The Google Sheet the question tree pushes/pulls to — same service account as FCM_SERVICE_ACCOUNT_JSON,
    * shared with that account's email as an Editor. See sheets.ts. */
   SHEETS_SPREADSHEET_ID?: string;
+  /** Where the one-away gap-warning email goes (see GapWarning) — unset just means that channel is
+   * skipped; the Admin UI's gap map still flags it either way. */
+  ADMIN_EMAIL?: string;
 }

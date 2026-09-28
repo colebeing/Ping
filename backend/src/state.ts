@@ -14,6 +14,7 @@ export function defaultState(): UserState {
     pendingNudges: [],
     recommendationHistory: [],
     declinedStreaks: {},
+    notifiedGaps: {},
     totalFollowupsAnswered: 0,
     cadence: { times: { ...DEFAULT_TIMES }, skippedBlocks: [], timezone: "UTC" },
     pushSubscriptions: [],
@@ -66,6 +67,7 @@ export async function getState(env: Env, userId: string): Promise<UserState> {
   }
   if (!stored.fcmTokens) stored.fcmTokens = [];
   if (!stored.declinedStreaks) stored.declinedStreaks = {};
+  if (!stored.notifiedGaps) stored.notifiedGaps = {};
   if (!stored.answerEdits) stored.answerEdits = [];
   if (!stored.notificationEvents) stored.notificationEvents = [];
   if (!stored.appOpenDates) stored.appOpenDates = [];

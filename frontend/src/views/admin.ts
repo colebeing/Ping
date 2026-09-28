@@ -10,6 +10,7 @@ import {
   type EscalationPath,
   type EscalationStep,
   type FollowupPrompt,
+  type GapWarning,
   type QuestionRoot,
 } from "../api";
 import { CATEGORY_LABEL, CATEGORY_ORDER } from "../blockCard";
@@ -73,6 +74,15 @@ function setChildAt(children: EscalationChildren, step: EscalationStep, node: Es
   } else {
     children[step.valence][step.category] = node;
   }
+}
+
+/** Mirrors backend/src/recommendations.ts's own isUnfinishedNode. A node the map already counts as
+ * "filled" (✓) can still be genuinely unauthored content — e.g. the blank node addInvite creates,
+ * waiting to be typed into the Sheet — which is exactly the state a gap warning fires on (see
+ * checkGapWarning). Used only to decide whether a hot cell (see renderQuestionMap) should override that
+ * ✓ with a "!" instead; the ✓/– presence split itself is unchanged. */
+function isUnfinishedNode(node: EscalationNode): boolean {
+  return !node.inviteQuestion.trim() || !node.blockQuestions.q1.trim();
 }
 
 /** Follows a node's `ref` chain (if any) to the real node it ultimately points to — mirrors
@@ -536,7 +546,7 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
     };
     const renderBoth = () => {
       mapCard.innerHTML = "";
-      mapCard.appendChild(renderQuestionMap(config.questionRoot, navigateFromMap, mapExpanded, toggleMap, addInvite));
+      mapCard.appendChild(renderQuestionMap(config.questionRoot, config.gapWarnings ?? [], navigateFromMap, mapExpanded, toggleMap, addInvite));
       treeCard.innerHTML = "";
       treeCard.appendChild(renderNodeEditor(config.questionRoot, currentPath, navigate, addInvite));
     };
@@ -638,8 +648,18 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
  * wide table isn't needed on every visit — `expanded`/`onToggle` are owned by renderAdmin, not this
  * function, so the state survives this card being torn down and rebuilt on every navigation.
  */
+/** One line per person, describing a still-open gap warning at this exact slot — the hover title for a
+ * "hot" empty cell (see renderQuestionMap). Several people can be one-away at the same never-authored
+ * slot at once, so this joins them rather than picking just one. */
+function gapWarningTooltip(warnings: GapWarning[]): string {
+  return warnings
+    .map((w) => `${w.email ?? "an anonymous user"} is ${w.count}/${w.threshold} responses into this — no question ready yet`)
+    .join("\n");
+}
+
 function renderQuestionMap(
   root: QuestionRoot,
+  gapWarnings: GapWarning[],
   navigate: (path: EscalationPath) => void,
   expanded: boolean,
   onToggle: () => void,
@@ -648,10 +668,21 @@ function renderQuestionMap(
   const card = document.createElement("div");
   card.className = "card";
 
+  // Keyed by JSON.stringify(path) — cheap exact-path lookup per cell, same key shape pathsEqual-style
+  // comparisons elsewhere in this file already rely on (see e.g. the pull-preview diff).
+  const hotSlots = new Map<string, GapWarning[]>();
+  for (const w of gapWarnings) {
+    const key = JSON.stringify(w.path);
+    const existing = hotSlots.get(key);
+    if (existing) existing.push(w);
+    else hotSlots.set(key, [w]);
+  }
+
   const toggle = document.createElement("button");
   toggle.type = "button";
   toggle.className = "accordion-toggle" + (expanded ? " expanded" : "");
-  toggle.innerHTML = `<span>Question map</span><span class="chev">▾</span>`;
+  const hotLabel = hotSlots.size > 0 ? ` · ${hotSlots.size} need${hotSlots.size === 1 ? "s" : ""} a question soon` : "";
+  toggle.innerHTML = `<span>Question map${hotLabel}</span><span class="chev">▾</span>`;
   toggle.addEventListener("click", onToggle);
   card.appendChild(toggle);
 
@@ -663,7 +694,7 @@ function renderQuestionMap(
   const note = document.createElement("p");
   note.className = "muted";
   note.textContent =
-    "Every question authored so far, and which of its own swap invites are filled in versus still open. Click a row's path to open it, or a slot directly to jump straight to that gap.";
+    "Every question authored so far, and which of its own swap invites are filled in versus still open. Click a row's path to open it, or a slot directly to jump straight to that gap. A slot marked ! has someone one response away from that streak with nothing authored to offer them — also emailed, if configured (see ADMIN_EMAIL).";
   body.appendChild(note);
 
   const scroller = document.createElement("div");
@@ -708,11 +739,21 @@ function renderQuestionMap(
       const cell = document.createElement("td");
       cell.className = "map-slot";
       const existing = childAt(children, slot);
+      // A slot can exist (a blank node was created) without being genuinely ready — same distinction
+      // checkGapWarning itself makes (missing OR unfinished), so a still-blank node with an open warning
+      // shows as hot too, not as a misleadingly-done ✓.
+      const dereffed = existing ? derefNode(root, existing) : null;
+      const finished = Boolean(dereffed && !isUnfinishedNode(dereffed));
+      const hotHere = finished ? undefined : hotSlots.get(JSON.stringify([...row.path, slot]));
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "map-slot-btn" + (existing ? " filled" : " empty");
-      btn.textContent = existing ? "✓" : "–";
-      btn.title = existing ? nodePreviewText(root, existing) : "Not yet configured — click to add a blank swap invite to the Sheet";
+      btn.className = "map-slot-btn" + (hotHere ? " hot" : existing ? " filled" : " empty");
+      btn.textContent = hotHere ? "!" : existing ? "✓" : "–";
+      btn.title = hotHere
+        ? gapWarningTooltip(hotHere)
+        : existing
+          ? nodePreviewText(root, existing)
+          : "Not yet configured — click to add a blank swap invite to the Sheet";
       btn.addEventListener("click", () => {
         // Same as renderLeaf's own "add a swap invite": an empty slot gets a blank row in the Sheet,
         // staying right here rather than jumping into the editor for it.

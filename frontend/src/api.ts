@@ -148,6 +148,22 @@ export interface QuestionRoot {
   children: EscalationChildren;
 }
 
+/** An admin heads-up: this user is one response away from completing a streak whose destination slot
+ * in the question tree isn't authored yet — see backend/src/recommendations.ts's checkGapWarning. Also
+ * emailed, when ADMIN_EMAIL is configured server-side; this is the always-available fallback (and the
+ * only place it shows a jump-to-slot link), read-only here. */
+export interface GapWarning {
+  id: string;
+  userId: string;
+  email: string | null;
+  path: EscalationPath;
+  valence: Answer;
+  category: Category | null;
+  count: number;
+  threshold: number;
+  createdAt: string;
+}
+
 /** Frozen legacy blocks only — "1"/"2"/"combined" content, never edited again, kept purely so History
  * reads old answered days correctly. Live q1-q4 content lives in QuestionRoot instead. */
 export interface AdminConfig {
@@ -156,6 +172,8 @@ export interface AdminConfig {
   questionRoot: QuestionRoot;
   /** Read-only — the linked Google Sheet, when one is configured on the server. Ignored on save. */
   sheetUrl?: string;
+  /** Read-only — every currently-open one-away gap warning (see GapWarning). Ignored on save. */
+  gapWarnings?: GapWarning[];
 }
 
 interface NudgeBase {

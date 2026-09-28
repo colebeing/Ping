@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   acceptRecommendation,
+  checkGapWarning,
   checkUnanswered,
   declineRecommendation,
   derefNode,
@@ -213,6 +214,67 @@ describe("detectStreaks", () => {
   });
 });
 
+describe("checkGapWarning", () => {
+  function stateWithAnswers(answers: AnswerRecord[]): UserState {
+    return { ...defaultState(), answers };
+  }
+
+  it("fires one response short of the category threshold when the slot was never authored", () => {
+    const root = rootWith(); // no yes.people child authored
+    const answers = [answer({ timestamp: "t1" }), answer({ timestamp: "t2" })]; // 2 of 3
+    const state = stateWithAnswers(answers);
+    const warning = checkGapWarning(state, THRESHOLDS, root, { answer: "yes", category: "people", timestamp: "t2" });
+    expect(warning).not.toBeNull();
+    expect(warning?.path).toEqual([{ valence: "yes", category: "people" }]);
+    expect(warning?.count).toBe(2);
+    expect(warning?.threshold).toBe(3);
+  });
+
+  it("does not fire below one-away (still two away)", () => {
+    const root = rootWith();
+    const answers = [answer({ timestamp: "t1" })]; // 1 of 3
+    const state = stateWithAnswers(answers);
+    const warning = checkGapWarning(state, THRESHOLDS, root, { answer: "yes", category: "people", timestamp: "t1" });
+    expect(warning).toBeNull();
+  });
+
+  it("does not fire once the slot is authored and finished", () => {
+    const root = rootWith({ yes: { people: makeNode() } });
+    const answers = [answer({ timestamp: "t1" }), answer({ timestamp: "t2" })];
+    const state = stateWithAnswers(answers);
+    const warning = checkGapWarning(state, THRESHOLDS, root, { answer: "yes", category: "people", timestamp: "t2" });
+    expect(warning).toBeNull();
+  });
+
+  it("still fires when the slot exists but is unfinished (blank invite/Morning question)", () => {
+    const root = rootWith({ yes: { people: makeNode({ inviteQuestion: "  " }) } });
+    const answers = [answer({ timestamp: "t1" }), answer({ timestamp: "t2" })];
+    const state = stateWithAnswers(answers);
+    const warning = checkGapWarning(state, THRESHOLDS, root, { answer: "yes", category: "people", timestamp: "t2" });
+    expect(warning).not.toBeNull();
+  });
+
+  it("falls back to the general slot when no single category is one-away but the mixed count is", () => {
+    const root = rootWith(); // no generalYes authored
+    const answers = [answer({ timestamp: "t1", category: "environment" }), answer({ timestamp: "t2", category: "impact" })];
+    const state = stateWithAnswers(answers);
+    const warning = checkGapWarning(state, THRESHOLDS, root, { answer: "yes", category: "impact", timestamp: "t2" });
+    expect(warning).not.toBeNull();
+    expect(warning?.path).toEqual([{ valence: "yes", category: null }]);
+  });
+
+  it("dedupes — only fires once per tree position/valence/category, via state.notifiedGaps", () => {
+    const root = rootWith();
+    const state = stateWithAnswers([answer({ timestamp: "t1" }), answer({ timestamp: "t2" })]);
+    const first = checkGapWarning(state, THRESHOLDS, root, { answer: "yes", category: "people", timestamp: "t2" });
+    expect(first).not.toBeNull();
+    expect(state.notifiedGaps["yes:people"]).toBe("t2");
+    // Same call again (e.g. a duplicate/retried request) must not re-fire.
+    const second = checkGapWarning(state, THRESHOLDS, root, { answer: "yes", category: "people", timestamp: "t2" });
+    expect(second).toBeNull();
+  });
+});
+
 describe("acceptRecommendation / declineRecommendation", () => {
   function pendingRec(overrides: Partial<RecommendationNudge> = {}): RecommendationNudge {
     return {
@@ -232,14 +294,21 @@ describe("acceptRecommendation / declineRecommendation", () => {
 
   it("accepting sets activeOverride from the recommendation's own node and marks it accepted", () => {
     const rec = pendingRec();
-    const state: UserState = { ...defaultState(), recommendationHistory: [rec], declinedStreaks: { "no:impact": { asOfTimestamp: "t9" } } };
+    const state: UserState = {
+      ...defaultState(),
+      recommendationHistory: [rec],
+      declinedStreaks: { "no:impact": { asOfTimestamp: "t9" } },
+      notifiedGaps: { "no:impact": "t9" },
+    };
     const outcome = acceptRecommendation(state, "rec-1");
     expect(outcome).toBe("ok");
     expect(state.recommendationHistory[0].status).toBe("accepted");
     expect(state.activeOverride?.path).toEqual(rec.path);
     expect(state.activeOverride?.blockQuestions).toEqual(rec.node.blockQuestions);
-    // Accepting moves the account's whole tree position, so every prior decline's context is stale.
+    // Accepting moves the account's whole tree position, so every prior decline's (and gap warning's)
+    // context is stale.
     expect(state.declinedStreaks).toEqual({});
+    expect(state.notifiedGaps).toEqual({});
   });
 
   it("returns not-found for an unknown recommendation id", () => {

@@ -31,3 +31,5 @@ new_sqlite_classes = ["PushScheduler"]
 #   SESSION_SECRET (any random string, used to namespace/rotate sessions if needed)
 #   SHEETS_SPREADSHEET_ID (the Google Sheet Admin's Push/Pull buttons use — create a blank sheet,
 #     share it with FCM_SERVICE_ACCOUNT_JSON's client_email as an Editor, paste the sheet's id here)
+#   ADMIN_EMAIL (where the one-away gap-warning email goes, see email.ts's sendGapWarningEmail — unset
+#     just skips that channel; the Admin UI's gap map flags the same gap regardless)

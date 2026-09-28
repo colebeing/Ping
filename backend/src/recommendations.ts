@@ -8,6 +8,7 @@ import {
   type EscalationPath,
   type EscalationStep,
   type FollowupPrompt,
+  type GapWarning,
   type LiveBlockId,
   type QuestionOverride,
   type QuestionRoot,
@@ -96,16 +97,57 @@ function pathsEqual(a: EscalationPath, b: EscalationPath): boolean {
   return a.every((step, i) => step.valence === b[i].valence && step.category === b[i].category);
 }
 
+interface StreakCounts {
+  categoryCount: number;
+  generalCount: number;
+  categoryThreshold: number;
+  generalThreshold: number;
+}
+
+/**
+ * The response-count math shared by detectStreaks and checkGapWarning below — counts *responses*, not
+ * consecutive days, globally across all four live blocks, not per block. A decline's asOfTimestamp is a
+ * floor: responses at or before it don't count toward a fresh streak (see declinedStreakKey). Split out
+ * so the "did we just cross the line" check (detectStreaks) and the "are we one response short of it,
+ * with nothing ready to propose" check (checkGapWarning) can't drift apart on how a streak is counted.
+ */
+function computeStreakCounts(
+  state: UserState,
+  thresholds: TriggerConfig,
+  justAnswered: { answer: Answer; category: Category },
+): StreakCounts {
+  const valence = justAnswered.answer;
+
+  const categoryFloor = state.declinedStreaks[declinedStreakKey(valence, justAnswered.category)]?.asOfTimestamp;
+  const categoryCount = state.answers.filter(
+    (a) =>
+      isLiveBlockId(a.block) &&
+      a.answer === justAnswered.answer &&
+      a.category === justAnswered.category &&
+      (!categoryFloor || a.timestamp > categoryFloor),
+  ).length;
+
+  const generalFloor = state.declinedStreaks[declinedStreakKey(valence, null)]?.asOfTimestamp;
+  const generalCount = state.answers.filter(
+    (a) => isLiveBlockId(a.block) && a.answer === justAnswered.answer && a.category && (!generalFloor || a.timestamp > generalFloor),
+  ).length;
+
+  return {
+    categoryCount,
+    generalCount,
+    categoryThreshold: valence === "yes" ? thresholds.categoryYesThreshold : thresholds.categoryNoThreshold,
+    generalThreshold: valence === "yes" ? thresholds.generalYesThreshold : thresholds.generalNoThreshold,
+  };
+}
+
 /**
  * Checks whether the response just recorded (`justAnswered`) has pushed a streak's total response count
  * to threshold, and if so proposes a recommendation. The yes valence covers yes-streaks (do more of
  * what's working), no covers no-streaks — symmetric per spec.
  *
- * Counts *responses*, not consecutive days, and globally across all four live blocks, not per block —
- * three blocks all answered "yes, family" on the same day count as 3 toward that streak, same as 3
- * spread across 3 separate days. Only the two counts this one response could have just moved (its own
- * exact category, and the general/mixed one) are checked — a call only ever evaluates one response, so
- * at most one recommendation is ever produced per call.
+ * Only the two counts this one response could have just moved (its own exact category, and the
+ * general/mixed one) are checked — a call only ever evaluates one response, so at most one
+ * recommendation is ever produced per call.
  *
  * If the count shares a single category throughout, that's the specific per-category invitation (8 of
  * the 10 slots). The general yes/no invitation (the remaining 2 slots) counts every response of that
@@ -114,7 +156,8 @@ function pathsEqual(a: EscalationPath, b: EscalationPath): boolean {
  * The invitation itself is resolved against the account's CURRENT node in the escalation tree (root, or
  * wherever an already-accepted override has advanced to) — if that node has no child authored at this
  * (valence, category) slot, nothing is proposed at all. Escalation only ever goes as deep as an admin
- * has actually built it; there's no fallback to some default set.
+ * has actually built it; there's no fallback to some default set. See checkGapWarning for the admin-side
+ * heads-up about exactly that gap, fired one response earlier.
  */
 export function detectStreaks(
   state: UserState,
@@ -132,26 +175,7 @@ export function detectStreaks(
   // A valence IS just which answer produced this streak direction — same Answer type, no translation.
   const valence: Answer = justAnswered.answer;
 
-  // A decline's asOfTimestamp is a floor: responses at or before it don't count toward a fresh streak,
-  // so a declined invitation needs genuinely new responses (not the same count continuing) before
-  // anything is proposed again — whether that next proposal would be the same per-category invitation,
-  // or the general one built from the same underlying responses reworded under different copy.
-  const categoryFloor = state.declinedStreaks[declinedStreakKey(valence, justAnswered.category)]?.asOfTimestamp;
-  const categoryCount = state.answers.filter(
-    (a) =>
-      isLiveBlockId(a.block) &&
-      a.answer === justAnswered.answer &&
-      a.category === justAnswered.category &&
-      (!categoryFloor || a.timestamp > categoryFloor),
-  ).length;
-
-  const generalFloor = state.declinedStreaks[declinedStreakKey(valence, null)]?.asOfTimestamp;
-  const generalCount = state.answers.filter(
-    (a) => isLiveBlockId(a.block) && a.answer === justAnswered.answer && a.category && (!generalFloor || a.timestamp > generalFloor),
-  ).length;
-
-  const categoryThreshold = valence === "yes" ? thresholds.categoryYesThreshold : thresholds.categoryNoThreshold;
-  const generalThreshold = valence === "yes" ? thresholds.generalYesThreshold : thresholds.generalNoThreshold;
+  const { categoryCount, generalCount, categoryThreshold, generalThreshold } = computeStreakCounts(state, thresholds, justAnswered);
 
   let runCategory: Category | null = null;
   let step: EscalationStep;
@@ -199,6 +223,62 @@ export function detectStreaks(
   return newRecs;
 }
 
+/**
+ * The mirror image of detectStreaks' own `if (!slot) return` gap check above: where THAT silently
+ * accepts a missing/unfinished destination slot forever (nothing is ever proposed there, on this
+ * response or any later one), this catches it one response early — so whoever authors questions gets a
+ * window to fill the slot in before the next matching answer arrives and the gap passes by unnoticed.
+ * Same tree position and same counts as detectStreaks (see computeStreakCounts); only the trigger point
+ * (one response SHORT of threshold, not at it) and which way the slot check goes (must be missing or
+ * unfinished, not present) are inverted.
+ *
+ * Deduped via state.notifiedGaps, keyed and reset exactly like state.declinedStreaks (see
+ * declinedStreakKey) — a fresh tree position starts a fresh warning budget, same as it starts a fresh
+ * streak-decline budget. Mutates state.notifiedGaps the moment it fires (there's no RecommendationNudge
+ * to attach the dedup to, since the slot isn't authored); returns the candidate for the caller to
+ * persist globally (see types.ts's GapWarning) and notify the admin with.
+ */
+export function checkGapWarning(
+  state: UserState,
+  thresholds: TriggerConfig,
+  root: QuestionRoot,
+  justAnswered: { answer: Answer; category: Category; timestamp: string },
+): Omit<GapWarning, "id" | "userId" | "email" | "createdAt"> | null {
+  const currentPath = state.activeOverride?.path ?? [];
+  const children = currentPath.length === 0 ? root.children : (resolveNode(root, currentPath)?.children ?? root.children);
+  const valence = justAnswered.answer;
+
+  const { categoryCount, generalCount, categoryThreshold, generalThreshold } = computeStreakCounts(state, thresholds, justAnswered);
+
+  let category: Category | null;
+  let count: number;
+  let threshold: number;
+  // >= rather than an exact-match "count === threshold - 1": a call only ever moves a count by 1, so in
+  // practice these coincide, but this also survives an admin lowering a threshold out from under an
+  // already-in-progress streak without silently skipping the warning.
+  if (categoryCount >= categoryThreshold - 1 && categoryCount < categoryThreshold) {
+    category = justAnswered.category;
+    count = categoryCount;
+    threshold = categoryThreshold;
+  } else if (generalCount >= generalThreshold - 1 && generalCount < generalThreshold) {
+    category = null;
+    count = generalCount;
+    threshold = generalThreshold;
+  } else {
+    return null;
+  }
+
+  const slot = category === null ? (valence === "yes" ? children.generalYes : children.generalNo) : children[valence][category];
+  const child = slot ? derefNode(root, slot) : null;
+  if (child && !isUnfinishedNode(child)) return null; // ready — nothing to warn about
+
+  const key = declinedStreakKey(valence, category);
+  if (state.notifiedGaps[key]) return null; // already warned at this tree position
+  state.notifiedGaps[key] = justAnswered.timestamp;
+
+  return { path: [...currentPath, { valence, category }], valence, category, count, threshold };
+}
+
 export type AcceptOutcome = "ok" | "not-found" | "digin-choice-required" | "invalid-digin-choice";
 
 /**
@@ -231,6 +311,7 @@ export function acceptRecommendation(state: UserState, recommendationId: string,
     // Stepping back to the routine question itself — no override at all (declines reset as below).
     state.activeOverride = undefined;
     state.declinedStreaks = {};
+    state.notifiedGaps = {};
     return "ok";
   }
   state.activeOverride = {
@@ -249,6 +330,7 @@ export function acceptRecommendation(state: UserState, recommendationId: string,
   // exactly what it always was: a specific offer, on a specific answer, still open to being accepted
   // later regardless of what's currently active.
   state.declinedStreaks = {};
+  state.notifiedGaps = {};
   return "ok";
 }
 
