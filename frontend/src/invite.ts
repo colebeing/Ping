@@ -47,7 +47,7 @@ export async function inviteFriend(): Promise<InviteResult> {
   if (!base) throw new Error("Invites aren't set up for this build");
   const { code } = await api.getReferralCode();
   const url = `${base}${base.includes("?") ? "&" : "?"}${REF_PARAM}=${encodeURIComponent(code)}`;
-  const text = "Ping asks one thing a day: did today go how you wanted? Takes a few taps.";
+  const text = "Lightweight coaching that adapts to you. No login or setup necessary:";
 
   if (Capacitor.isNativePlatform() || (await Share.canShare()).value) {
     try {
