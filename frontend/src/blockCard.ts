@@ -233,6 +233,12 @@ export async function mountBlockCard(
 
         card.appendChild(answerRow);
 
+        // Answered under a different question than the account's current one (an earlier swap): a
+        // single, low-key way back to it. Deliberately plain — an offer, not a nudge or a verdict.
+        if (q.canReturn && date) {
+          card.appendChild(button("Go back to this question", "btn", () => returnToThisQuestion(date)));
+        }
+
         // Whatever swap invitation this answer earned, stays visible right alongside it rather than
         // vanishing the moment it's resolved — deliberately plain here (no badge, no "you missed this"
         // framing), just the fact of what was offered and what happened. A declined one keeps a single,
@@ -266,6 +272,13 @@ export async function mountBlockCard(
     };
 
     const questionChanged = () => (onQuestionChanged ? onQuestionChanged() : void mountBlockCard(container, block, date, onDone));
+
+    // Re-adopts the question this answer was recorded under; the account's question just changed, so
+    // hand off to questionChanged (every other card showing the old one needs to update too).
+    const returnToThisQuestion = async (day: string) => {
+      await api.returnToQuestion(block, day);
+      questionChanged();
+    };
 
     const resolveReturnInvite = async (invite: RecommendationNudge, accept: boolean) => {
       if (!accept) {

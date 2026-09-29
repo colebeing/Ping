@@ -1,8 +1,8 @@
 import { isBlockId, isLiveBlockId, type FollowupPrompt, type Env } from "../types";
-import { errorResponse, json } from "../http";
+import { errorResponse, json, readJson } from "../http";
 import { getState, saveState, todayLocal, resolveDate } from "../state";
 import { getConfig, getQuestionRoot, getTriggerConfig } from "../config";
-import { checkUnanswered, pendingReturnInvite, resolveNode, resolveOverrideContent } from "../recommendations";
+import { canReturnToPath, checkUnanswered, pendingReturnInvite, returnToQuestion, resolveNode, resolveOverrideContent } from "../recommendations";
 
 export async function handleGetQuestion(request: Request, env: Env, userId: string): Promise<Response> {
   const url = new URL(request.url);
@@ -93,8 +93,33 @@ export async function handleGetQuestion(request: Request, env: Env, userId: stri
     date,
     text,
     overridden: Boolean(override),
+    // Only an answered live block can be returned to — the legacy blocks have no override to adopt.
+    canReturn: existingAnswer && isLiveBlockId(block) ? canReturnToPath(state, root, existingAnswer.path ?? []) : false,
     existingAnswer: existingAnswer ? { ...existingAnswer, followup } : null,
     recommendation,
     returnInvite,
   });
+}
+
+interface ReturnBody {
+  block?: string;
+  date?: string;
+}
+
+/** History's "Go back to this question": re-adopts the question the given answer was recorded under. */
+export async function handleReturnToQuestion(request: Request, env: Env, userId: string): Promise<Response> {
+  const body = await readJson<ReturnBody>(request);
+  if (!isLiveBlockId(body.block)) return errorResponse("block must be a live block id", 400);
+
+  const state = await getState(env, userId);
+  const date = resolveDate(state.cadence.timezone, body.date);
+  const answer = state.answers.find((a) => a.date === date && a.block === body.block);
+  if (!answer) return errorResponse("No answer recorded for that day", 404);
+
+  const root = await getQuestionRoot(env);
+  if (returnToQuestion(state, root, answer.path ?? []) === "not-returnable") {
+    return errorResponse("That question can't be returned to", 409);
+  }
+  await saveState(env, userId, state);
+  return json({ ok: true });
 }

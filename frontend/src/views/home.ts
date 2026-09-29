@@ -91,6 +91,9 @@ function visibleBlocksToday(cadence: Cadence): BlockId[] {
   return all.filter(([block, time]) => block === current || hasReachedToday(time, cadence.timezone)).map(([block]) => block);
 }
 
+/** Survives Home re-renders, which happen whenever the account's question changes. */
+let historyExpanded = false;
+
 export async function renderHome(root: HTMLElement, onSettings: () => void): Promise<void> {
   root.innerHTML = `<h2>Home</h2><div class="card">Loading…</div>`;
   try {
@@ -161,14 +164,20 @@ export async function renderHome(root: HTMLElement, onSettings: () => void): Pro
     const historyContainer = document.createElement("div");
     root.appendChild(historyContainer);
 
-    let expanded = false;
-    toggle.addEventListener("click", () => {
-      expanded = !expanded;
-      toggle.classList.toggle("expanded", expanded);
-      toggle.querySelector("span")!.textContent = expanded ? "Hide history" : "Show history";
-      if (expanded) renderHistoryList(historyContainer, me.cadence, today);
+    // Earliest day worth paging back to: the account's first day, or its first answer if that predates it.
+    const created = me.createdAt ? localDateStr(me.cadence.timezone, new Date(me.createdAt)) : today;
+    const earliest = me.firstAnswerDate && me.firstAnswerDate < created ? me.firstAnswerDate : created;
+
+    const setExpanded = (value: boolean) => {
+      historyExpanded = value;
+      toggle.classList.toggle("expanded", value);
+      toggle.querySelector("span")!.textContent = value ? "Hide history" : "Show history";
+      if (value) renderHistoryList(historyContainer, me.cadence, today, earliest, () => void renderHome(root, onSettings));
       else historyContainer.innerHTML = "";
-    });
+    };
+    toggle.addEventListener("click", () => setExpanded(!historyExpanded));
+    // A full re-render (returning to an earlier question) shouldn't collapse History under the user.
+    if (historyExpanded) setExpanded(true);
   } catch (err) {
     root.innerHTML = `<div class="card error">Couldn't load Home.</div>`;
     console.error(err);

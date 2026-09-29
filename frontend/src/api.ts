@@ -30,6 +30,9 @@ export interface QuestionResponse {
   block: BlockId;
   text: string;
   overridden: boolean;
+  /** True when this answered day was recorded under a different question than the account's current
+   * one and that question can still be re-adopted — see api.returnToQuestion. */
+  canReturn: boolean;
   existingAnswer: {
     answer: Answer;
     category?: Category;
@@ -365,6 +368,7 @@ export const api = {
     request<{
       email: string | null;
       createdAt: string | null;
+      firstAnswerDate: string | null;
       cadence: Cadence;
       pushSubscriptionCount: number;
       fcmTokenCount: number;
@@ -399,6 +403,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ block, category, date }),
     }),
+
+  /** Makes the question this answered day was recorded under the account's question again. */
+  returnToQuestion: (block: BlockId, date: string) =>
+    request<{ ok: true }>("/api/question/return", { method: "POST", body: JSON.stringify({ block, date }) }),
 
   /** `digInChoice` is required only when the invitation's own node has a digIn — see DigIn's doc
    * comment; omitted, it serializes away to `{}` for the ordinary no-digIn case. */

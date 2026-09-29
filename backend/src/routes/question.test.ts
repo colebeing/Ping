@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { defaultState } from "../state";
 import { FakeKV, makeNode } from "../test/helpers";
 import type { AnswerRecord, Env, QuestionRoot, UserState } from "../types";
-import { handleGetQuestion } from "./question";
+import { handleGetQuestion, handleReturnToQuestion } from "./question";
 
 /**
  * Regression coverage for the History bug: handleGetQuestion used to resolve question text from the
@@ -110,5 +110,48 @@ describe("handleGetQuestion — historical question text", () => {
     const { env } = buildEnv(state, buildRoot());
     expect(await getText(env, "2024-01-01")).toBe(ROOT_TEXT);
     expect(await getText(env, "2024-01-02")).toBe(ROOT_TEXT);
+  });
+});
+
+describe("returning to a question from History", () => {
+  const swapPath = [{ valence: "yes" as const, category: "people" as const }];
+  const answered = (path: AnswerRecord["path"]): AnswerRecord => ({ date: "2024-01-01", block: "q1", answer: "yes", category: "people", path, timestamp: "2024-01-01T08:00:00.000Z" });
+
+  async function post(env: Env) {
+    const res = await handleReturnToQuestion(new Request("http://test/api/question/return", { method: "POST", body: JSON.stringify({ block: "q1", date: "2024-01-01" }) }), env, "user-1");
+    return res;
+  }
+  async function stateOf(env: Env): Promise<UserState> {
+    return (await (env as unknown as { STATE_KV: FakeKV }).STATE_KV.get<UserState>("state:user-1"))!;
+  }
+
+  it("re-adopts the routine question, retiring the active swap", async () => {
+    const state: UserState = {
+      ...defaultState(),
+      answers: [answered([])],
+      activeOverride: { path: swapPath, blockQuestions: { q1: "s", q2: "s", q3: "s", q4: "s" }, yes: buildRoot().yes, no: buildRoot().no, category: "people", digInChoice: null, acceptedAt: "2024-01-04" },
+    };
+    const { env } = buildEnv(state, buildRoot());
+    expect((await post(env)).status).toBe(200);
+    const after = await stateOf(env);
+    expect(after.activeOverride).toBeUndefined();
+    expect(after.retiredOverrides).toHaveLength(1);
+  });
+
+  it("re-adopts an earlier swap question from the routine one", async () => {
+    const { env } = buildEnv({ ...defaultState(), answers: [answered(swapPath)] }, buildRoot());
+    expect((await post(env)).status).toBe(200);
+    expect((await stateOf(env)).activeOverride?.path).toEqual(swapPath);
+  });
+
+  it("refuses when the answer's question is already the active one", async () => {
+    const { env } = buildEnv({ ...defaultState(), answers: [answered([])] }, buildRoot());
+    expect((await post(env)).status).toBe(409);
+  });
+
+  it("refuses when the answer's path no longer resolves", async () => {
+    const gone = [{ valence: "yes" as const, category: "capacity" as const }];
+    const { env } = buildEnv({ ...defaultState(), answers: [answered(gone)] }, buildRoot());
+    expect((await post(env)).status).toBe(409);
   });
 });

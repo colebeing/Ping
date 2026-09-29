@@ -25,6 +25,9 @@ export async function handleMe(request: Request, env: Env, userId: string): Prom
     email: user?.email ?? null,
     createdAt: user?.createdAt ?? null,
     cadence: state.cadence,
+    // Where History's pagination stops: the earliest day with any answer (can predate createdAt, e.g.
+    // an anonymous account merged into a claimed one).
+    firstAnswerDate: state.answers.reduce<string | null>((min, a) => (min === null || a.date < min ? a.date : min), null),
     pushSubscriptionCount: state.pushSubscriptions.length,
     fcmTokenCount: state.fcmTokens.length,
     isAdmin: user?.isAdmin === true,

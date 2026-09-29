@@ -334,6 +334,59 @@ export function acceptRecommendation(state: UserState, recommendationId: string,
   return "ok";
 }
 
+/**
+ * Can the account go back to the question that was active when an answer was given (`path`, as
+ * AnswerRecord.path records it — [] for the routine question)? Only when it differs from the current
+ * one and the node still exists and is finished in the tree; a path that no longer resolves is shown
+ * as the routine question in History (routes/question.ts), so offering to "return" to it would
+ * silently do something else.
+ */
+export function canReturnToPath(state: UserState, root: QuestionRoot, path: EscalationPath): boolean {
+  if (pathsEqual(path, state.activeOverride?.path ?? [])) return false;
+  if (path.length === 0) return true;
+  const node = resolveNode(root, path);
+  return node !== null && !isUnfinishedNode(node);
+}
+
+/**
+ * The user, looking at an old answer in History, chose to make the question it was answered under
+ * their question again. Unlike acceptRecommendation this isn't a response to an invite, so nothing is
+ * marked accepted/declined; the question being left retires exactly as it does on a step back, and any
+ * still-open step-back invite is resolved as declined since the user just made that choice themselves.
+ * Live tree content is used (see resolveOverrideContent), so a digIn node returns with its base
+ * question, digInChoice null.
+ */
+export function returnToQuestion(state: UserState, root: QuestionRoot, path: EscalationPath): "ok" | "not-returnable" {
+  if (!canReturnToPath(state, root, path)) return "not-returnable";
+
+  if (state.activeOverride) state.retiredOverrides.push(state.activeOverride);
+  const pending = pendingReturnInvite(state);
+  if (pending) {
+    pending.status = "declined";
+    pending.resolvedAt = new Date().toISOString();
+  }
+
+  if (path.length === 0) {
+    state.activeOverride = undefined;
+  } else {
+    const node = resolveNode(root, path)!;
+    state.activeOverride = {
+      path,
+      blockQuestions: node.blockQuestions,
+      yes: node.yes,
+      no: node.no,
+      category: path[path.length - 1].category,
+      digInChoice: null,
+      acceptedAt: new Date().toISOString(),
+    };
+  }
+  // Same reasoning as acceptRecommendation: declines and gap warnings are tied to a tree position that
+  // just moved.
+  state.declinedStreaks = {};
+  state.notifiedGaps = {};
+  return "ok";
+}
+
 /** The user said no — mark it declined (never removed) and remember the exact streak declined so
  * detectStreaks won't re-propose it while that same run continues. */
 export function declineRecommendation(state: UserState, recommendationId: string): boolean {

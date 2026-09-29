@@ -1,7 +1,8 @@
 import { api, LIVE_BLOCKS, type Answer, type BlockId, type Cadence, type Category, type FollowupPrompt, type LiveBlockId } from "../api";
 import { mountBlockCard, button, CATEGORY_LABEL } from "../blockCard";
 
-const DAYS_SHOWN = 14;
+/** History loads this many days at a time; "Show older days" appends the next page. */
+const PAGE_DAYS = 14;
 const TWICE_BLOCKS: BlockId[] = ["1", "2"];
 
 export function localDateStr(timezone: string, at: Date): string {
@@ -24,12 +25,12 @@ function dayLabel(date: string, today: string, yesterday: string): string {
 }
 
 /** Each of `blocks` as an independently fillable block — any can be answered first. */
-function renderBlocks(container: HTMLElement, blocks: BlockId[], date: string): void {
+function renderBlocks(container: HTMLElement, blocks: BlockId[], date: string, onQuestionChanged: () => void): void {
   container.innerHTML = "";
   for (const block of blocks) {
     const blockContainer = document.createElement("div");
     container.appendChild(blockContainer);
-    void mountBlockCard(blockContainer, block, date);
+    void mountBlockCard(blockContainer, block, date, undefined, onQuestionChanged);
   }
 }
 
@@ -39,7 +40,7 @@ function renderBlocks(container: HTMLElement, blocks: BlockId[], date: string): 
  * every block under the hood, so once done it reads identically to a
  * normally-answered day.
  */
-async function renderCollapsedDay(container: HTMLElement, date: string, blocks: BlockId[]): Promise<void> {
+async function renderCollapsedDay(container: HTMLElement, date: string, blocks: BlockId[], onQuestionChanged: () => void): Promise<void> {
   container.innerHTML = `<div class="card">Loading…</div>`;
   try {
     let step: { kind: "question" } | { kind: "followup"; answer: Answer; prompt: FollowupPrompt } = {
@@ -89,7 +90,7 @@ async function renderCollapsedDay(container: HTMLElement, date: string, blocks: 
         await api.answer(block, pendingAnswer, date);
         await api.followup(block, category, date);
       }
-      renderBlocks(container, blocks, date);
+      renderBlocks(container, blocks, date, onQuestionChanged);
     };
 
     paint();
@@ -106,18 +107,18 @@ async function renderCollapsedDay(container: HTMLElement, date: string, blocks: 
  * a fully blank past day falls back to the current setting, since there's
  * nothing else to go on for it.
  */
-async function renderDay(container: HTMLElement, date: string, cadence: Cadence): Promise<void> {
+async function renderDay(container: HTMLElement, date: string, cadence: Cadence, onQuestionChanged: () => void): Promise<void> {
   container.innerHTML = `<div class="card">Loading…</div>`;
 
   const combined = await api.getQuestion("combined", date);
   if (combined.existingAnswer) {
-    void mountBlockCard(container, "combined", date);
+    void mountBlockCard(container, "combined", date, undefined, onQuestionChanged);
     return;
   }
 
   const [morning, evening] = await Promise.all([api.getQuestion("1", date), api.getQuestion("2", date)]);
   if (morning.existingAnswer || evening.existingAnswer) {
-    renderBlocks(container, TWICE_BLOCKS, date);
+    renderBlocks(container, TWICE_BLOCKS, date, onQuestionChanged);
     return;
   }
 
@@ -129,34 +130,59 @@ async function renderDay(container: HTMLElement, date: string, cadence: Cadence)
     // specific day, shouldn't sit here forever as an open, unanswered prompt.
     const stillLive = LIVE_BLOCKS.filter((b) => !cadence.skippedBlocks.includes(b));
     const toShow = LIVE_BLOCKS.filter((b) => answeredQuad.includes(b) || stillLive.includes(b));
-    renderBlocks(container, toShow, date);
+    renderBlocks(container, toShow, date, onQuestionChanged);
     return;
   }
 
   // Fully blank past day — nothing to preserve, so use whichever blocks are live now.
   const liveNow: LiveBlockId[] = LIVE_BLOCKS.filter((b) => !cadence.skippedBlocks.includes(b));
-  if (liveNow.length === 1) void mountBlockCard(container, liveNow[0], date);
-  else void renderCollapsedDay(container, date, liveNow);
+  if (liveNow.length === 1) void mountBlockCard(container, liveNow[0], date, undefined, onQuestionChanged);
+  else void renderCollapsedDay(container, date, liveNow, onQuestionChanged);
 }
 
+/** How many days back (including yesterday) History currently shows. Module-level so a full Home
+ * re-render (e.g. after returning to an earlier question) doesn't drop the user back to page one. */
+let daysLoaded = PAGE_DAYS;
+
 /**
- * Renders the last DAYS_SHOWN-1 days *before* today, one per calendar day — today itself is
- * Home's job (the live, actionable day gets its own hero treatment there), this is purely the
- * backward-looking list Home reveals under its "Show history" toggle.
+ * Renders the days *before* today, newest first, one per calendar day, PAGE_DAYS at a time — today
+ * itself is Home's job (the live, actionable day gets its own hero treatment there), this is purely
+ * the backward-looking list Home reveals under its "Show history" toggle. Pages stop at `earliest`
+ * (the account's first day of any kind), so the whole history is reachable and nothing before it
+ * renders as endless blank days. `onQuestionChanged` fires when a card changes the account's question
+ * (e.g. "Go back to this question"), since that changes what every other day's card should offer.
  */
-export function renderHistoryList(root: HTMLElement, cadence: Cadence, today: string): void {
+export function renderHistoryList(root: HTMLElement, cadence: Cadence, today: string, earliest: string, onQuestionChanged: () => void): void {
   root.innerHTML = "";
   const [, yesterday] = recentDates(today, 2);
+  // Every day from yesterday back to the account's first day; only a page's worth is rendered at a time.
+  const span = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${earliest}T00:00:00Z`)) / 86400000);
+  const dates = recentDates(today, Math.max(span, 0) + 1).slice(1);
 
-  for (const date of recentDates(today, DAYS_SHOWN).slice(1)) {
-    const dayHeading = document.createElement("p");
-    dayHeading.className = "muted";
-    dayHeading.style.margin = "18px 0 4px";
-    dayHeading.textContent = dayLabel(date, today, yesterday);
-    root.appendChild(dayHeading);
+  let rendered = 0;
+  const more = document.createElement("button");
+  more.className = "history-toggle";
+  more.innerHTML = `<span>Show older days</span><span class="chev">▾</span>`;
+  more.addEventListener("click", () => {
+    daysLoaded += PAGE_DAYS;
+    renderNext();
+  });
 
-    const dayContainer = document.createElement("div");
-    root.appendChild(dayContainer);
-    void renderDay(dayContainer, date, cadence);
-  }
+  const renderNext = () => {
+    more.remove();
+    for (const date of dates.slice(rendered, daysLoaded)) {
+      const dayHeading = document.createElement("p");
+      dayHeading.className = "muted";
+      dayHeading.style.margin = "18px 0 4px";
+      dayHeading.textContent = dayLabel(date, today, yesterday);
+      root.appendChild(dayHeading);
+
+      const dayContainer = document.createElement("div");
+      root.appendChild(dayContainer);
+      void renderDay(dayContainer, date, cadence, onQuestionChanged);
+      rendered++;
+    }
+    if (rendered < dates.length) root.appendChild(more);
+  };
+  renderNext();
 }

@@ -103,6 +103,8 @@ Each entry: the principle, why it matters, where the current app already lives u
 
 **Whether users ever see their own data — decided:** the free core stays purely forward-facing (answer, act, move on); looking backward at your own patterns is the paid tier. "If you want to analyze your life, that's on you — we're here to keep it moving." When that surface does ship, it's explicitly **trends, not streaks** — e.g. "your mornings tend to go wrong," "work is really messing up your afternoons" — pattern insight about your life, not a gamified count of your app usage. This is also the first concrete answer to the free/paid line Hyperavailable left open (see below): self-reflection and analysis are a "use case," the check-in loop itself is core.
 
+**Open tension — History already looks backward, and now reaches all the way back:** the decision above puts *looking back at your own patterns* in the paid tier, but Home's "Show history" (last 13 days, each day editable) already shipped free, and it now pages back to the account's first day ("Show older days", 14 days at a time). It reads as the *record* of what you answered, not trend analysis — no counts, streaks, or "your mornings tend to go wrong" — which is the working line for why it's still free. Whether unlimited depth belongs in the free tier is unresolved; if it doesn't, the natural cut is a page limit, not removing the list. Also new: an answered day whose question differs from your current one offers "Go back to this question" (re-adopts it, retires the current one the same way a step-back does). One tap, plain wording, no "you used to…" framing — it's an offer to return, not a nudge, and it never fires on its own.
+
 ---
 
 ---

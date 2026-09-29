@@ -3,7 +3,7 @@ import { corsHeaders, errorResponse, handlePreflight, HttpError } from "./http";
 import { requireAuth, isAdmin } from "./auth";
 import { handleLogin, handleLogout, handleRequestPasswordReset, handleConfirmPasswordReset } from "./routes/auth";
 import { handleMe } from "./routes/me";
-import { handleGetQuestion } from "./routes/question";
+import { handleGetQuestion, handleReturnToQuestion } from "./routes/question";
 import { handleAnswer, handleFollowup } from "./routes/answer";
 import { handleListRecommendations, handleAcceptRecommendation, handleDeclineRecommendation, handleUpdateCadence } from "./routes/recommendations";
 import { handleSubscribe, handleGetVapidPublicKey, handleTestPush, handleRegisterFcmToken, handleNotificationClicked, handleDismissNudge } from "./routes/push";
@@ -46,6 +46,7 @@ async function route(request: Request, env: Env): Promise<Response> {
 
   if (pathname === "/api/me" && method === "GET") return handleMe(request, env, userId);
   if (pathname === "/api/question" && method === "GET") return handleGetQuestion(request, env, userId);
+  if (pathname === "/api/question/return" && method === "POST") return handleReturnToQuestion(request, env, userId);
   if (pathname === "/api/answer" && method === "POST") return handleAnswer(request, env, userId);
   if (pathname === "/api/followup" && method === "POST") return handleFollowup(request, env, userId);
   if (pathname === "/api/recommendations" && method === "GET") return handleListRecommendations(request, env, userId);
