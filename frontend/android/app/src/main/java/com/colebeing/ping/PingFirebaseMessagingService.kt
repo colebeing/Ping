@@ -85,6 +85,12 @@ private fun ensureChannel(context: Context) {
     manager.createNotificationChannel(channel)
 }
 
+/** Tap-to-open for the final confirmation states, which have no buttons of their own. */
+private fun openAppIntent(context: Context): PendingIntent? {
+    val launch = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return null
+    return PendingIntent.getActivity(context, 0, launch, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+}
+
 private fun actionIntent(context: Context, action: String, extras: Map<String, String>): PendingIntent {
     val intent = Intent(context, NotificationActionReceiver::class.java).apply {
         this.action = action
@@ -198,6 +204,9 @@ fun showConfirmationNotification(context: Context, answerLabel: String, category
         .setContentTitle("Logged: $answerLabel")
         .setContentText(categoryLabel)
         .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        .setSilent(true)
+        .setOnlyAlertOnce(true)
+        .setContentIntent(openAppIntent(context))
         .setAutoCancel(true)
         .setTimeoutAfter(8000)
         .build()
@@ -303,6 +312,9 @@ fun showRecommendationConfirmationNotification(context: Context, accepted: Boole
         .setSmallIcon(android.R.drawable.ic_dialog_info)
         .setContentTitle(if (accepted) "Switched your daily question" else "Kept your current question")
         .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        .setSilent(true)
+        .setOnlyAlertOnce(true)
+        .setContentIntent(openAppIntent(context))
         .setAutoCancel(true)
         .setTimeoutAfter(8000)
         .build()
