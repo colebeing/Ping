@@ -1,5 +1,35 @@
-import { api, type AnalyticsQuestionPath, type AnalyticsResponse, type AnalyticsUserSummary, type BlockId, type Category, type QuestionPathBreakdown, type UserProfileResponse } from "../api";
+import {
+  api,
+  type AnalyticsQuestionPath,
+  type AnalyticsResponse,
+  type AnalyticsUserSummary,
+  type BlockId,
+  type Category,
+  type LiveBlockId,
+  type QuestionPathBreakdown,
+  type UserProfileResponse,
+} from "../api";
 import { BLOCK_LABEL, CATEGORY_LABEL } from "../blockCard";
+
+/** One representative line for a path's per-block question text — q1 (morning) if set, else whichever
+ * block has text, same "pick one representative string" convention renderUserProfile's own activeQuestion
+ * display already uses. Null/all-blank means the path no longer resolves in the current tree. */
+function questionTextLine(questionText: Record<LiveBlockId, string> | null): string {
+  if (!questionText) return "";
+  return questionText.q1 || Object.values(questionText).find((t) => t) || "";
+}
+
+/** A category's heading for display: the stable EPIC name, plus whatever specific wording end users
+ * actually tap (admin-set per node, falls back to the EPIC name itself when blank) — so "People" reads
+ * as 'People ("Others")' when that's what the button really says, and plain "People" when there's no
+ * more specific wording to add. Shows both yes- and no-side wording when they genuinely differ, since
+ * the same node can word a category differently depending on which valence led there. */
+function categoryHeading(cat: Category, labels: Record<Category, { yes: string; no: string }>): string {
+  const { yes, no } = labels[cat];
+  const specific = yes === no ? yes : `${yes} / ${no}`;
+  if (!specific || specific === CATEGORY_LABEL[cat]) return CATEGORY_LABEL[cat];
+  return `${CATEGORY_LABEL[cat]} ("${specific}")`;
+}
 
 /** Two views in one tab — the all-users list, and drilling into one person's own trend/history —
  * mirrors admin.ts's currentPath/navigate pattern, scaled down to two states instead of a whole tree. */
@@ -185,6 +215,14 @@ function renderQuestionCategorySection(paths: AnalyticsQuestionPath[]): HTMLElem
     select.appendChild(opt);
   });
   pickerCard.appendChild(select);
+
+  // The actual question text, uneditable, right under the picker — so it's unambiguous which question
+  // the category breakdown below is scoped to, not just a computed breadcrumb label.
+  const questionTextEl = document.createElement("p");
+  questionTextEl.className = "muted";
+  questionTextEl.style.margin = "10px 0 0";
+  pickerCard.appendChild(questionTextEl);
+
   wrap.appendChild(pickerCard);
 
   const detail = document.createElement("div");
@@ -192,6 +230,7 @@ function renderQuestionCategorySection(paths: AnalyticsQuestionPath[]): HTMLElem
 
   const paintDetail = () => {
     const selected = paths[Number(select.value)] ?? paths[0];
+    questionTextEl.textContent = questionTextLine(selected.questionText) || "No question text recorded for this path.";
     detail.innerHTML = "";
     detail.appendChild(renderCategoryTotalsCard(selected));
   };
@@ -222,7 +261,7 @@ function renderCategoryTotalsCard(qp: AnalyticsQuestionPath): HTMLElement {
     const label = document.createElement("p");
     label.className = "muted";
     label.style.margin = "10px 0 4px";
-    label.textContent = CATEGORY_LABEL[cat];
+    label.textContent = categoryHeading(cat, qp.categoryLabels);
     card.appendChild(label);
 
     card.appendChild(barRow("Yes", yes, max));
@@ -377,6 +416,12 @@ function renderUserProfile(data: UserProfileResponse, onBack: () => void): HTMLE
     select.appendChild(opt);
   });
   pathCard.appendChild(select);
+
+  const questionTextEl = document.createElement("p");
+  questionTextEl.className = "muted";
+  questionTextEl.style.margin = "10px 0 0";
+  pathCard.appendChild(questionTextEl);
+
   wrap.appendChild(pathCard);
 
   const detail = document.createElement("div");
@@ -384,6 +429,7 @@ function renderUserProfile(data: UserProfileResponse, onBack: () => void): HTMLE
 
   const paintDetail = () => {
     const selected = data.questionPaths[Number(select.value)] ?? data.questionPaths[0];
+    questionTextEl.textContent = questionTextLine(selected.questionText) || "No question text recorded for this path.";
     detail.innerHTML = "";
     detail.appendChild(renderCategoryTrendCard(selected));
     detail.appendChild(renderRecentAnswersCard(selected));
@@ -417,7 +463,7 @@ function renderCategoryTrendCard(data: QuestionPathBreakdown): HTMLElement {
     label.className = "muted";
     label.style.margin = "14px 0 4px";
     label.style.fontWeight = "600";
-    label.textContent = `${CATEGORY_LABEL[cat]} — ${allTimeTotal} all-time`;
+    label.textContent = `${categoryHeading(cat, data.categoryLabels)} — ${allTimeTotal} all-time`;
     card.appendChild(label);
 
     // One shared scale across both windows (not one each) so bar width is comparable between them —

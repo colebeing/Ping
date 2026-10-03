@@ -224,6 +224,12 @@ export interface AnalyticsUserSummary {
 export interface AnalyticsQuestionPath {
   path: EscalationPath;
   label: string;
+  /** The literal question text actually asked at this path, one per live block. Null if the path no
+   * longer resolves in the current tree. */
+  questionText: Record<LiveBlockId, string> | null;
+  /** Per-category button text as actually shown to end users (admin-set, EPIC-label fallback), split by
+   * valence since yes/no follow-ups can word a category differently even on the same node. */
+  categoryLabels: Record<Category, { yes: string; no: string }>;
   totalAnswers: number;
   categoryTotals: Record<Category, { yes: number; no: number }>;
 }
@@ -244,6 +250,8 @@ export interface AnalyticsResponse {
 export interface QuestionPathBreakdown {
   path: EscalationPath;
   label: string;
+  questionText: Record<LiveBlockId, string> | null;
+  categoryLabels: Record<Category, { yes: string; no: string }>;
   totalAnswers: number;
   categoryTrend: Record<Category, { last14: { yes: number; no: number }; prior14: { yes: number; no: number }; allTime: { yes: number; no: number } }>;
   recentAnswers: { date: string; block: BlockId; answer: Answer; category: Category | null }[];

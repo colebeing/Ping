@@ -8,6 +8,7 @@ import type {
   EscalationStep,
   Env,
   FollowupPrompt,
+  LiveBlockId,
   NotificationEvent,
   QuestionOverride,
   QuestionRoot,
@@ -41,6 +42,14 @@ export interface AnalyticsUserSummary {
 export interface AnalyticsQuestionPath {
   path: EscalationPath;
   label: string;
+  /** The literal question text actually asked at this path, one per live block — see
+   * resolvedQuestionContent's own doc comment. Null if the path no longer resolves in the current tree
+   * (it was restructured since any answer under it was recorded). */
+  questionText: Record<LiveBlockId, string> | null;
+  /** Per-category button text as it's actually shown to end users at this path (admin-set, EPIC-label
+   * fallback), split by valence since the yes and no follow-ups can word a category differently even on
+   * the same node — see categoryDisplayLabels. */
+  categoryLabels: Record<Category, { yes: string; no: string }>;
   totalAnswers: number;
   categoryTotals: Record<Category, { yes: number; no: number }>;
 }
@@ -231,10 +240,10 @@ export async function handleGetAnalytics(_request: Request, env: Env): Promise<R
   const questionPaths: AnalyticsQuestionPath[] = [
     ...Array.from(pathBuckets.entries())
       .filter(([key]) => key === routineKey)
-      .map(([, b]) => ({ path: b.path, label: pathLabel(root, b.path), totalAnswers: b.totalAnswers, categoryTotals: b.categoryTotals })),
+      .map(([, b]) => ({ path: b.path, label: pathLabel(root, b.path), ...pathContentFields(root, b.path), totalAnswers: b.totalAnswers, categoryTotals: b.categoryTotals })),
     ...Array.from(pathBuckets.entries())
       .filter(([key]) => key !== routineKey)
-      .map(([, b]) => ({ path: b.path, label: pathLabel(root, b.path), totalAnswers: b.totalAnswers, categoryTotals: b.categoryTotals }))
+      .map(([, b]) => ({ path: b.path, label: pathLabel(root, b.path), ...pathContentFields(root, b.path), totalAnswers: b.totalAnswers, categoryTotals: b.categoryTotals }))
       .sort((a, b) => b.totalAnswers - a.totalAnswers),
   ];
 
@@ -266,6 +275,9 @@ type CategoryTrend = Record<Category, { last14: { yes: number; no: number }; pri
 interface QuestionPathBreakdown {
   path: EscalationPath;
   label: string;
+  /** See AnalyticsQuestionPath's own doc comment for both of these — same resolution, scoped to one user. */
+  questionText: Record<LiveBlockId, string> | null;
+  categoryLabels: Record<Category, { yes: string; no: string }>;
   totalAnswers: number;
   categoryTrend: CategoryTrend;
   recentAnswers: { date: string; block: BlockId; answer: Answer; category: Category | null }[];
@@ -343,6 +355,49 @@ function pathLabel(root: QuestionRoot, path: EscalationPath): string {
   return node.label || node.inviteQuestion || breadcrumb;
 }
 
+/** The node whose blockQuestions/yes/no actually apply at a path — root's own fields for the routine
+ * question ([]), else the target EscalationNode's fields, walked through any `ref` convergence the same
+ * way pathLabel does. Null if the path no longer resolves (the tree was restructured since an answer
+ * under it was recorded) — there's no real question content to show in that case. */
+function resolvedQuestionContent(
+  root: QuestionRoot,
+  path: EscalationPath,
+): { blockQuestions: Record<LiveBlockId, string>; yes: FollowupPrompt; no: FollowupPrompt } | null {
+  if (path.length === 0) return { blockQuestions: root.blockQuestions, yes: root.yes, no: root.no };
+  let children = root.children;
+  let node: EscalationNode | null = null;
+  for (const step of path) {
+    const next = step.category === null ? (step.valence === "yes" ? children.generalYes : children.generalNo) : children[step.valence][step.category];
+    node = next ? derefNode(root, next) : null;
+    if (!node) return null;
+    children = node.children;
+  }
+  return node && { blockQuestions: node.blockQuestions, yes: node.yes, no: node.no };
+}
+
+/** Specific per-category button text an admin set for a node's yes/no follow-up, EPIC-label fallback
+ * while blank — same rule stepLabel applies to a single step, computed for all four categories at once
+ * so a caller can show "People ("Others")" instead of just the abstract EPIC name. */
+function categoryDisplayLabels(yes: FollowupPrompt, no: FollowupPrompt): Record<Category, { yes: string; no: string }> {
+  return Object.fromEntries(CATEGORIES.map((c) => [c, { yes: yes.options[c] || CATEGORY_LABEL[c], no: no.options[c] || CATEGORY_LABEL[c] }])) as Record<
+    Category,
+    { yes: string; no: string }
+  >;
+}
+
+/** questionText + categoryLabels for a path, with the EPIC label itself as the fallback specific text
+ * when the path no longer resolves — so a stale path still renders something readable instead of
+ * breaking the page. */
+function pathContentFields(root: QuestionRoot, path: EscalationPath): { questionText: Record<LiveBlockId, string> | null; categoryLabels: Record<Category, { yes: string; no: string }> } {
+  const content = resolvedQuestionContent(root, path);
+  return {
+    questionText: content?.blockQuestions ?? null,
+    categoryLabels: content
+      ? categoryDisplayLabels(content.yes, content.no)
+      : (Object.fromEntries(CATEGORIES.map((c) => [c, { yes: CATEGORY_LABEL[c], no: CATEGORY_LABEL[c] }])) as Record<Category, { yes: string; no: string }>),
+  };
+}
+
 /** Denormalizes an override's 4-block question into one representative string for a human-scannable
  * history list — overrideHistory isn't the tree editor, it doesn't need the full per-block shape. */
 function overrideQuestionSummary(override: QuestionOverride): string {
@@ -410,7 +465,7 @@ export async function handleGetUserProfile(_request: Request, env: Env, id: stri
       .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
       .slice(0, 20)
       .map((a) => ({ date: a.date, block: a.block, answer: a.answer, category: a.category ?? null }));
-    return { path, label: pathLabel(root, path), totalAnswers: answers.length, categoryTrend, recentAnswers };
+    return { path, label: pathLabel(root, path), ...pathContentFields(root, path), totalAnswers: answers.length, categoryTrend, recentAnswers };
   });
 
   const overrideHistory: UserProfileResponse["overrideHistory"] = [
